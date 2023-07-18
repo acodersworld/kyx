@@ -1,0 +1,4 @@
+mod scanner;
+
+fn main() {
+}
