@@ -4,7 +4,10 @@ enum Token<'a> {
     Struct,
     Interface,
 
+    Fn,
     Identifier(&'a str),
+    Integer(u32),
+    Float(f32),
 
     Plus,
     Minus,
@@ -17,6 +20,26 @@ enum Token<'a> {
     RightParen,
     LeftBracket,
     RightBracket,
+
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+
+    Equal,
+    EqualEqual,
+
+    Let,
+    Mut,
+
+    Dot,
+    SemiColon,
+    Comma,
+
+    Print,
+
+    True,
+    False,
 
     Eof
 }
@@ -36,6 +59,10 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    pub fn line(self: &Self) -> u32 {
+        self.line
+    }
+
     fn peek(self: &Self) -> char {
         self.src[self.current..].chars().next().unwrap()
     }
@@ -50,6 +77,15 @@ impl<'a> Scanner<'a> {
         c
     }
 
+    fn match_char(self: &mut Self, c: char) -> bool {
+        if self.peek() == c {
+            self.advance();
+            return true
+        }
+
+        return false
+    }
+
     fn at_eof(self: &Self) -> bool {
         println!("EOF: {} {} {}", &self.src[self.current..], (self.current + 1), self.src.len());
         return (self.current) >= self.src.len()
@@ -60,7 +96,7 @@ impl<'a> Scanner<'a> {
             return
         }
 
-        loop {
+        while !self.at_eof() {
             match self.peek() {
                 ' ' | '\t' | '\r' => { self.advance(); },
                 '\n' => {
@@ -94,8 +130,37 @@ impl<'a> Scanner<'a> {
         match ident {
             "struct" => Token::Struct,
             "interface" => Token::Interface,
+            "fn" => Token::Fn,
+            "let" => Token::Let,
+            "mut" => Token::Mut,
+            "print" => Token::Print,
+            "true" => Token::True,
+            "false" => Token::False,
             _ => Token::Identifier(ident)
         }
+    }
+
+    fn number(self: &mut Self) -> Result<Token<'a>, String> {
+        while !self.at_eof() && self.peek().is_numeric() {
+            self.advance();
+        }
+
+        if !self.at_eof() && self.peek() == '.' {
+            self.advance();
+            if !self.peek().is_digit(10) {
+                return Err("Expected digit after '.'".to_owned())
+            }
+
+            while !self.at_eof() && self.peek().is_numeric() {
+                self.advance();
+            }
+
+            let number_str = &self.src[..self.current];
+            return Ok(Token::Float(str::parse::<f32>(number_str).unwrap()))
+        }
+
+        let number_str = &self.src[..self.current];
+        return Ok(Token::Integer(str::parse::<u32>(number_str).unwrap()))
     }
 
     fn scan_token(self: &mut Self) -> Result<Token<'a>, String> {
@@ -114,18 +179,46 @@ impl<'a> Scanner<'a> {
         if c.is_alphabetic() {
             return Ok(self.identifier())
         }
+        else if c.is_digit(10) {
+            return self.number()
+        }
 
         match c {
             '+' => Ok(Token::Plus),
             '-' => Ok(Token::Minus),
             '/' => Ok(Token::Slash),
             '*' => Ok(Token::Star),
+
             '{' => Ok(Token::LeftBrace),
             '}' => Ok(Token::RightBrace),
             '(' => Ok(Token::LeftParen),
             ')' => Ok(Token::RightParen),
             '[' => Ok(Token::LeftBracket),
             ']' => Ok(Token::RightBracket),
+
+            '.' => Ok(Token::Dot),
+            ';' => Ok(Token::SemiColon),
+            ',' => Ok(Token::Comma),
+
+            '<' => {
+                if self.match_char('=') {
+                    return Ok(Token::LessEqual)
+                }
+                return Ok(Token::Less)
+            },
+            '>' => {
+                if self.match_char('=') {
+                    return Ok(Token::GreaterEqual)
+                }
+                return Ok(Token::Greater)
+            },
+            '=' => {
+                if self.match_char('=') {
+                    return Ok(Token::EqualEqual)
+                }
+                return Ok(Token::Equal)
+            },
+
             _ => Err("Unexpected token".to_owned())
         }
     }
@@ -144,12 +237,20 @@ mod tests {
 
     #[test]
     fn test_line() {
-        let src = "//a comment\n+\nabc\nstruct".to_owned();
+        let src = r"//a comment
+                    +
+                    abc def
+                    struct
+                    ".to_owned();
         let mut scanner = Scanner::new(&src);
         scanner.scan_token().unwrap();
         assert_eq!(scanner.line, 2);
+
         scanner.scan_token().unwrap();
         assert_eq!(scanner.line, 3);
+        scanner.scan_token().unwrap();
+        assert_eq!(scanner.line, 3);
+
         scanner.scan_token().unwrap();
         assert_eq!(scanner.line, 4);
 
@@ -198,6 +299,89 @@ mod tests {
 
         assert_eq!(scanner.scan_token(), Ok(Token::LeftBrace));
         assert_eq!(scanner.scan_token(), Ok(Token::RightBrace));
+
+        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+    }
+
+    #[test]
+    fn test_function() {
+        let src = "fn".to_owned();
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::Fn));
+
+        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+    }
+
+    #[test]
+    fn test_number() {
+        {
+            let src = "123".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Integer(123)));
+
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+        {
+            let src = "3.142".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Float(3.142)));
+
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+
+        {
+            let src = "467 1.45 20.1 50".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Integer(467)));
+            assert_eq!(scanner.scan_token(), Ok(Token::Float(1.45)));
+            assert_eq!(scanner.scan_token(), Ok(Token::Float(20.1)));
+            assert_eq!(scanner.scan_token(), Ok(Token::Integer(50)));
+
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+    }
+
+    #[test]
+    fn test_comparison() {
+        let src = "<>>====<=".to_owned();
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::Less));
+        assert_eq!(scanner.scan_token(), Ok(Token::Greater));
+        assert_eq!(scanner.scan_token(), Ok(Token::GreaterEqual));
+        assert_eq!(scanner.scan_token(), Ok(Token::EqualEqual));
+        assert_eq!(scanner.scan_token(), Ok(Token::Equal));
+        assert_eq!(scanner.scan_token(), Ok(Token::LessEqual));
+
+        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+    }
+
+    #[test]
+    fn test_let_mut() {
+        let src = "let mut".to_owned();
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::Let));
+        assert_eq!(scanner.scan_token(), Ok(Token::Mut));
+
+        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+    }
+
+    #[test]
+    fn test_puncuation() {
+        let src = ".;,".to_owned();
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::Dot));
+        assert_eq!(scanner.scan_token(), Ok(Token::SemiColon));
+        assert_eq!(scanner.scan_token(), Ok(Token::Comma));
+
+        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+    }
+
+    #[test]
+    fn test_boolean() {
+        let src = "true false".to_owned();
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::True));
+        assert_eq!(scanner.scan_token(), Ok(Token::False));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
     }
