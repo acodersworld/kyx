@@ -1,6 +1,6 @@
 
 #[derive(Debug, PartialEq)]
-enum Token<'a> {
+pub enum Token<'a> {
     Struct,
     Interface,
 
@@ -87,7 +87,6 @@ impl<'a> Scanner<'a> {
     }
 
     fn at_eof(self: &Self) -> bool {
-        println!("EOF: {} {} {}", &self.src[self.current..], (self.current + 1), self.src.len());
         return (self.current) >= self.src.len()
     }
 
@@ -163,7 +162,7 @@ impl<'a> Scanner<'a> {
         return Ok(Token::Integer(str::parse::<u32>(number_str).unwrap()))
     }
 
-    fn scan_token(self: &mut Self) -> Result<Token<'a>, String> {
+    pub fn scan_token(self: &mut Self) -> Result<Token<'a>, String> {
         self.skip_white_space();
 
         if self.at_eof() {
