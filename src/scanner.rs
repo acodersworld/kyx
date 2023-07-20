@@ -3,8 +3,17 @@
 pub enum Token<'a> {
     Struct,
     Interface,
-
+    While,
+    For,
+    Return,
+    Print,
+    Let,
+    Mut,
     Fn,
+    True,
+    False,
+
+
     Identifier(&'a str),
     Integer(u32),
     Float(f32),
@@ -26,20 +35,14 @@ pub enum Token<'a> {
     Greater,
     GreaterEqual,
 
+    Bang,
+    BangEqual,
     Equal,
     EqualEqual,
-
-    Let,
-    Mut,
 
     Dot,
     SemiColon,
     Comma,
-
-    Print,
-
-    True,
-    False,
 
     Eof
 }
@@ -135,6 +138,9 @@ impl<'a> Scanner<'a> {
             "print" => Token::Print,
             "true" => Token::True,
             "false" => Token::False,
+            "while" => Token::While,
+            "for" => Token::For,
+            "return" => Token::Return,
             _ => Token::Identifier(ident)
         }
     }
@@ -199,6 +205,12 @@ impl<'a> Scanner<'a> {
             ';' => Ok(Token::SemiColon),
             ',' => Ok(Token::Comma),
 
+            '!' => {
+                if self.match_char('=') {
+                    return Ok(Token::BangEqual)
+                }
+                return Ok(Token::Bang)
+            }
             '<' => {
                 if self.match_char('=') {
                     return Ok(Token::LessEqual)
@@ -218,7 +230,7 @@ impl<'a> Scanner<'a> {
                 return Ok(Token::Equal)
             },
 
-            _ => Err("Unexpected token".to_owned())
+            _ => Err(format!("Unexpected token '{}'", c))
         }
     }
 }
@@ -269,10 +281,18 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let src = "struct interface";
+        let src = "struct interface while for return fn let mut true false";
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::Struct));
         assert_eq!(scanner.scan_token(), Ok(Token::Interface));
+        assert_eq!(scanner.scan_token(), Ok(Token::While));
+        assert_eq!(scanner.scan_token(), Ok(Token::For));
+        assert_eq!(scanner.scan_token(), Ok(Token::Return));
+        assert_eq!(scanner.scan_token(), Ok(Token::Fn));
+        assert_eq!(scanner.scan_token(), Ok(Token::Let));
+        assert_eq!(scanner.scan_token(), Ok(Token::Mut));
+        assert_eq!(scanner.scan_token(), Ok(Token::True));
+        assert_eq!(scanner.scan_token(), Ok(Token::False));
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
     }
 
@@ -298,15 +318,6 @@ mod tests {
 
         assert_eq!(scanner.scan_token(), Ok(Token::LeftBrace));
         assert_eq!(scanner.scan_token(), Ok(Token::RightBrace));
-
-        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
-    }
-
-    #[test]
-    fn test_function() {
-        let src = "fn".to_owned();
-        let mut scanner = Scanner::new(&src);
-        assert_eq!(scanner.scan_token(), Ok(Token::Fn));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
     }
@@ -342,45 +353,27 @@ mod tests {
 
     #[test]
     fn test_comparison() {
-        let src = "<>>====<=".to_owned();
+        let src = "<>>====!!=<=".to_owned();
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::Less));
         assert_eq!(scanner.scan_token(), Ok(Token::Greater));
         assert_eq!(scanner.scan_token(), Ok(Token::GreaterEqual));
         assert_eq!(scanner.scan_token(), Ok(Token::EqualEqual));
         assert_eq!(scanner.scan_token(), Ok(Token::Equal));
+        assert_eq!(scanner.scan_token(), Ok(Token::Bang));
+        assert_eq!(scanner.scan_token(), Ok(Token::BangEqual));
         assert_eq!(scanner.scan_token(), Ok(Token::LessEqual));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
     }
 
     #[test]
-    fn test_let_mut() {
-        let src = "let mut".to_owned();
-        let mut scanner = Scanner::new(&src);
-        assert_eq!(scanner.scan_token(), Ok(Token::Let));
-        assert_eq!(scanner.scan_token(), Ok(Token::Mut));
-
-        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
-    }
-
-    #[test]
-    fn test_puncuation() {
+    fn test_punctuation() {
         let src = ".;,".to_owned();
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::Dot));
         assert_eq!(scanner.scan_token(), Ok(Token::SemiColon));
         assert_eq!(scanner.scan_token(), Ok(Token::Comma));
-
-        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
-    }
-
-    #[test]
-    fn test_boolean() {
-        let src = "true false".to_owned();
-        let mut scanner = Scanner::new(&src);
-        assert_eq!(scanner.scan_token(), Ok(Token::True));
-        assert_eq!(scanner.scan_token(), Ok(Token::False));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
     }
