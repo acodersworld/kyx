@@ -17,6 +17,7 @@ pub enum Token<'a> {
     Identifier(&'a str),
     Integer(u32),
     Float(f32),
+    Str(&'a str),
 
     Plus,
     Minus,
@@ -145,6 +146,24 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    fn string(self: &mut Self) -> Result<Token<'a>, String> {
+        while !self.at_eof() && self.peek() != '"' {
+            self.advance();
+        }
+
+        if self.at_eof() {
+            return Err("Error".to_string())
+        }
+
+        let next = self.peek();
+        self.advance();
+        if next != '"' {
+            return Err("Error".to_string())
+        }
+
+        Ok(Token::Str(&self.src[1..self.current-1]))
+    }
+
     fn number(self: &mut Self) -> Result<Token<'a>, String> {
         while !self.at_eof() && self.peek().is_numeric() {
             self.advance();
@@ -152,7 +171,7 @@ impl<'a> Scanner<'a> {
 
         if !self.at_eof() && self.peek() == '.' {
             self.advance();
-            if !self.peek().is_digit(10) {
+            if self.at_eof() || !self.peek().is_digit(10) {
                 return Err("Expected digit after '.'".to_owned())
             }
 
@@ -229,7 +248,7 @@ impl<'a> Scanner<'a> {
                 }
                 return Ok(Token::Equal)
             },
-
+            '"' => return self.string(),
             _ => Err(format!("Unexpected token '{}'", c))
         }
     }
@@ -331,12 +350,19 @@ mod tests {
 
             assert_eq!(scanner.scan_token(), Ok(Token::Eof));
         }
+
         {
             let src = "3.142".to_owned();
             let mut scanner = Scanner::new(&src);
             assert_eq!(scanner.scan_token(), Ok(Token::Float(3.142)));
 
             assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+
+        {
+            let src = "3.".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert!(scanner.scan_token().is_err());
         }
 
         {
@@ -376,5 +402,29 @@ mod tests {
         assert_eq!(scanner.scan_token(), Ok(Token::Comma));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+    }
+
+    #[test]
+    fn test_string() {
+        {
+            let src = "\"\"".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Str("")));
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+
+        {
+            let src = "\"this is a string\"".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Str("this is a string")));
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+
+        {
+            let src = "\"".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert!(scanner.scan_token().is_err());
+        }
+
     }
 }
