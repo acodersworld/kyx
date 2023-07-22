@@ -50,34 +50,30 @@ pub enum Token<'a> {
 
 pub struct Scanner<'a> {
     src: &'a str,
-    current: usize,
-    line: u32
+    current_idx: usize,
+    current_line: u32
 }
 
 impl<'a> Scanner<'a> {
     pub fn new(src: &'a str) -> Scanner {
         Scanner {
             src,
-            current: 0,
-            line: 1
+            current_idx: 0,
+            current_line: 1
         }
     }
 
     pub fn line(self: &Self) -> u32 {
-        self.line
+        self.current_line
     }
 
     fn peek(self: &Self) -> char {
-        self.src[self.current..].chars().next().unwrap()
-    }
-
-    fn peek_next(self: &Self) -> char {
-        self.src[self.current..].chars().nth(1).unwrap()
+        self.src[self.current_idx..].chars().next().unwrap()
     }
 
     fn advance(self: &mut Self) -> char {
         let c = self.peek();
-        self.current += c.len_utf8();
+        self.current_idx += c.len_utf8();
         c
     }
 
@@ -91,7 +87,13 @@ impl<'a> Scanner<'a> {
     }
 
     fn at_eof(self: &Self) -> bool {
-        return (self.current) >= self.src.len()
+        return (self.current_idx) >= self.src.len()
+    }
+
+    fn skip_to_newline(self: &mut Self) {
+        while !self.at_eof() && self.peek() != '\n' {
+            self.advance();
+        }
     }
 
     fn skip_white_space(self: &mut Self) {
@@ -103,21 +105,8 @@ impl<'a> Scanner<'a> {
             match self.peek() {
                 ' ' | '\t' | '\r' => { self.advance(); },
                 '\n' => {
-                    self.line += 1;
+                    self.current_line += 1;
                     self.advance();
-                },
-                '/' => {
-                    if self.peek_next() == '/' {
-                        while self.peek() != '\n' {
-                            self.advance();
-                            if self.at_eof() {
-                                return
-                            }
-                        }
-                    }
-                    else {
-                        return
-                    }
                 },
                 _ => return
             }
@@ -129,7 +118,7 @@ impl<'a> Scanner<'a> {
             self.advance();
         }
 
-        let ident = &self.src[..self.current];
+        let ident = &self.src[..self.current_idx];
         match ident {
             "struct" => Token::Struct,
             "interface" => Token::Interface,
@@ -155,13 +144,8 @@ impl<'a> Scanner<'a> {
             return Err("Error".to_string())
         }
 
-        let next = self.peek();
         self.advance();
-        if next != '"' {
-            return Err("Error".to_string())
-        }
-
-        Ok(Token::Str(&self.src[1..self.current-1]))
+        Ok(Token::Str(&self.src[1..self.current_idx-1]))
     }
 
     fn number(self: &mut Self) -> Result<Token<'a>, String> {
@@ -179,26 +163,41 @@ impl<'a> Scanner<'a> {
                 self.advance();
             }
 
-            let number_str = &self.src[..self.current];
+            let number_str = &self.src[..self.current_idx];
             return Ok(Token::Float(str::parse::<f32>(number_str).unwrap()))
         }
 
-        let number_str = &self.src[..self.current];
+        let number_str = &self.src[..self.current_idx];
         return Ok(Token::Integer(str::parse::<u32>(number_str).unwrap()))
     }
 
     pub fn scan_token(self: &mut Self) -> Result<Token<'a>, String> {
-        self.skip_white_space();
+        loop {
+            self.skip_white_space();
+            if self.at_eof() {
+                return Ok(Token::Eof)
+            }
 
-        if self.at_eof() {
-            return Ok(Token::Eof)
+            if self.peek() == '/' {
+                self.advance();
+                if !self.at_eof() && self.peek() == '/' {
+                    // hit a line comment
+                    self.advance();
+                    self.skip_to_newline();
+                }
+                else { 
+                    return Ok(Token::Slash);
+                }
+            }
+            else {
+                break;
+            }
         }
 
-        self.src = &self.src[self.current..];
-        self.current = 0;
+        self.src = &self.src[self.current_idx..];
+        self.current_idx = 0;
 
         let c = self.advance();
-        println!("CHAR {}", c);
 
         if c.is_alphabetic() {
             return Ok(self.identifier())
@@ -210,7 +209,6 @@ impl<'a> Scanner<'a> {
         match c {
             '+' => Ok(Token::Plus),
             '-' => Ok(Token::Minus),
-            '/' => Ok(Token::Slash),
             '*' => Ok(Token::Star),
 
             '{' => Ok(Token::LeftBrace),
@@ -260,9 +258,17 @@ mod tests {
 
     #[test]
     fn test_comment() {
-        let src = "//a comment\n//another comment".to_owned();
-        let mut scanner = Scanner::new(&src);
-        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        {
+            let src = "//a comment\n//another comment".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+
+        {
+            let src = "//".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
     }
 
     #[test]
@@ -274,28 +280,37 @@ mod tests {
                     ".to_owned();
         let mut scanner = Scanner::new(&src);
         scanner.scan_token().unwrap();
-        assert_eq!(scanner.line, 2);
+        assert_eq!(scanner.line(), 2);
 
         scanner.scan_token().unwrap();
-        assert_eq!(scanner.line, 3);
+        assert_eq!(scanner.line(), 3);
         scanner.scan_token().unwrap();
-        assert_eq!(scanner.line, 3);
+        assert_eq!(scanner.line(), 3);
 
         scanner.scan_token().unwrap();
-        assert_eq!(scanner.line, 4);
+        assert_eq!(scanner.line(), 4);
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
     }
 
     #[test]
     fn test_arithmetic() {
-        let src = "+-/*".to_owned();
-        let mut scanner = Scanner::new(&src);
-        assert_eq!(scanner.scan_token(), Ok(Token::Plus));
-        assert_eq!(scanner.scan_token(), Ok(Token::Minus));
-        assert_eq!(scanner.scan_token(), Ok(Token::Slash));
-        assert_eq!(scanner.scan_token(), Ok(Token::Star));
-        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        {
+            let src = "+-/*".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Plus));
+            assert_eq!(scanner.scan_token(), Ok(Token::Minus));
+            assert_eq!(scanner.scan_token(), Ok(Token::Slash));
+            assert_eq!(scanner.scan_token(), Ok(Token::Star));
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+
+        {
+            let src = "/".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Slash));
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
     }
 
     #[test]
