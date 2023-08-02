@@ -19,14 +19,23 @@ impl<'a> Disassembler<'a> {
         while self.offset < self.code.len() {
             let offset = self.offset;
             self.offset += 1;
+            
             match self.code[offset] {
                 opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
+                opcode::ADDI => self.simple_instruction("addi"),
+                opcode::SUBI => self.simple_instruction("subi"),
+                opcode::ADDF => self.simple_instruction("addf"),
+                opcode::SUBF => self.simple_instruction("subf"),
                 _ => {
                     println!("Unknown instruction")
                 }
             }
         }
+    }
+
+    fn simple_instruction(self: &mut Self, name: &str) {
+        println!("{}", name);
     }
 
     fn constant_integer_instruction(self: &mut Self) {

@@ -1,13 +1,13 @@
 
 pub struct Encoder {
-    val: u32,
+    val: i32,
     shift: u32
 }
 
 impl Encoder {
-    pub fn new(val: u32) -> Encoder {
+    pub fn new(val: i32) -> Encoder {
         let mut shift = 0;
-        if val > 0 {
+        if val != 0 {
             shift = 4 * 7;
             while (val & (0x7f << shift)) == 0 {
                 shift -= 7;
@@ -37,7 +37,7 @@ impl Encoder {
 }
 
 pub struct Decoder {
-    val: u32
+    val: i32
 }
 
 impl Decoder {
@@ -49,12 +49,12 @@ impl Decoder {
         let is_last = (byte & 0x80) == 0;
 
         self.val <<= 7;
-        self.val |= (byte & 0x7f) as u32;
+        self.val |= (byte & 0x7f) as i32;
 
         is_last
     }
 
-    pub fn val(self: &Self) -> u32 {
+    pub fn val(self: &Self) -> i32 {
         self.val
     }
 }
@@ -63,7 +63,7 @@ impl Decoder {
 mod test {
     use super::*;
 
-    fn encode(val: u32) -> std::vec::Vec<u8> {
+    fn encode(val: i32) -> std::vec::Vec<u8> {
         let mut bytes = std::vec::Vec::new();
         let mut encoder = Encoder::new(val);
         loop {
@@ -77,7 +77,7 @@ mod test {
         bytes
     }
 
-    fn decode(bytes: std::vec::Vec<u8>) -> u32 {
+    fn decode(bytes: std::vec::Vec<u8>) -> i32 {
         let mut found_last = false;
         let mut decoder = Decoder::new();
         for byte in bytes {
@@ -99,8 +99,18 @@ mod test {
     }
 
     #[test]
+    fn test_n1() {
+        assert_eq!(-1, decode(encode(-1)));
+    }
+
+    #[test]
     fn test_127() {
         assert_eq!(127, decode(encode(127)));
+    }
+
+    #[test]
+    fn test_n127() {
+        assert_eq!(-127, decode(encode(-127)));
     }
 
     #[test]
@@ -109,8 +119,18 @@ mod test {
     }
 
     #[test]
+    fn test_n128() {
+        assert_eq!(-128, decode(encode(-128)));
+    }
+
+    #[test]
     fn test_300() {
         assert_eq!(300, decode(encode(300)));
+    }
+
+    #[test]
+    fn test_n300() {
+        assert_eq!(-300, decode(encode(-300)));
     }
 
     #[test]
@@ -119,7 +139,17 @@ mod test {
     }
 
     #[test]
-    fn test_ffffffff() {
-        assert_eq!(0xffffffff, decode(encode(0xffffffff)));
+    fn test_nffff() {
+        assert_eq!(-0xffff, decode(encode(-0xffff)));
+    }
+
+    #[test]
+    fn test_7fffffff() {
+        assert_eq!(0x7fffffff, decode(encode(0x7fffffff)));
+    }
+
+    #[test]
+    fn test_n7fffffff() {
+        assert_eq!(-0x7fffffff, decode(encode(-0x7fffffff)));
     }
 }

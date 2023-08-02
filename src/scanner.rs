@@ -15,7 +15,7 @@ pub enum Token<'a> {
 
 
     Identifier(&'a str),
-    Integer(u32),
+    Integer(i32),
     Float(f32),
     Str(&'a str),
 
@@ -148,7 +148,7 @@ impl<'a> Scanner<'a> {
         Ok(Token::Str(&self.src[1..self.current_idx-1]))
     }
 
-    fn number(self: &mut Self) -> Result<Token<'a>, String> {
+    fn number(self: &mut Self, sign: i32) -> Result<Token<'a>, String> {
         while !self.at_eof() && self.peek().is_numeric() {
             self.advance();
         }
@@ -168,7 +168,7 @@ impl<'a> Scanner<'a> {
         }
 
         let number_str = &self.src[..self.current_idx];
-        return Ok(Token::Integer(str::parse::<u32>(number_str).unwrap()))
+        return Ok(Token::Integer(str::parse::<i32>(number_str).unwrap()))
     }
 
     pub fn scan_token(self: &mut Self) -> Result<Token<'a>, String> {
@@ -203,12 +203,18 @@ impl<'a> Scanner<'a> {
             return Ok(self.identifier())
         }
         else if c.is_digit(10) {
-            return self.number()
+            return self.number(1)
         }
 
         match c {
             '+' => Ok(Token::Plus),
-            '-' => Ok(Token::Minus),
+            '-' => {
+                if self.peek().is_digit(10) {
+                    return self.number(-1)
+                }
+
+                Ok(Token::Minus)
+            }
             '*' => Ok(Token::Star),
 
             '{' => Ok(Token::LeftBrace),
@@ -362,6 +368,14 @@ mod tests {
             let src = "123".to_owned();
             let mut scanner = Scanner::new(&src);
             assert_eq!(scanner.scan_token(), Ok(Token::Integer(123)));
+
+            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+        }
+
+        {
+            let src = "-123".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token(), Ok(Token::Integer(-123)));
 
             assert_eq!(scanner.scan_token(), Ok(Token::Eof));
         }

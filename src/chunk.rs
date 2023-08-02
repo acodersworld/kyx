@@ -11,7 +11,7 @@ impl Chunk {
         }
     }
 
-    pub fn write(self: &mut Self, byte: u8) {
+    pub fn write_byte(self: &mut Self, byte: u8) {
         self.code.push(byte);
     }
 }
