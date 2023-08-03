@@ -17,3 +17,5 @@ OP!(ADDF, 6);
 OP!(SUBF, 7);
 OP!(MULF, 8);
 OP!(DIVF, 9);
+
+OP!(PRINT, 10);

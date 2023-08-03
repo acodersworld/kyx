@@ -34,13 +34,31 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn compile(self: &mut Self) -> Result<(), String> {
-        self.expression()?;
+        self.statement()?;
 
         Ok(())
     }
 
     pub fn take_chunk(self: Self) -> Chunk {
         self.chunk
+    }
+
+    fn statement(self: &mut Self) -> Result<(), String> {
+        if self.scanner.match_token(Token::Print)? {
+            self.print()?;
+        }
+        else {
+            self.expression()?;
+        }
+
+        Ok(())
+    }
+
+    fn print(self: &mut Self) -> Result<(), String> {
+        self.expression()?;
+        self.chunk.write_byte(opcode::PRINT);
+
+        Ok(())
     }
 
     fn expression(self: &mut Self) -> Result<(), String> {

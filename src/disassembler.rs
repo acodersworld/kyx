@@ -27,6 +27,7 @@ impl<'a> Disassembler<'a> {
                 opcode::SUBI => self.simple_instruction("subi"),
                 opcode::ADDF => self.simple_instruction("addf"),
                 opcode::SUBF => self.simple_instruction("subf"),
+                opcode::PRINT => self.simple_instruction("print"),
                 _ => {
                     println!("Unknown instruction")
                 }

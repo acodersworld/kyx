@@ -37,6 +37,7 @@ impl VM {
                 opcode::SUBI => self.integer_sub(),
                 opcode::ADDF => self.float_add(),
                 opcode::SUBF => self.float_sub(),
+                opcode::PRINT => self.print(),
                 _ => {
                     println!("Unknown instruction: {}", code[self.offset])
                 }
@@ -100,6 +101,11 @@ impl VM {
         self.offset += 4;
 
         self.stack.push(Value::Float(value));
+    }
+
+    fn print(self: &mut Self) {
+        let value = self.stack.pop().unwrap();
+        println!("{:?}", value);
     }
 }
 

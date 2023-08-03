@@ -1,5 +1,5 @@
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Token<'a> {
     Struct,
     Interface,
@@ -50,6 +50,7 @@ pub enum Token<'a> {
 
 pub struct Scanner<'a> {
     src: &'a str,
+    peeked_token: Option<Token<'a>>,
     current_idx: usize,
     current_line: u32
 }
@@ -58,6 +59,7 @@ impl<'a> Scanner<'a> {
     pub fn new(src: &'a str) -> Scanner {
         Scanner {
             src,
+            peeked_token: None,
             current_idx: 0,
             current_line: 1
         }
@@ -171,7 +173,31 @@ impl<'a> Scanner<'a> {
         return Ok(Token::Integer(str::parse::<i32>(number_str).unwrap()))
     }
 
+    pub fn peek_token(self: &mut Self) -> Result<Token<'a>, String> {
+        if let Some(token) = self.peeked_token {
+            return Ok(token)
+        }
+
+        let token = self.scan_token()?;
+        self.peeked_token = Some(token);
+        Ok(token)
+    }
+
+    pub fn match_token(self: &mut Self, token: Token) -> Result<bool, String> {
+        let t = self.peek_token()?;
+        if t == token {
+            self.peeked_token = None;
+            return Ok(true)
+        }
+
+        Ok(false)
+    }
+
     pub fn scan_token(self: &mut Self) -> Result<Token<'a>, String> {
+        if let Some(token) = self.peeked_token.take() {
+            return Ok(token)
+        }
+
         loop {
             self.skip_white_space();
             if self.at_eof() {
@@ -455,5 +481,31 @@ mod tests {
             assert!(scanner.scan_token().is_err());
         }
 
+    }
+
+    #[test]
+    fn test_peek() {
+        let src = "123+456";
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.peek_token(), Ok(Token::Integer(123)));
+        assert_eq!(scanner.peek_token(), Ok(Token::Integer(123)));
+        assert_eq!(scanner.scan_token(), Ok(Token::Integer(123)));
+
+        assert_eq!(scanner.peek_token(), Ok(Token::Plus));
+        assert_eq!(scanner.scan_token(), Ok(Token::Plus));
+
+        assert_eq!(scanner.peek_token(), Ok(Token::Integer(456)));
+        assert_eq!(scanner.scan_token(), Ok(Token::Integer(456)));
+    }
+
+    #[test]
+    fn test_match() {
+        let src = "123+456";
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.match_token(Token::Print), Ok(false));
+        assert_eq!(scanner.match_token(Token::Integer(123)), Ok(true));
+        assert_eq!(scanner.match_token(Token::Minus), Ok(false));
+        assert_eq!(scanner.match_token(Token::Plus), Ok(true));
+        assert_eq!(scanner.match_token(Token::Integer(456)), Ok(true));
     }
 }
