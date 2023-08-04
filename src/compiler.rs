@@ -8,8 +8,9 @@ use std::vec::Vec;
 
 /*
     expression -> term
-    term -> primary ( "-" | "+" primary )*
-    primary -> NUMBER | FLOAT
+    term -> factor ( "-" | "+" factor )*
+    factor -> primary ( "*" | "/" primary )*
+    primary -> NUMBER | FLOAT | "(" expression ")"
  */
 
 #[derive(PartialEq, Clone, Copy)]
@@ -43,6 +44,14 @@ impl<'a> Compiler<'a> {
         self.chunk
     }
 
+    fn consume(self: &mut Self, token: Token) -> Result<(), String> {
+        if self.scanner.match_token(token)? {
+            return Ok(())
+        }
+
+        Err("Expected ')'".to_owned())
+    }
+
     fn statement(self: &mut Self) -> Result<(), String> {
         if self.scanner.match_token(Token::Print)? {
             self.print()?;
@@ -67,7 +76,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn term_right(self: &mut Self, opi: u8, opf: u8) -> Result<(), String> {
+    fn term_factor(self: &mut Self, opi: u8, opf: u8) -> Result<(), String> {
         self.primary()?;
 
         let len = self.type_stack.len();
@@ -88,27 +97,73 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn term(self: &mut Self) -> Result<(), String> {
+    fn factor(self: &mut Self) -> Result<(), String> {
         self.primary()?;
 
-        let token = self.scanner.scan_token();
-        match token {
-            Ok(Token::Plus) => {
-                self.term_right(opcode::ADDI, opcode::ADDF)?;
-            },
-            Ok(Token::Minus) => {
-                self.term_right(opcode::SUBI, opcode::SUBF)?;
-            },
-            _ => {
-                println!("SKIP {:?}", token);
+        loop {
+            if self.scanner.match_token(Token::Star)? {
+                self.term_factor(opcode::MULI, opcode::MULF)?;
+            }
+            else if self.scanner.match_token(Token::Slash)? {
+                self.term_factor(opcode::DIVI, opcode::DIVF)?;
+            }
+            else {
+                break;
             }
         }
+
+
+        Ok(())
+    }
+
+    fn term_right(self: &mut Self, opi: u8, opf: u8) -> Result<(), String> {
+        self.factor()?;
+
+        let len = self.type_stack.len();
+        let left_type = self.type_stack[len - 2];
+        let right_type = self.type_stack[len - 1];
+
+        if left_type != right_type {
+            return Err("Type error".to_owned())
+        }
+        else if left_type == ValueType::Integer {
+            self.chunk.write_byte(opi)
+        }
+        else {
+            self.chunk.write_byte(opf)
+        }
+
+        self.type_stack.pop();
+        Ok(())
+    }
+
+    fn term(self: &mut Self) -> Result<(), String> {
+        self.factor()?;
+
+        loop {
+            if self.scanner.match_token(Token::Plus)? {
+                self.term_right(opcode::ADDI, opcode::ADDF)?;
+            }
+            else if self.scanner.match_token(Token::Minus)? {
+                self.term_right(opcode::SUBI, opcode::SUBF)?;
+            }
+            else {
+                break;
+            }
+        }
+
 
         Ok(())
     }
 
     fn primary(self: &mut Self) -> Result<(), String> {
-        match self.scanner.scan_token() {
+        let t = self.scanner.scan_token();
+        match t {
+            Ok(Token::LeftParen) => {
+                self.expression()?;
+                self.consume(Token::RightParen)?;
+                return Ok(())
+            },
             Ok(Token::Integer(i)) => {
                 self.chunk.write_byte(opcode::CONSTANT_INTEGER);
                 let mut encoder = var_len_int::Encoder::new(i);
@@ -133,6 +188,7 @@ impl<'a> Compiler<'a> {
                 return Err(msg)
             },
             _ => {
+                println!("primary Unknown token: {:?}", t);
             }
         }
 

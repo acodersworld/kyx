@@ -25,8 +25,12 @@ impl<'a> Disassembler<'a> {
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
                 opcode::ADDI => self.simple_instruction("addi"),
                 opcode::SUBI => self.simple_instruction("subi"),
+                opcode::MULI => self.simple_instruction("muli"),
+                opcode::DIVI => self.simple_instruction("divi"),
                 opcode::ADDF => self.simple_instruction("addf"),
                 opcode::SUBF => self.simple_instruction("subf"),
+                opcode::MULF => self.simple_instruction("mulf"),
+                opcode::DIVF => self.simple_instruction("divf"),
                 opcode::PRINT => self.simple_instruction("print"),
                 _ => {
                     println!("Unknown instruction")

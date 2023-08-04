@@ -5,6 +5,7 @@ use crate::value::FromValue;
 use crate::opcode;
 use crate::var_len_int;
 use crate::float;
+use crate::disassembler;
 
 pub struct VM {
     stack: Vec<Value>,
@@ -28,15 +29,18 @@ impl VM {
         let len = code.len();
 
         while self.offset < len {
-            println!("Ex instruction: {} {}", code[self.offset], self.offset);
             self.offset += 1;
             match code[self.offset-1] {
                 opcode::CONSTANT_INTEGER => self.push_integer_instruction(code),
                 opcode::CONSTANT_FLOAT => self.push_float_instruction(code),
                 opcode::ADDI => self.integer_add(),
                 opcode::SUBI => self.integer_sub(),
+                opcode::MULI => self.integer_mul(),
+                opcode::DIVI => self.integer_div(),
                 opcode::ADDF => self.float_add(),
                 opcode::SUBF => self.float_sub(),
+                opcode::MULF => self.float_mul(),
+                opcode::DIVF => self.float_div(),
                 opcode::PRINT => self.print(),
                 _ => {
                     println!("Unknown instruction: {}", code[self.offset])
@@ -53,6 +57,8 @@ impl VM {
         let code = &chunk.code;
 
         self.run(code);
+        let mut ds = disassembler::Disassembler::new(code);
+        ds.disassemble();
         Ok(())
     }
 
@@ -78,6 +84,14 @@ impl VM {
         self.binary_op::<i32, _>(|l, r| { Value::Integer(l - r) });
     }
 
+    fn integer_mul(self: &mut Self) {
+        self.binary_op::<i32, _>(|l, r| { Value::Integer(l * r) });
+    }
+
+    fn integer_div(self: &mut Self) {
+        self.binary_op::<i32, _>(|l, r| { Value::Integer(l / r) });
+    }
+
     fn float_add(self: &mut Self) {
         self.binary_op::<f32, _>(|l, r| { Value::Float(l + r) });
     }
@@ -85,6 +99,15 @@ impl VM {
     fn float_sub(self: &mut Self) {
         self.binary_op::<f32, _>(|l, r| { Value::Float(l - r) });
     }
+
+    fn float_mul(self: &mut Self) {
+        self.binary_op::<f32, _>(|l, r| { Value::Float(l * r) });
+    }
+
+    fn float_div(self: &mut Self) {
+        self.binary_op::<f32, _>(|l, r| { Value::Float(l / r) });
+    }
+
 
     fn push_integer_instruction(self: &mut Self, code: &Vec<u8>) {
         let mut decoder = var_len_int::Decoder::new(); 
