@@ -2,7 +2,7 @@ use std::vec::Vec;
 use std::ptr::NonNull;
 
 use crate::compiler::{Compiler, StringTable};
-use crate::value::{Value, ManagedValue, FromValue, StringValue};
+use crate::value::{Value, GcValue, FromValue, StringValue};
 use crate::opcode;
 use crate::var_len_int;
 use crate::float;
@@ -14,7 +14,7 @@ pub trait Printer {
 
 pub struct VM<'printer> {
     stack: Vec<Value>,
-    objects: Vec<ManagedValue>,
+    objects: Vec<GcValue>,
     constant_strs: Vec<NonNull<StringValue>>,
     offset: usize,
 
@@ -25,12 +25,11 @@ impl StringTable for VM<'_> {
     fn create_constant_str(self: &mut Self, s: &str) -> u8 {
         let mut str_val = Box::new(StringValue { val: s.to_string(), hash: 0 });
         let ptr = unsafe { NonNull::new_unchecked(str_val.as_mut() as *mut _) };
-        self.objects.push(ManagedValue::Str(str_val));
+        self.objects.push(GcValue::Str(str_val));
 
         self.constant_strs.push(ptr);
         (self.constant_strs.len() - 1) as u8
     }
-
 }
 
 impl<'printer> VM<'printer> {

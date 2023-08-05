@@ -7,7 +7,7 @@ pub struct StringValue {
 }
 
 #[derive(Debug)]
-pub enum ManagedValue {
+pub enum GcValue {
 //    Float(f32),
 //    Integer(i32),
     Str(Box<StringValue>)
