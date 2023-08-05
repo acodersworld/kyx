@@ -19,3 +19,4 @@ OP!(MULF, 8);
 OP!(DIVF, 9);
 
 OP!(PRINT, 10);
+OP!(CONSTANT_STRING,     11);

@@ -23,6 +23,7 @@ impl<'a> Disassembler<'a> {
             match self.code[offset] {
                 opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
+                opcode::CONSTANT_STRING => self.constant_string_instruction(),
                 opcode::ADDI => self.simple_instruction("addi"),
                 opcode::SUBI => self.simple_instruction("subi"),
                 opcode::MULI => self.simple_instruction("muli"),
@@ -58,6 +59,13 @@ impl<'a> Disassembler<'a> {
         self.offset += 4;
 
         println!("CONSTANT FLOAT: {}", value);
+    }
+
+    fn constant_string_instruction(self: &mut Self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CONSTANT STRING: idx({})", idx);
     }
 }
 

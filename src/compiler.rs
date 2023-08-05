@@ -3,6 +3,7 @@ use crate::chunk::Chunk;
 use crate::opcode;
 use crate::var_len_int;
 use crate::float;
+use crate::vm::VM;
 
 use std::vec::Vec;
 
@@ -10,24 +11,27 @@ use std::vec::Vec;
     expression -> term
     term -> factor ( "-" | "+" factor )*
     factor -> primary ( "*" | "/" primary )*
-    primary -> NUMBER | FLOAT | "(" expression ")"
+    primary -> NUMBER | FLOAT | STRING | "(" expression ")"
  */
 
 #[derive(PartialEq, Clone, Copy)]
 enum ValueType {
     Integer,
-    Float
+    Float,
+    Str
 }
 
-pub struct Compiler<'a> {
+pub struct Compiler<'a, 'vm> {
+    vm: &'vm mut VM,
     scanner: Scanner<'a>,
     chunk: Chunk,
     type_stack: Vec<ValueType>
 }
 
-impl<'a> Compiler<'a> {
-    pub fn new(src: &'a str) -> Compiler {
+impl<'a, 'vm> Compiler<'a, 'vm> {
+    pub fn new(vm: &'vm mut VM, src: &'a str) -> Compiler<'a, 'vm> {
         Compiler{
+            vm,
             scanner: Scanner::new(&src),
             chunk: Chunk::new(),
             type_stack: Vec::new()
@@ -184,6 +188,11 @@ impl<'a> Compiler<'a> {
                 }
                 self.type_stack.push(ValueType::Float);
             },
+            Ok(Token::Str(s)) => {
+                self.chunk.write_byte(opcode::CONSTANT_STRING);
+                self.chunk.write_byte(self.vm.create_constant_str(s));
+                self.type_stack.push(ValueType::Str);
+            },
             Err(msg) => {
                 return Err(msg)
             },
@@ -202,7 +211,8 @@ mod test {
 
     #[test]
     fn test_float() {
-        let mut compiler = Compiler::new("3.142");
+        let mut vm = VM::new();
+        let mut compiler = Compiler::new(&mut vm, "3.142");
         assert_eq!(compiler.compile(), Ok(()));
         let chunk = compiler.take_chunk();
         assert_eq!(chunk.code, [1, 135, 22, 73, 64]);
@@ -211,14 +221,16 @@ mod test {
     #[test]
     fn test_integer() {
         {
-            let mut compiler = Compiler::new("735928559");
+            let mut vm = VM::new();
+            let mut compiler = Compiler::new(&mut vm, "735928559");
             assert_eq!(compiler.compile(), Ok(()));
             let chunk = compiler.take_chunk();
             assert_eq!(chunk.code, [0, 130, 222, 245, 193, 111]);
         }
 
         {
-            let mut compiler = Compiler::new("-735928559");
+            let mut vm = VM::new();
+            let mut compiler = Compiler::new(&mut vm, "-735928559");
             assert_eq!(compiler.compile(), Ok(()));
             let chunk = compiler.take_chunk();
             assert_eq!(chunk.code, [0, 253, 161, 138, 190, 17]);

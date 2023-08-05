@@ -6,6 +6,7 @@ mod var_len_int;
 mod float;
 mod disassembler;
 mod value;
+mod interned_strings;
 mod vm;
 
 use rustyline::DefaultEditor;
