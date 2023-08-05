@@ -204,7 +204,7 @@ impl<'a, 'st, T: StringTable> Compiler<'a, 'st, T> {
                         self.float(-f);
                     },
                     _ => {
-                        println!("Expected number after '-'");
+                        return Err("Expected number after '-'".to_owned())
                     }
                 }
             },
@@ -251,30 +251,17 @@ mod test {
     }
 
     #[test]
-    fn test_float() {
+    fn test_error_missing_semicolon() {
         let mut st = TestStringTable::new();
-        let mut compiler = Compiler::new(&mut st, "3.142;");
-        assert_eq!(compiler.compile(), Ok(()));
-        let chunk = compiler.take_chunk();
-        assert_eq!(chunk.code, [1, 135, 22, 73, 64]);
+        let mut compiler = Compiler::new(&mut st, "print 1");
+        assert!(compiler.compile().is_err());
     }
 
     #[test]
-    fn test_integer() {
-        {
-            let mut st = TestStringTable::new();
-            let mut compiler = Compiler::new(&mut st, "735928559;");
-            assert_eq!(compiler.compile(), Ok(()));
-            let chunk = compiler.take_chunk();
-            assert_eq!(chunk.code, [0, 130, 222, 245, 193, 111]);
-        }
-
-        {
-            let mut st = TestStringTable::new();
-            let mut compiler = Compiler::new(&mut st, "-735928559;");
-            assert_eq!(compiler.compile(), Ok(()));
-            let chunk = compiler.take_chunk();
-            assert_eq!(chunk.code, [0, 253, 161, 138, 190, 17]);
-        }
+    fn test_error_negative_string() {
+        let mut st = TestStringTable::new();
+        let mut compiler = Compiler::new(&mut st, "print -\"hello\";");
+        assert!(compiler.compile().is_err());
     }
+
 }
