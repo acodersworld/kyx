@@ -1,3 +1,4 @@
+use std::fmt;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Token<'a> {
@@ -48,6 +49,66 @@ pub enum Token<'a> {
     Eof
 }
 
+impl Token<'_> {
+    fn as_string(self: &Self) -> String {
+        let s = match self {
+            Self::Struct => "struct",
+            Self::Interface => "interface",
+            Self::While => "while",
+            Self::For => "for",
+            Self::Return => "return",
+            Self::Print => "print",
+            Self::Let => "",
+            Self::Mut => "",
+            Self::Fn => "",
+            Self::True => "",
+            Self::False => "",
+
+
+            Self::Identifier(id) => id,
+            Self::Integer(i) => return i.to_string(),
+            Self::Float(f) => return f.to_string(),
+            Self::Str(s) => s,
+
+            Self::Plus => "+",
+            Self::Minus => "-",
+            Self::Slash => "/",
+            Self::Star => "*",
+
+            Self::LeftBrace => "{",
+            Self::RightBrace => "}",
+            Self::LeftParen => "(",
+            Self::RightParen => ")",
+            Self::LeftBracket => "[",
+            Self::RightBracket => "]",
+
+            Self::Less => "<",
+            Self::LessEqual => "<=",
+            Self::Greater => ">",
+            Self::GreaterEqual => ">=",
+
+            Self::Bang => "!",
+            Self::BangEqual => "!=",
+            Self::Equal => "=",
+            Self::EqualEqual => "==",
+
+            Self::Dot => ".",
+            Self::SemiColon => ";",
+            Self::Comma => ",",
+
+            Self::Eof => "<EOF>"
+        };
+
+        s.to_string()
+    }
+}
+
+impl fmt::Display for Token<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_string())
+    }
+}
+
 pub struct Scanner<'a> {
     src: &'a str,
     peeked_token: Option<Token<'a>>,
@@ -63,10 +124,6 @@ impl<'a> Scanner<'a> {
             current_idx: 0,
             current_line: 1
         }
-    }
-
-    pub fn line(self: &Self) -> u32 {
-        self.current_line
     }
 
     fn peek(self: &Self) -> char {
@@ -150,7 +207,7 @@ impl<'a> Scanner<'a> {
         Ok(Token::Str(&self.src[1..self.current_idx-1]))
     }
 
-    fn number(self: &mut Self, sign: i32) -> Result<Token<'a>, String> {
+    fn number(self: &mut Self) -> Result<Token<'a>, String> {
         while !self.at_eof() && self.peek().is_numeric() {
             self.advance();
         }
@@ -229,14 +286,14 @@ impl<'a> Scanner<'a> {
             return Ok(self.identifier())
         }
         else if c.is_digit(10) {
-            return self.number(1)
+            return self.number()
         }
 
         match c {
             '+' => Ok(Token::Plus),
             '-' => {
                 if self.peek().is_digit(10) {
-                    return self.number(-1)
+                    return self.number()
                 }
 
                 Ok(Token::Minus)
@@ -312,15 +369,15 @@ mod tests {
                     ".to_owned();
         let mut scanner = Scanner::new(&src);
         scanner.scan_token().unwrap();
-        assert_eq!(scanner.line(), 2);
+        assert_eq!(scanner.current_line, 2);
 
         scanner.scan_token().unwrap();
-        assert_eq!(scanner.line(), 3);
+        assert_eq!(scanner.current_line, 3);
         scanner.scan_token().unwrap();
-        assert_eq!(scanner.line(), 3);
+        assert_eq!(scanner.current_line, 3);
 
         scanner.scan_token().unwrap();
-        assert_eq!(scanner.line(), 4);
+        assert_eq!(scanner.current_line, 4);
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
     }
@@ -389,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn test_number() {
+    fn test_integer() {
         {
             let src = "123".to_owned();
             let mut scanner = Scanner::new(&src);
@@ -405,7 +462,10 @@ mod tests {
 
             assert_eq!(scanner.scan_token(), Ok(Token::Eof));
         }
+    }
 
+    #[test]
+    fn test_float() {
         {
             let src = "3.142".to_owned();
             let mut scanner = Scanner::new(&src);
@@ -419,17 +479,18 @@ mod tests {
             let mut scanner = Scanner::new(&src);
             assert!(scanner.scan_token().is_err());
         }
+    }
 
-        {
-            let src = "467 1.45 20.1 50".to_owned();
-            let mut scanner = Scanner::new(&src);
-            assert_eq!(scanner.scan_token(), Ok(Token::Integer(467)));
-            assert_eq!(scanner.scan_token(), Ok(Token::Float(1.45)));
-            assert_eq!(scanner.scan_token(), Ok(Token::Float(20.1)));
-            assert_eq!(scanner.scan_token(), Ok(Token::Integer(50)));
+    #[test]
+    fn test_numbers() {
+        let src = "467 1.45 20.1 50".to_owned();
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::Integer(467)));
+        assert_eq!(scanner.scan_token(), Ok(Token::Float(1.45)));
+        assert_eq!(scanner.scan_token(), Ok(Token::Float(20.1)));
+        assert_eq!(scanner.scan_token(), Ok(Token::Integer(50)));
 
-            assert_eq!(scanner.scan_token(), Ok(Token::Eof));
-        }
+        assert_eq!(scanner.scan_token(), Ok(Token::Eof));
     }
 
     #[test]

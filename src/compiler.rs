@@ -3,7 +3,6 @@ use crate::chunk::Chunk;
 use crate::opcode;
 use crate::var_len_int;
 use crate::float;
-use crate::vm::VM;
 
 use std::vec::Vec;
 
@@ -21,17 +20,21 @@ enum ValueType {
     Str
 }
 
-pub struct Compiler<'a, 'vm> {
-    vm: &'vm mut VM,
+pub trait StringTable {
+    fn create_constant_str(self: &mut Self, s: &str) -> u8;
+}
+
+pub struct Compiler<'a, 'st, T> {
+    string_table: &'st mut T,
     scanner: Scanner<'a>,
     chunk: Chunk,
     type_stack: Vec<ValueType>
 }
 
-impl<'a, 'vm> Compiler<'a, 'vm> {
-    pub fn new(vm: &'vm mut VM, src: &'a str) -> Compiler<'a, 'vm> {
+impl<'a, 'st, T: StringTable> Compiler<'a, 'st, T> {
+    pub fn new(string_table: &'st mut T, src: &'a str) -> Compiler<'a, 'st, T> {
         Compiler{
-            vm,
+            string_table,
             scanner: Scanner::new(&src),
             chunk: Chunk::new(),
             type_stack: Vec::new()
@@ -53,7 +56,7 @@ impl<'a, 'vm> Compiler<'a, 'vm> {
             return Ok(())
         }
 
-        Err("Expected ')'".to_owned())
+        Err(format!("Expected {}", token))
     }
 
     fn statement(self: &mut Self) -> Result<(), String> {
@@ -64,6 +67,7 @@ impl<'a, 'vm> Compiler<'a, 'vm> {
             self.expression()?;
         }
 
+        self.consume(Token::SemiColon)?;
         Ok(())
     }
 
@@ -190,7 +194,7 @@ impl<'a, 'vm> Compiler<'a, 'vm> {
             },
             Ok(Token::Str(s)) => {
                 self.chunk.write_byte(opcode::CONSTANT_STRING);
-                self.chunk.write_byte(self.vm.create_constant_str(s));
+                self.chunk.write_byte(self.string_table.create_constant_str(s));
                 self.type_stack.push(ValueType::Str);
             },
             Err(msg) => {
@@ -209,10 +213,25 @@ impl<'a, 'vm> Compiler<'a, 'vm> {
 mod test {
     use super::*;
 
+    struct TestStringTable {
+    }
+
+    impl TestStringTable {
+        fn new() -> TestStringTable {
+            TestStringTable{}
+        }
+    }
+
+    impl StringTable for TestStringTable {
+        fn create_constant_str(self: &mut Self, _s: &str) -> u8 {
+            return 0;
+        }
+    }
+
     #[test]
     fn test_float() {
-        let mut vm = VM::new();
-        let mut compiler = Compiler::new(&mut vm, "3.142");
+        let mut st = TestStringTable::new();
+        let mut compiler = Compiler::new(&mut st, "3.142;");
         assert_eq!(compiler.compile(), Ok(()));
         let chunk = compiler.take_chunk();
         assert_eq!(chunk.code, [1, 135, 22, 73, 64]);
@@ -221,16 +240,16 @@ mod test {
     #[test]
     fn test_integer() {
         {
-            let mut vm = VM::new();
-            let mut compiler = Compiler::new(&mut vm, "735928559");
+            let mut st = TestStringTable::new();
+            let mut compiler = Compiler::new(&mut st, "735928559;");
             assert_eq!(compiler.compile(), Ok(()));
             let chunk = compiler.take_chunk();
             assert_eq!(chunk.code, [0, 130, 222, 245, 193, 111]);
         }
 
         {
-            let mut vm = VM::new();
-            let mut compiler = Compiler::new(&mut vm, "-735928559");
+            let mut st = TestStringTable::new();
+            let mut compiler = Compiler::new(&mut st, "-735928559;");
             assert_eq!(compiler.compile(), Ok(()));
             let chunk = compiler.take_chunk();
             assert_eq!(chunk.code, [0, 253, 161, 138, 190, 17]);

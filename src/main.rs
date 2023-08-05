@@ -6,10 +6,17 @@ mod var_len_int;
 mod float;
 mod disassembler;
 mod value;
-mod interned_strings;
 mod vm;
 
 use rustyline::DefaultEditor;
+
+pub struct DefaultPrinter {}
+
+impl vm::Printer for DefaultPrinter {
+    fn print(&mut self, s: &str) {
+        println!("{}", s);
+    }
+}
 
 fn main() -> rustyline::Result<()> {
     let mut rl = DefaultEditor::new()?;
@@ -18,7 +25,8 @@ fn main() -> rustyline::Result<()> {
         let line = rl.readline(">> ");
         match line {
             Ok(l) => {
-                let mut machine = vm::VM::new();
+                let mut printer = DefaultPrinter{};
+                let mut machine = vm::VM::new(&mut printer);
                 if let Err(e) = machine.interpret(&l) {
                     println!("Error: {}", e);
                 }

@@ -1,41 +1,47 @@
 use std::vec::Vec;
 use std::ptr::NonNull;
 
-use crate::compiler::Compiler;
+use crate::compiler::{Compiler, StringTable};
 use crate::value::{Value, ManagedValue, FromValue, StringValue};
 use crate::opcode;
 use crate::var_len_int;
 use crate::float;
 use crate::disassembler;
 
-pub struct VM {
+pub trait Printer {
+    fn print(&mut self, s: &str);
+}
+
+pub struct VM<'printer> {
     stack: Vec<Value>,
     objects: Vec<ManagedValue>,
     constant_strs: Vec<NonNull<StringValue>>,
-    offset: usize
+    offset: usize,
+
+    printer: &'printer mut dyn Printer
 }
 
-impl VM {
-    pub fn new() -> VM {
-        VM {
-            stack: Vec::new(),
-            objects: Vec::new(),
-            constant_strs: Vec::new(),
-            offset: 0
-        }
-    }
-
-    pub fn top(self: &Self) -> &Value {
-        self.stack.last().unwrap()
-    }
-
-    pub fn create_constant_str(self: &mut Self, s: &str) -> u8 {
+impl StringTable for VM<'_> {
+    fn create_constant_str(self: &mut Self, s: &str) -> u8 {
         let mut str_val = Box::new(StringValue { val: s.to_string(), hash: 0 });
         let ptr = unsafe { NonNull::new_unchecked(str_val.as_mut() as *mut _) };
         self.objects.push(ManagedValue::Str(str_val));
 
         self.constant_strs.push(ptr);
         (self.constant_strs.len() - 1) as u8
+    }
+
+}
+
+impl<'printer> VM<'printer> {
+    pub fn new(printer: &'printer mut dyn Printer) -> VM<'printer> {
+        VM {
+            stack: Vec::new(),
+            objects: Vec::new(),
+            constant_strs: Vec::new(),
+            offset: 0,
+            printer
+        }
     }
 
     fn run(self: &mut Self, code: &Vec<u8>) {
@@ -149,11 +155,80 @@ impl VM {
 
     fn print(self: &mut Self) {
         let value = self.stack.pop().unwrap();
-        match value {
-            Value::Float(f) => println!("{}", f),
-            Value::Integer(i) => println!("{}", i),
-            Value::Str(s) => println!("{}", unsafe { &s.as_ref().val }),
-        }
+        let s = match value {
+            Value::Float(f) => format!("{}", f),
+            Value::Integer(i) => format!("{}", i),
+            Value::Str(s) => format!("{}", unsafe { &s.as_ref().val }),
+        };
+
+        self.printer.print(&s);
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    struct TestPrinter {
+        strings: Vec<String>
+    }
+
+    impl TestPrinter {
+        fn new() -> TestPrinter {
+            TestPrinter { strings: Vec::new() }
+        }
+    }
+
+    impl Printer for TestPrinter {
+        fn print(&mut self, s: &str) {
+            self.strings.push(s.to_string());
+        }
+    }
+
+    #[test]
+    fn print_integer() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 12345;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "12345");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print -12345;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "-12345");
+        }
+    }
+
+    #[test]
+    fn print_float() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 3.142;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "3.142");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print -3.142;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "-3.142");
+        }
+    }
+
+    #[test]
+    fn print_constant_string() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+        assert_eq!(vm.interpret("print \"Hello, World\";"), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "Hello, World");
+    }
+}

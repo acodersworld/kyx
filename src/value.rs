@@ -8,8 +8,8 @@ pub struct StringValue {
 
 #[derive(Debug)]
 pub enum ManagedValue {
-    Float(f32),
-    Integer(i32),
+//    Float(f32),
+//    Integer(i32),
     Str(Box<StringValue>)
 }
 
