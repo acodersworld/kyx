@@ -2,7 +2,7 @@ use std::vec::Vec;
 use std::collections::HashMap;
 use std::ptr::NonNull;
 
-use crate::compiler::{Compiler, StringTable};
+use crate::compiler::{Compiler, CompilerState, StringTable};
 use crate::value::{Value, GcValue, FromValue, StringValue};
 use crate::opcode;
 use crate::var_len_int;
@@ -13,19 +13,14 @@ pub trait Printer {
     fn print(&mut self, s: &str);
 }
 
-#[derive(Debug)]
-struct Global {
-    readonly: bool,
-    value: Value
-}
-
 pub struct VM<'printer> {
     stack: Vec<Value>,
     objects: Vec<GcValue>,
     constant_strs: Vec<NonNull<StringValue>>,
-    globals: HashMap<NonNull<StringValue>, Global>,
+    globals: HashMap<NonNull<StringValue>, Value>,
     offset: usize,
 
+    compiler_state: CompilerState,
     printer: &'printer mut dyn Printer
 }
 
@@ -55,6 +50,7 @@ impl<'printer> VM<'printer> {
             constant_strs: Vec::new(),
             globals: HashMap::new(),
             offset: 0,
+            compiler_state: CompilerState::new(),
             printer
         }
     }
@@ -88,16 +84,21 @@ impl<'printer> VM<'printer> {
     }
 
     pub fn interpret(self: &mut Self, src: &str) -> Result<(), String> {
-        let mut compiler = Compiler::new(self, src);
-        compiler.compile()?;
+        let save;
+        {
+            let mut compiler = Compiler::new(self, self.compiler_state.clone(), src);
+            compiler.compile()?;
 
-        let chunk = compiler.take_chunk();
-        let code = &chunk.code;
+            save = compiler.state.clone();
+            let chunk = compiler.take_chunk();
+            let code = &chunk.code;
 
-        let mut ds = disassembler::Disassembler::new(code);
-        ds.disassemble();
+            let mut ds = disassembler::Disassembler::new(code);
+            ds.disassemble();
 
-        self.run(code);
+            self.run(code);
+        }
+        self.compiler_state = save;
         Ok(())
     }
 
@@ -177,7 +178,7 @@ impl<'printer> VM<'printer> {
 
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
-        self.stack.push(self.globals[&name].value);
+        self.stack.push(self.globals[&name]);
     }
 
     fn define_global_constant(self: &mut Self, code: &Vec<u8>) {
@@ -190,7 +191,7 @@ impl<'printer> VM<'printer> {
         assert!(st.len() > 0);
 
         let value = st.pop().unwrap();
-        self.globals.insert(name, Global { readonly: true, value });
+        self.globals.insert(name, value);
     }
 
     fn print(self: &mut Self) {
