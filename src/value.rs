@@ -13,7 +13,7 @@ pub enum GcValue {
     Str(Box<StringValue>)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Value {
     Float(f32),
     Integer(i32),

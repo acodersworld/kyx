@@ -5,12 +5,14 @@ use crate::var_len_int;
 use crate::float;
 
 use std::vec::Vec;
+use std::fmt;
+use std::collections::HashMap;
 
 /*
     expression -> term
     term -> factor ( "-" | "+" factor )*
     factor -> primary ( "*" | "/" primary )*
-    primary -> NUMBER | FLOAT | STRING | "(" expression ")"
+    primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
  */
 
 #[derive(PartialEq, Clone, Copy)]
@@ -20,12 +22,25 @@ enum ValueType {
     Str
 }
 
+impl fmt::Display for ValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Integer => "int",
+            Self::Float => "float",
+            Self::Str => "string",
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
 pub trait StringTable {
     fn create_constant_str(self: &mut Self, s: &str) -> u8;
 }
 
 pub struct Compiler<'a, 'st, T> {
     string_table: &'st mut T,
+    globals: HashMap<&'a str, ValueType>,
     scanner: Scanner<'a>,
     chunk: Chunk,
     type_stack: Vec<ValueType>
@@ -35,6 +50,7 @@ impl<'a, 'st, T: StringTable> Compiler<'a, 'st, T> {
     pub fn new(string_table: &'st mut T, src: &'a str) -> Compiler<'a, 'st, T> {
         Compiler{
             string_table,
+            globals: HashMap::new(),
             scanner: Scanner::new(&src),
             chunk: Chunk::new(),
             type_stack: Vec::new()
@@ -42,7 +58,9 @@ impl<'a, 'st, T: StringTable> Compiler<'a, 'st, T> {
     }
 
     pub fn compile(self: &mut Self) -> Result<(), String> {
-        self.statement()?;
+        while self.scanner.peek_token()? != Token::Eof {
+            self.statement()?;
+        }
 
         Ok(())
     }
@@ -63,11 +81,61 @@ impl<'a, 'st, T: StringTable> Compiler<'a, 'st, T> {
         if self.scanner.match_token(Token::Print)? {
             self.print()?;
         }
+        else if self.scanner.match_token(Token::Let)? {
+            self.let_statement()?;
+        }
         else {
             self.expression()?;
         }
 
         self.consume(Token::SemiColon)?;
+        Ok(())
+    }
+
+    fn let_statement(self: &mut Self) -> Result<(), String> {
+        let mutable = self.scanner.match_token(Token::Mut)?;
+        let identifier_name = match self.scanner.scan_token()? {
+            Token::Identifier(ident) => ident,
+            _ => return Err("Expected identifier after 'let'".to_owned())
+        };
+
+        self.consume(Token::Colon)?;
+
+        let var_type = match self.scanner.scan_token()? {
+            Token::TypeInt => ValueType::Integer,
+            Token::TypeFloat => ValueType::Float,
+            Token::TypeString => ValueType::Str,
+            token => return Err(format!("Expected type but got {}", token))
+        };
+
+        if self.globals.insert(identifier_name, var_type).is_some() {
+            return Err(format!("Global {} is already defined", identifier_name))
+        }
+
+        self.consume(Token::Equal)?;
+        self.expression()?;
+
+        let expr_type = *self.type_stack.last().unwrap();
+        if var_type != expr_type {
+            return Err(format!("Expected type {}, got {}", var_type, expr_type))
+        }
+
+        let define_op = if mutable { opcode::DEFINE_GLOBAL_VARIABLE } else { opcode::DEFINE_GLOBAL_CONSTANT };
+        self.chunk.write_byte(define_op);
+        self.chunk.write_byte(self.string_table.create_constant_str(identifier_name));
+
+        Ok(())
+    }
+
+    fn identifier(self: &mut Self, name: &str) -> Result<(), String> {
+        let variable_type = match self.globals.get(name) {
+            None => return Err(format!("Global {} not defined", name)),
+            Some(&x) => x
+        };
+
+        self.chunk.write_byte(opcode::PUSH_GLOBAL);
+        self.chunk.write_byte(self.string_table.create_constant_str(name));
+        self.type_stack.push(variable_type);
         Ok(())
     }
 
@@ -189,10 +257,15 @@ impl<'a, 'st, T: StringTable> Compiler<'a, 'st, T> {
     fn primary(self: &mut Self) -> Result<(), String> {
         let t = self.scanner.scan_token();
         match t {
+            Ok(Token::Let) => {
+                self.let_statement()?;
+            },
+            Ok(Token::Identifier(name)) => {
+                self.identifier(name)?;
+            },
             Ok(Token::LeftParen) => {
                 self.expression()?;
                 self.consume(Token::RightParen)?;
-                return Ok(())
             },
             Ok(Token::Minus) => {
                 let next = self.scanner.scan_token();
@@ -262,6 +335,33 @@ mod test {
         let mut st = TestStringTable::new();
         let mut compiler = Compiler::new(&mut st, "print -\"hello\";");
         assert!(compiler.compile().is_err());
+    }
+
+    #[test]
+    fn test_let_statement() {
+        {
+            let mut st = TestStringTable::new();
+            let mut compiler = Compiler::new(&mut st, "let identifier: int = 0;");
+            assert_eq!(compiler.compile(), Ok(()));
+        }
+
+        {
+            let mut st = TestStringTable::new();
+            let mut compiler = Compiler::new(&mut st, "let identifier: float = 0.0;");
+            assert_eq!(compiler.compile(), Ok(()));
+        }
+
+        {
+            let mut st = TestStringTable::new();
+            let mut compiler = Compiler::new(&mut st, "let identifier: string = \"hello\";");
+            assert_eq!(compiler.compile(), Ok(()));
+        }
+
+        {
+            let mut st = TestStringTable::new();
+            let mut compiler = Compiler::new(&mut st, "let identifier: int = \"hello\";");
+            assert!(compiler.compile().is_err());
+        }
     }
 
 }

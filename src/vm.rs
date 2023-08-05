@@ -1,4 +1,5 @@
 use std::vec::Vec;
+use std::collections::HashMap;
 use std::ptr::NonNull;
 
 use crate::compiler::{Compiler, StringTable};
@@ -12,10 +13,17 @@ pub trait Printer {
     fn print(&mut self, s: &str);
 }
 
+#[derive(Debug)]
+struct Global {
+    readonly: bool,
+    value: Value
+}
+
 pub struct VM<'printer> {
     stack: Vec<Value>,
     objects: Vec<GcValue>,
     constant_strs: Vec<NonNull<StringValue>>,
+    globals: HashMap<NonNull<StringValue>, Global>,
     offset: usize,
 
     printer: &'printer mut dyn Printer
@@ -23,6 +31,13 @@ pub struct VM<'printer> {
 
 impl StringTable for VM<'_> {
     fn create_constant_str(self: &mut Self, s: &str) -> u8 {
+        for (idx, string) in self.constant_strs.iter().enumerate() {
+            let val = unsafe { &string.as_ref().val };
+            if val == s {
+                return idx as u8
+            }
+        }
+
         let mut str_val = Box::new(StringValue { val: s.to_string(), hash: 0 });
         let ptr = unsafe { NonNull::new_unchecked(str_val.as_mut() as *mut _) };
         self.objects.push(GcValue::Str(str_val));
@@ -38,6 +53,7 @@ impl<'printer> VM<'printer> {
             stack: Vec::new(),
             objects: Vec::new(),
             constant_strs: Vec::new(),
+            globals: HashMap::new(),
             offset: 0,
             printer
         }
@@ -53,6 +69,8 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_INTEGER => self.push_integer(code),
                 opcode::CONSTANT_FLOAT => self.push_float(code),
                 opcode::CONSTANT_STRING => self.push_constant_string(code),
+                opcode::PUSH_GLOBAL => self.push_global(code),
+                opcode::DEFINE_GLOBAL_CONSTANT => self.define_global_constant(code),
                 opcode::ADDI => self.integer_add(),
                 opcode::SUBI => self.integer_sub(),
                 opcode::MULI => self.integer_mul(),
@@ -76,9 +94,10 @@ impl<'printer> VM<'printer> {
         let chunk = compiler.take_chunk();
         let code = &chunk.code;
 
-        self.run(code);
         let mut ds = disassembler::Disassembler::new(code);
         ds.disassemble();
+
+        self.run(code);
         Ok(())
     }
 
@@ -152,6 +171,28 @@ impl<'printer> VM<'printer> {
         self.stack.push(Value::Str(self.constant_strs[idx]));
     }
 
+    fn push_global(self: &mut Self, code: &Vec<u8>) {
+        let idx = code[self.offset] as usize;
+        self.offset += 1;
+
+        let name = self.constant_strs[idx];
+        assert!(self.globals.contains_key(&name));
+        self.stack.push(self.globals[&name].value);
+    }
+
+    fn define_global_constant(self: &mut Self, code: &Vec<u8>) {
+        let idx = code[self.offset] as usize;
+        self.offset += 1;
+
+        let name = self.constant_strs[idx];
+        let st = &mut self.stack;
+        assert!(!self.globals.contains_key(&name));
+        assert!(st.len() > 0);
+
+        let value = st.pop().unwrap();
+        self.globals.insert(name, Global { readonly: true, value });
+    }
+
     fn print(self: &mut Self) {
         let value = self.stack.pop().unwrap();
         let s = match value {
@@ -160,7 +201,6 @@ impl<'printer> VM<'printer> {
             Value::Str(s) => format!("{}", unsafe { &s.as_ref().val }),
         };
 
-        println!("{}", s);
         self.printer.print(&s);
     }
 }
@@ -317,5 +357,19 @@ mod test {
         assert_eq!(vm.interpret("print \"Hello, World\";"), Ok(()));
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "Hello, World");
+    }
+
+    #[test]
+    fn print_global() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let integer: int = 10;
+            print integer;";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "10");
     }
 }

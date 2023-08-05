@@ -21,12 +21,12 @@ impl vm::Printer for DefaultPrinter {
 fn main() -> rustyline::Result<()> {
     let mut rl = DefaultEditor::new()?;
 
+    let mut printer = DefaultPrinter{};
+    let mut machine = vm::VM::new(&mut printer);
     loop {
         let line = rl.readline(">> ");
         match line {
             Ok(l) => {
-                let mut printer = DefaultPrinter{};
-                let mut machine = vm::VM::new(&mut printer);
                 if let Err(e) = machine.interpret(&l) {
                     println!("Error: {}", e);
                 }

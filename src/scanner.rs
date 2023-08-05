@@ -14,6 +14,9 @@ pub enum Token<'a> {
     True,
     False,
 
+    TypeInt,
+    TypeFloat,
+    TypeString,
 
     Identifier(&'a str),
     Integer(i32),
@@ -44,6 +47,7 @@ pub enum Token<'a> {
 
     Dot,
     SemiColon,
+    Colon,
     Comma,
 
     Eof
@@ -64,6 +68,9 @@ impl Token<'_> {
             Self::True => "",
             Self::False => "",
 
+            Self::TypeInt => "int",
+            Self::TypeFloat => "float",
+            Self::TypeString => "string",
 
             Self::Identifier(id) => id,
             Self::Integer(i) => return i.to_string(),
@@ -94,6 +101,7 @@ impl Token<'_> {
 
             Self::Dot => ".",
             Self::SemiColon => ";",
+            Self::Colon => ":",
             Self::Comma => ",",
 
             Self::Eof => "<EOF>"
@@ -179,6 +187,9 @@ impl<'a> Scanner<'a> {
 
         let ident = &self.src[..self.current_idx];
         match ident {
+            "int" => Token::TypeInt,
+            "float" => Token::TypeFloat,
+            "string" => Token::TypeString,
             "struct" => Token::Struct,
             "interface" => Token::Interface,
             "fn" => Token::Fn,
@@ -303,6 +314,7 @@ impl<'a> Scanner<'a> {
 
             '.' => Ok(Token::Dot),
             ';' => Ok(Token::SemiColon),
+            ':' => Ok(Token::Colon),
             ',' => Ok(Token::Comma),
 
             '!' => {
@@ -506,10 +518,11 @@ mod tests {
 
     #[test]
     fn test_punctuation() {
-        let src = ".;,".to_owned();
+        let src = ".;:,".to_owned();
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::Dot));
         assert_eq!(scanner.scan_token(), Ok(Token::SemiColon));
+        assert_eq!(scanner.scan_token(), Ok(Token::Colon));
         assert_eq!(scanner.scan_token(), Ok(Token::Comma));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));

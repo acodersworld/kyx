@@ -24,6 +24,8 @@ impl<'a> Disassembler<'a> {
                 opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
                 opcode::CONSTANT_STRING => self.constant_string_instruction(),
+                opcode::PUSH_GLOBAL => self.push_global(),
+                opcode::DEFINE_GLOBAL_CONSTANT => self.define_global_constant(),
                 opcode::ADDI => self.simple_instruction("addi"),
                 opcode::SUBI => self.simple_instruction("subi"),
                 opcode::MULI => self.simple_instruction("muli"),
@@ -66,6 +68,20 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("CONSTANT STRING: idx({})", idx);
+    }
+
+    fn push_global(self: &mut Self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("PUSH GLOBAL: idx({})", idx);
+    }
+
+    fn define_global_constant(self: &mut Self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("DEFINE GLOBAL CONSTANT: idx({})", idx);
     }
 }
 
