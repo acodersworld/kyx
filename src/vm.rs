@@ -93,7 +93,7 @@ impl<'printer> VM<'printer> {
         let right = T::from_value(&st.pop().unwrap()).unwrap();
         let left = T::from_value(&st.last().unwrap()).unwrap();
 
-        let result = op(right, left);
+        let result = op(left, right);
         *st.last_mut().unwrap() = result; 
     }
 
@@ -161,6 +161,7 @@ impl<'printer> VM<'printer> {
             Value::Str(s) => format!("{}", unsafe { &s.as_ref().val }),
         };
 
+        println!("{}", s);
         self.printer.print(&s);
     }
 }
@@ -220,6 +221,93 @@ mod test {
             assert_eq!(vm.interpret("print -3.142;"), Ok(()));
             assert_eq!(printer.strings.len(), 1);
             assert_eq!(printer.strings[0], "-3.142");
+        }
+    }
+
+    // Once an api is set in place, it should be used instead of print
+    #[test]
+    fn integer_arithmetic() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 1+2;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "3");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 1-2;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "-1");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 1+-2;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "-1");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 2*3;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "6");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 6/2;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "3");
+        }
+    }
+
+    #[test]
+    fn float_arithmetic() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 1.2+2.3;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "3.5");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 1.5+-2.6;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "-1.0999999");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 1.5-2.6;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "-1.0999999");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 2.5 * 1.5;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "3.75");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 8.4 / 4.2;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "2");
         }
     }
 

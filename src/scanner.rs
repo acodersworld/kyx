@@ -291,13 +291,7 @@ impl<'a> Scanner<'a> {
 
         match c {
             '+' => Ok(Token::Plus),
-            '-' => {
-                if self.peek().is_digit(10) {
-                    return self.number()
-                }
-
-                Ok(Token::Minus)
-            }
+            '-' => Ok(Token::Minus),
             '*' => Ok(Token::Star),
 
             '{' => Ok(Token::LeftBrace),
@@ -458,7 +452,8 @@ mod tests {
         {
             let src = "-123".to_owned();
             let mut scanner = Scanner::new(&src);
-            assert_eq!(scanner.scan_token(), Ok(Token::Integer(-123)));
+            assert_eq!(scanner.scan_token(), Ok(Token::Minus));
+            assert_eq!(scanner.scan_token(), Ok(Token::Integer(123)));
 
             assert_eq!(scanner.scan_token(), Ok(Token::Eof));
         }

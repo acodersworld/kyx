@@ -164,6 +164,28 @@ impl<'a, 'st, T: StringTable> Compiler<'a, 'st, T> {
         Ok(())
     }
 
+    fn integer(self: &mut Self, i: i32) {
+        self.chunk.write_byte(opcode::CONSTANT_INTEGER);
+        let mut encoder = var_len_int::Encoder::new(i);
+        loop {
+            let (byte, complete) = encoder.step_encode();
+            self.chunk.write_byte(byte);
+
+            if complete {
+                break;
+            }
+        }
+        self.type_stack.push(ValueType::Integer);
+    }
+
+    fn float(self: &mut Self, f: f32) {
+        self.chunk.write_byte(opcode::CONSTANT_FLOAT);
+        for byte in float::encode(f) {
+            self.chunk.write_byte(byte);
+        }
+        self.type_stack.push(ValueType::Float);
+    }
+
     fn primary(self: &mut Self) -> Result<(), String> {
         let t = self.scanner.scan_token();
         match t {
@@ -172,25 +194,25 @@ impl<'a, 'st, T: StringTable> Compiler<'a, 'st, T> {
                 self.consume(Token::RightParen)?;
                 return Ok(())
             },
-            Ok(Token::Integer(i)) => {
-                self.chunk.write_byte(opcode::CONSTANT_INTEGER);
-                let mut encoder = var_len_int::Encoder::new(i);
-                loop {
-                    let (byte, complete) = encoder.step_encode();
-                    self.chunk.write_byte(byte);
-
-                    if complete {
-                        break;
+            Ok(Token::Minus) => {
+                let next = self.scanner.scan_token();
+                match next {
+                    Ok(Token::Integer(i)) => {
+                        self.integer(-i);
+                    },
+                    Ok(Token::Float(f)) => {
+                        self.float(-f);
+                    },
+                    _ => {
+                        println!("Expected number after '-'");
                     }
                 }
-                self.type_stack.push(ValueType::Integer);
+            },
+            Ok(Token::Integer(i)) => {
+                self.integer(i);
             },
             Ok(Token::Float(f)) => {
-                self.chunk.write_byte(opcode::CONSTANT_FLOAT);
-                for byte in float::encode(f) {
-                    self.chunk.write_byte(byte);
-                }
-                self.type_stack.push(ValueType::Float);
+                self.float(f);
             },
             Ok(Token::Str(s)) => {
                 self.chunk.write_byte(opcode::CONSTANT_STRING);
