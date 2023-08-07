@@ -57,46 +57,53 @@ struct Global {
     value_type: ValueType
 }
 
-#[derive(Clone)]
-pub struct CompilerState {
-    globals: HashMap<String, Global>,
-}
-
 #[derive(PartialEq)]
 struct Type {
     value_type: ValueType,
     read_only: bool
 }
 
-impl CompilerState {
-    pub fn new() -> CompilerState {
-        CompilerState {
-            globals: HashMap::new()
+pub struct Compiler {
+    globals: HashMap<String, Global>,
+}
+
+impl Compiler {
+    pub fn new() -> Compiler {
+        Compiler{
+            globals: HashMap::new(),
         }
     }
-}
 
-pub struct Compiler<'a, 'table, T> {
-    string_table: &'table mut T,
-    pub state: CompilerState,
-    scanner: Scanner<'a>,
-    chunk: Chunk,
-    type_stack: Vec<Type>
-}
-
-impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
-    pub fn new(string_table: &'table mut T, state: CompilerState, src: &'a str) -> Compiler<'a, 'table, T> {
-        Compiler{
+    pub fn compile<'a, T: StringTable>(self: &mut Self, string_table: &'a mut T, src: &'a str) -> Result<Chunk, String> {
+        let mut compiler = SrcCompiler::<'_, T> {
+            globals: &mut self.globals,
             string_table,
-            state,
             scanner: Scanner::new(&src),
             chunk: Chunk::new(),
-            type_stack: Vec::new()
-        }
+            type_stack: Vec::new(),
+        };
+
+        compiler.compile()?;
+        Ok(compiler.chunk)
     }
 
-    pub fn take_chunk(self: Self) -> Chunk {
-        self.chunk
+}
+
+pub struct SrcCompiler<'a, T> {
+    globals: &'a mut HashMap<String, Global>,
+    scanner: Scanner<'a>,
+    chunk: Chunk,
+    type_stack: Vec<Type>,
+    string_table: &'a mut T
+}
+
+impl<'a, T: StringTable> SrcCompiler<'a, T> {
+    pub fn compile(self: &mut Self) -> Result<(), String> {
+        while self.scanner.peek_token()? != Token::Eof {
+            self.declaration()?;
+        }
+
+        Ok(())
     }
 
     fn consume(self: &mut Self, token: Token) -> Result<(), String> {
@@ -105,14 +112,6 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
         }
 
         Err(format!("Expected {}", token))
-    }
-
-    pub fn compile(self: &mut Self) -> Result<(), String> {
-        while self.scanner.peek_token()? != Token::Eof {
-            self.declaration()?;
-        }
-
-        Ok(())
     }
 
     fn declaration(self: &mut Self) -> Result<(), String> {
@@ -165,7 +164,7 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
             token => return Err(format!("Expected type but got {}", token))
         };
 
-        if self.state.globals.insert(identifier_name.to_string(), Global { read_only: !mutable, value_type: var_type }).is_some() {
+        if self.globals.insert(identifier_name.to_string(), Global { read_only: !mutable, value_type: var_type }).is_some() {
             return Err(format!("Global {} is already defined", identifier_name))
         }
 
@@ -184,7 +183,7 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
     }
 
     fn identifier(self: &mut Self, name: &str) -> Result<(), String> {
-        let variable_type = match self.state.globals.get(name) {
+        let variable_type = match self.globals.get(name) {
             None => return Err(format!("Global {} not defined", name)),
             Some(x) => x
         };
@@ -193,7 +192,7 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
             self.expression()?;
 
             assert!(self.type_stack.len() > 0);
-            if let Some(g) = self.state.globals.get(name) {
+            if let Some(g) = self.globals.get(name) {
                 let expr_type = self.type_stack.last().unwrap().value_type;
                 if g.value_type != expr_type {
                     return Err(format!("Expected type {}, got {}", g.value_type, expr_type))
@@ -414,49 +413,42 @@ mod test {
 
     #[test]
     fn test_error_missing_semicolon() {
-        let state = CompilerState::new();
         let mut table = TestStringTable::new();
-        let mut compiler = Compiler::new(&mut table, state, "print 1");
-        assert!(compiler.compile().is_err());
+        let mut compiler = Compiler::new();
+        assert!(compiler.compile(&mut table, "print 1").is_err());
     }
 
     #[test]
     fn test_error_negative_string() {
-        let state = CompilerState::new();
         let mut table = TestStringTable::new();
-        let mut compiler = Compiler::new(&mut table, state, "print -\"hello\";");
-        assert!(compiler.compile().is_err());
+        let mut compiler = Compiler::new();
+        assert!(compiler.compile(&mut table, "print -\"hello\";").is_err());
     }
 
     #[test]
     fn test_let_statement() {
         {
-            let state = CompilerState::new();
             let mut table = TestStringTable::new();
-            let mut compiler = Compiler::new(&mut table, state, "let identifier: int = 0;");
-            assert_eq!(compiler.compile(), Ok(()));
+            let mut compiler = Compiler::new();
+            assert_eq!(compiler.compile(&mut table, "let identifier: int = 0;").err(), None);
         }
 
         {
-            let state = CompilerState::new();
             let mut table = TestStringTable::new();
-            let mut compiler = Compiler::new(&mut table, state, "let identifier: float = 0.0;");
-            assert_eq!(compiler.compile(), Ok(()));
+            let mut compiler = Compiler::new();
+            assert_eq!(compiler.compile(&mut table, "let identifier: float = 0.0;").err(), None);
         }
 
         {
-            let state = CompilerState::new();
             let mut table = TestStringTable::new();
-            let mut compiler = Compiler::new(&mut table, state, "let identifier: string = \"hello\";");
-            assert_eq!(compiler.compile(), Ok(()));
+            let mut compiler = Compiler::new();
+            assert_eq!(compiler.compile(&mut table, "let identifier: string = \"hello\";").err(), None);
         }
 
         {
-            let state = CompilerState::new();
             let mut table = TestStringTable::new();
-            let mut compiler = Compiler::new(&mut table, state, "let identifier: int = \"hello\";");
-            assert!(compiler.compile().is_err());
+            let mut compiler = Compiler::new();
+            assert!(compiler.compile(&mut table, "let identifier: int = \"hello\";").is_err());
         }
     }
-
 }

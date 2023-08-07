@@ -2,7 +2,7 @@ use std::vec::Vec;
 use std::collections::HashMap;
 use std::ptr::NonNull;
 
-use crate::compiler::{Compiler, CompilerState, StringTable};
+use crate::compiler::{Compiler, StringTable};
 use crate::value::{Value, GcValue, FromValue, StringValue};
 use crate::opcode;
 use crate::var_len_int;
@@ -20,11 +20,16 @@ pub struct VM<'printer> {
     globals: HashMap<NonNull<StringValue>, Value>,
     offset: usize,
 
-    compiler_state: CompilerState,
+    compiler: Compiler,
     printer: &'printer mut dyn Printer
 }
 
-impl StringTable for VM<'_> {
+struct VMStringTable<'a> {
+    objects: &'a mut Vec<GcValue>,
+    constant_strs: &'a mut Vec<NonNull<StringValue>>
+}
+
+impl StringTable for VMStringTable<'_> {
     fn create_constant_str(self: &mut Self, s: &str) -> u8 {
         for (idx, string) in self.constant_strs.iter().enumerate() {
             let val = unsafe { &string.as_ref().val };
@@ -50,7 +55,7 @@ impl<'printer> VM<'printer> {
             constant_strs: Vec::new(),
             globals: HashMap::new(),
             offset: 0,
-            compiler_state: CompilerState::new(),
+            compiler: Compiler::new(),
             printer
         }
     }
@@ -86,21 +91,18 @@ impl<'printer> VM<'printer> {
     }
 
     pub fn interpret(self: &mut Self, src: &str) -> Result<(), String> {
-        let save;
-        {
-            let mut compiler = Compiler::new(self, self.compiler_state.clone(), src);
-            compiler.compile()?;
+        let mut string_table = VMStringTable {
+            objects: &mut self.objects,
+            constant_strs: &mut self.constant_strs
+        };
 
-            save = compiler.state.clone();
-            let chunk = compiler.take_chunk();
-            let code = &chunk.code;
+        let chunk = self.compiler.compile(&mut string_table, src)?;
+        let code = &chunk.code;
 
-            let mut ds = disassembler::Disassembler::new(code);
-            ds.disassemble();
+        let mut ds = disassembler::Disassembler::new(code);
+        ds.disassemble();
 
-            self.run(code);
-        }
-        self.compiler_state = save;
+        self.run(code);
         Ok(())
     }
 
