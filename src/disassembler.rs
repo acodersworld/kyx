@@ -24,8 +24,9 @@ impl<'a> Disassembler<'a> {
                 opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
                 opcode::CONSTANT_STRING => self.constant_string_instruction(),
+                opcode::SET_GLOBAL => self.set_global(),
                 opcode::PUSH_GLOBAL => self.push_global(),
-                opcode::DEFINE_GLOBAL_CONSTANT => self.define_global_constant(),
+                opcode::DEFINE_GLOBAL => self.define_global(),
                 opcode::ADDI => self.simple_instruction("addi"),
                 opcode::SUBI => self.simple_instruction("subi"),
                 opcode::MULI => self.simple_instruction("muli"),
@@ -35,8 +36,10 @@ impl<'a> Disassembler<'a> {
                 opcode::MULF => self.simple_instruction("mulf"),
                 opcode::DIVF => self.simple_instruction("divf"),
                 opcode::PRINT => self.simple_instruction("print"),
-                _ => {
-                    println!("Unknown instruction")
+                opcode::POP => self.simple_instruction("pop"),
+                code => {
+                    println!("Unknown instruction {}", code);
+                    return
                 }
             }
         }
@@ -70,6 +73,13 @@ impl<'a> Disassembler<'a> {
         println!("CONSTANT STRING: idx({})", idx);
     }
 
+    fn set_global(self: &mut Self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("SET GLOBAL: idx({})", idx);
+    }
+
     fn push_global(self: &mut Self) {
         let idx = self.code[self.offset];
         self.offset += 1;
@@ -77,11 +87,11 @@ impl<'a> Disassembler<'a> {
         println!("PUSH GLOBAL: idx({})", idx);
     }
 
-    fn define_global_constant(self: &mut Self) {
+    fn define_global(self: &mut Self) {
         let idx = self.code[self.offset];
         self.offset += 1;
 
-        println!("DEFINE GLOBAL CONSTANT: idx({})", idx);
+        println!("DEFINE GLOBAL idx({})", idx);
     }
 }
 

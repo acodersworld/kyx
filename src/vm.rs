@@ -65,8 +65,9 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_INTEGER => self.push_integer(code),
                 opcode::CONSTANT_FLOAT => self.push_float(code),
                 opcode::CONSTANT_STRING => self.push_constant_string(code),
+                opcode::SET_GLOBAL => self.set_global(code),
                 opcode::PUSH_GLOBAL => self.push_global(code),
-                opcode::DEFINE_GLOBAL_CONSTANT => self.define_global_constant(code),
+                opcode::DEFINE_GLOBAL => self.define_global(code),
                 opcode::ADDI => self.integer_add(),
                 opcode::SUBI => self.integer_sub(),
                 opcode::MULI => self.integer_mul(),
@@ -76,6 +77,7 @@ impl<'printer> VM<'printer> {
                 opcode::MULF => self.float_mul(),
                 opcode::DIVF => self.float_div(),
                 opcode::PRINT => self.print(),
+                opcode::POP => self.pop(),
                 _ => {
                     println!("Unknown instruction: {}", code[self.offset])
                 }
@@ -172,6 +174,15 @@ impl<'printer> VM<'printer> {
         self.stack.push(Value::Str(self.constant_strs[idx]));
     }
 
+    fn set_global(self: &mut Self, code: &Vec<u8>) {
+        let idx = code[self.offset] as usize;
+        self.offset += 1;
+
+        let name = self.constant_strs[idx];
+        assert!(self.globals.contains_key(&name));
+        self.globals.insert(name, *self.stack.last().unwrap());
+    }
+
     fn push_global(self: &mut Self, code: &Vec<u8>) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
@@ -181,7 +192,7 @@ impl<'printer> VM<'printer> {
         self.stack.push(self.globals[&name]);
     }
 
-    fn define_global_constant(self: &mut Self, code: &Vec<u8>) {
+    fn define_global(self: &mut Self, code: &Vec<u8>) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
 
@@ -203,6 +214,11 @@ impl<'printer> VM<'printer> {
         };
 
         self.printer.print(&s);
+    }
+
+    fn pop(self: &mut Self) {
+        assert!(self.stack.len() > 0);
+        self.stack.pop();
     }
 }
 
@@ -373,4 +389,29 @@ mod test {
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "10");
     }
+
+    #[test]
+    fn set_read_only_global_error() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "let integer: int = 10;";
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        let src = "integer = 10;";
+        assert!(vm.interpret(src).is_err());
+    }
+
+    #[test]
+    fn set_mutable_global() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "let mut integer: int = 10;";
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        let src = "integer = 10;";
+        assert_eq!(vm.interpret(src), Ok(()));
+    }
+
 }

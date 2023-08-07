@@ -9,10 +9,23 @@ use std::fmt;
 use std::collections::HashMap;
 
 /*
-    expression -> term
-    term -> factor ( "-" | "+" factor )*
-    factor -> primary ( "*" | "/" primary )*
-    primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
+    PROGRAM:
+        program -> declaration* EOF
+
+    DECLARATIONS:
+        declaration -> letDecl | statement ;
+            letDecl -> let (mut)? identifier type : = expression
+            statement -> print expression | exprStmt ;
+
+    STATEMENTS:
+        exprStmt -> expression ;
+
+    EXPRESSIONS:
+        expression -> assignment
+            assignment -> identifier = expression | term
+            term -> factor ( "-" | "+" factor )*
+            factor -> primary ( "*" | "/" primary )*
+            primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
  */
 
 #[derive(PartialEq, Clone, Copy)]
@@ -39,8 +52,20 @@ pub trait StringTable {
 }
 
 #[derive(Clone)]
+struct Global {
+    read_only: bool,
+    value_type: ValueType
+}
+
+#[derive(Clone)]
 pub struct CompilerState {
-    globals: HashMap<String, ValueType>,
+    globals: HashMap<String, Global>,
+}
+
+#[derive(PartialEq)]
+struct Type {
+    value_type: ValueType,
+    read_only: bool
 }
 
 impl CompilerState {
@@ -56,7 +81,7 @@ pub struct Compiler<'a, 'table, T> {
     pub state: CompilerState,
     scanner: Scanner<'a>,
     chunk: Chunk,
-    type_stack: Vec<ValueType>
+    type_stack: Vec<Type>
 }
 
 impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
@@ -68,14 +93,6 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
             chunk: Chunk::new(),
             type_stack: Vec::new()
         }
-    }
-
-    pub fn compile(self: &mut Self) -> Result<(), String> {
-        while self.scanner.peek_token()? != Token::Eof {
-            self.statement()?;
-        }
-
-        Ok(())
     }
 
     pub fn take_chunk(self: Self) -> Chunk {
@@ -90,18 +107,45 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
         Err(format!("Expected {}", token))
     }
 
-    fn statement(self: &mut Self) -> Result<(), String> {
-        if self.scanner.match_token(Token::Print)? {
-            self.print()?;
+    pub fn compile(self: &mut Self) -> Result<(), String> {
+        while self.scanner.peek_token()? != Token::Eof {
+            self.declaration()?;
         }
-        else if self.scanner.match_token(Token::Let)? {
+
+        Ok(())
+    }
+
+    fn declaration(self: &mut Self) -> Result<(), String> {
+        self.statement()?;
+
+        Ok(())
+    }
+
+    fn statement(self: &mut Self) -> Result<(), String> {
+        if self.scanner.match_token(Token::Let)? {
             self.let_statement()?;
         }
+        else if self.scanner.match_token(Token::Print)? {
+            self.print()?
+        }
         else {
-            self.expression()?;
+            self.statement_expression()?
+        }
+
+        let pop_count = self.type_stack.len();
+        self.type_stack.clear();
+
+        for _ in 0..pop_count {
+            self.chunk.code.push(opcode::POP)
         }
 
         self.consume(Token::SemiColon)?;
+        Ok(())
+    }
+
+    fn statement_expression(self: &mut Self) -> Result<(), String> {
+        self.expression()?;
+
         Ok(())
     }
 
@@ -121,20 +165,19 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
             token => return Err(format!("Expected type but got {}", token))
         };
 
-        if self.state.globals.insert(identifier_name.to_string(), var_type).is_some() {
+        if self.state.globals.insert(identifier_name.to_string(), Global { read_only: !mutable, value_type: var_type }).is_some() {
             return Err(format!("Global {} is already defined", identifier_name))
         }
 
         self.consume(Token::Equal)?;
         self.expression()?;
 
-        let expr_type = *self.type_stack.last().unwrap();
+        let expr_type = self.type_stack.pop().unwrap().value_type;
         if var_type != expr_type {
             return Err(format!("Expected type {}, got {}", var_type, expr_type))
         }
 
-        let define_op = if mutable { opcode::DEFINE_GLOBAL_VARIABLE } else { opcode::DEFINE_GLOBAL_CONSTANT };
-        self.chunk.write_byte(define_op);
+        self.chunk.write_byte(opcode::DEFINE_GLOBAL);
         self.chunk.write_byte(self.string_table.create_constant_str(identifier_name));
 
         Ok(())
@@ -143,24 +186,58 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
     fn identifier(self: &mut Self, name: &str) -> Result<(), String> {
         let variable_type = match self.state.globals.get(name) {
             None => return Err(format!("Global {} not defined", name)),
-            Some(&x) => x
+            Some(x) => x
         };
 
-        self.chunk.write_byte(opcode::PUSH_GLOBAL);
-        self.chunk.write_byte(self.string_table.create_constant_str(name));
-        self.type_stack.push(variable_type);
+        if self.scanner.match_token(Token::Equal)? {
+            self.expression()?;
+
+            assert!(self.type_stack.len() > 0);
+            if let Some(g) = self.state.globals.get(name) {
+                let expr_type = self.type_stack.last().unwrap().value_type;
+                if g.value_type != expr_type {
+                    return Err(format!("Expected type {}, got {}", g.value_type, expr_type))
+                }
+
+                if g.read_only {
+                    return Err(format!("Global {} is ready only", name))
+                }
+            }
+            else {
+                return Err(format!("Global {} not declared", name))
+            }
+
+            self.chunk.write_byte(opcode::SET_GLOBAL);
+            self.chunk.write_byte(self.string_table.create_constant_str(name));
+        }
+        else {
+            self.chunk.write_byte(opcode::PUSH_GLOBAL);
+            self.chunk.write_byte(self.string_table.create_constant_str(name));
+            self.type_stack.push(Type { value_type: variable_type.value_type, read_only: variable_type.read_only });
+        }
+
         Ok(())
     }
 
     fn print(self: &mut Self) -> Result<(), String> {
         self.expression()?;
         self.chunk.write_byte(opcode::PRINT);
-
+        self.type_stack.pop();
         Ok(())
     }
 
     fn expression(self: &mut Self) -> Result<(), String> {
         self.term()?;
+
+        if self.scanner.match_token(Token::Equal)? {
+            assert!(self.type_stack.len() > 0);
+            if self.type_stack.last().unwrap().read_only {
+                return Err("left hand side is read only".to_string())
+            }
+            
+            self.expression()?;
+
+        }
 
         Ok(())
     }
@@ -169,8 +246,8 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
         self.primary()?;
 
         let len = self.type_stack.len();
-        let left_type = self.type_stack[len - 2];
-        let right_type = self.type_stack[len - 1];
+        let left_type = self.type_stack[len - 2].value_type;
+        let right_type = self.type_stack[len - 1].value_type;
 
         if left_type != right_type {
             return Err("Type error".to_owned())
@@ -183,6 +260,7 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
         }
 
         self.type_stack.pop();
+        self.type_stack.last_mut().unwrap().read_only = true;
         Ok(())
     }
 
@@ -209,8 +287,8 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
         self.factor()?;
 
         let len = self.type_stack.len();
-        let left_type = self.type_stack[len - 2];
-        let right_type = self.type_stack[len - 1];
+        let left_type = self.type_stack[len - 2].value_type;
+        let right_type = self.type_stack[len - 1].value_type;
 
         if left_type != right_type {
             return Err("Type error".to_owned())
@@ -223,6 +301,7 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
         }
 
         self.type_stack.pop();
+        self.type_stack.last_mut().unwrap().read_only = true;
         Ok(())
     }
 
@@ -256,7 +335,7 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
                 break;
             }
         }
-        self.type_stack.push(ValueType::Integer);
+        self.type_stack.push(Type { value_type: ValueType::Integer, read_only: true });
     }
 
     fn float(self: &mut Self, f: f32) {
@@ -264,15 +343,12 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
         for byte in float::encode(f) {
             self.chunk.write_byte(byte);
         }
-        self.type_stack.push(ValueType::Float);
+        self.type_stack.push(Type { value_type: ValueType::Float, read_only: true });
     }
 
     fn primary(self: &mut Self) -> Result<(), String> {
         let t = self.scanner.scan_token();
         match t {
-            Ok(Token::Let) => {
-                self.let_statement()?;
-            },
             Ok(Token::Identifier(name)) => {
                 self.identifier(name)?;
             },
@@ -303,7 +379,7 @@ impl<'a, 'state, 'table, T: StringTable> Compiler<'a, 'table, T> {
             Ok(Token::Str(s)) => {
                 self.chunk.write_byte(opcode::CONSTANT_STRING);
                 self.chunk.write_byte(self.string_table.create_constant_str(s));
-                self.type_stack.push(ValueType::Str);
+                self.type_stack.push(Type { value_type: ValueType::Str, read_only: true });
             },
             Err(msg) => {
                 return Err(msg)
