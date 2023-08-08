@@ -21,7 +21,7 @@ use std::collections::HashMap;
         exprStmt -> expression ;
 
     EXPRESSIONS:
-        expression -> assignment
+        expression -> assignment | block_expression
             assignment -> identifier = expression | term
             term -> factor ( "-" | "+" factor )*
             factor -> primary ( "*" | "/" primary )*
@@ -106,6 +106,15 @@ impl<'a, T: StringTable> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn clear_stack(self: &mut Self) {
+        let pop_count = self.type_stack.len();
+        self.type_stack.clear();
+
+        for _ in 0..pop_count {
+            self.chunk.code.push(opcode::POP)
+        }
+    }
+
     fn consume(self: &mut Self, token: Token) -> Result<(), String> {
         if self.scanner.match_token(token)? {
             return Ok(())
@@ -131,13 +140,7 @@ impl<'a, T: StringTable> SrcCompiler<'a, T> {
             self.statement_expression()?
         }
 
-        let pop_count = self.type_stack.len();
-        self.type_stack.clear();
-
-        for _ in 0..pop_count {
-            self.chunk.code.push(opcode::POP)
-        }
-
+        self.clear_stack();
         self.consume(Token::SemiColon)?;
         Ok(())
     }
@@ -164,16 +167,20 @@ impl<'a, T: StringTable> SrcCompiler<'a, T> {
             token => return Err(format!("Expected type but got {}", token))
         };
 
-        if self.globals.insert(identifier_name.to_string(), Global { read_only: !mutable, value_type: var_type }).is_some() {
-            return Err(format!("Global {} is already defined", identifier_name))
-        }
-
         self.consume(Token::Equal)?;
         self.expression()?;
+
+        if self.type_stack.len() == 0 {
+            return Err("Expected value on right hand side of '=', got None".to_owned())
+        }
 
         let expr_type = self.type_stack.pop().unwrap().value_type;
         if var_type != expr_type {
             return Err(format!("Expected type {}, got {}", var_type, expr_type))
+        }
+
+        if self.globals.insert(identifier_name.to_string(), Global { read_only: !mutable, value_type: var_type }).is_some() {
+            return Err(format!("Global {} is already defined", identifier_name))
         }
 
         self.chunk.write_byte(opcode::DEFINE_GLOBAL);
@@ -191,7 +198,10 @@ impl<'a, T: StringTable> SrcCompiler<'a, T> {
         if self.scanner.match_token(Token::Equal)? {
             self.expression()?;
 
-            assert!(self.type_stack.len() > 0);
+            if self.type_stack.len() == 0 {
+                return Err("Expected right hand side value, got None".to_owned())
+            }
+
             if let Some(g) = self.globals.get(name) {
                 let expr_type = self.type_stack.last().unwrap().value_type;
                 if g.value_type != expr_type {
@@ -226,16 +236,37 @@ impl<'a, T: StringTable> SrcCompiler<'a, T> {
     }
 
     fn expression(self: &mut Self) -> Result<(), String> {
-        self.term()?;
+        if self.scanner.match_token(Token::LeftBrace)? {
+            self.block_expression()?;
+        }
+        else {
+            self.term()?;
 
-        if self.scanner.match_token(Token::Equal)? {
-            assert!(self.type_stack.len() > 0);
-            if self.type_stack.last().unwrap().read_only {
-                return Err("left hand side is read only".to_string())
+            if self.scanner.match_token(Token::Equal)? {
+                assert!(self.type_stack.len() > 0);
+                if self.type_stack.last().unwrap().read_only {
+                    return Err("left hand side is read only".to_string())
+                }
+                
+                self.expression()?;
+
             }
-            
+        }
+
+        Ok(())
+    }
+
+    fn block_expression(self: &mut Self) -> Result<(), String> {
+        while !self.scanner.match_token(Token::RightBrace)? {
+            if !self.type_stack.is_empty() {
+                return Err("Expected ';'".to_owned())
+            }
+
             self.expression()?;
 
+            if self.scanner.match_token(Token::SemiColon)? {
+                self.clear_stack();
+            }
         }
 
         Ok(())

@@ -416,4 +416,15 @@ mod test {
         assert_eq!(vm.interpret(src), Ok(()));
     }
 
+    #[test]
+    fn block_expression_return_value() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "let mut integer: int = { 10 }; print integer;";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "10");
+    }
+
 }
