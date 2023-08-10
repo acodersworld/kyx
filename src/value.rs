@@ -3,21 +3,21 @@ use std::ptr::NonNull;
 #[derive(Debug)]
 pub struct StringValue {
     pub val: String,
-    pub hash: usize
+    pub hash: usize,
 }
 
 #[derive(Debug)]
 pub enum GcValue {
-//    Float(f32),
-//    Integer(i32),
-    Str(Box<StringValue>)
+    //    Float(f32),
+    //    Integer(i32),
+    Str(Box<StringValue>),
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum Value {
     Float(f32),
     Integer(i32),
-    Str(NonNull<StringValue>)
+    Str(NonNull<StringValue>),
 }
 
 pub trait FromValue {
@@ -31,7 +31,7 @@ impl FromValue for f32 {
     fn from_value(value: &Value) -> Option<f32> {
         match value {
             Value::Float(f) => Some(*f),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -41,7 +41,7 @@ impl FromValue for i32 {
     fn from_value(value: &Value) -> Option<i32> {
         match value {
             Value::Integer(i) => Some(*i),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -51,7 +51,7 @@ impl FromValue for StringValue {
     fn from_value(value: &Value) -> Option<NonNull<StringValue>> {
         match value {
             Value::Str(s) => Some(*s),
-            _ => None
+            _ => None,
         }
     }
 }

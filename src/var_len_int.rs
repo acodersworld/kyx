@@ -1,7 +1,6 @@
-
 pub struct Encoder {
     val: i32,
-    shift: u32
+    shift: u32,
 }
 
 impl Encoder {
@@ -14,10 +13,7 @@ impl Encoder {
             }
         }
 
-        Encoder { 
-            val,
-            shift
-        }
+        Encoder { val, shift }
     }
 
     pub fn step_encode(self: &mut Self) -> (u8, bool) {
@@ -27,8 +23,7 @@ impl Encoder {
         if self.shift != 0 {
             self.shift -= 7;
             byte |= 0x80;
-        }
-        else {
+        } else {
             complete = true;
         }
 
@@ -37,12 +32,12 @@ impl Encoder {
 }
 
 pub struct Decoder {
-    val: i32
+    val: i32,
 }
 
 impl Decoder {
     pub fn new() -> Decoder {
-        Decoder{ val: 0 }
+        Decoder { val: 0 }
     }
 
     pub fn step_decode(self: &mut Self, byte: u8) -> bool {

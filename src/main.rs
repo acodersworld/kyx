@@ -1,11 +1,11 @@
-mod scanner;
-mod opcode;
-mod compiler;
 mod chunk;
-mod var_len_int;
-mod float;
+mod compiler;
 mod disassembler;
+mod float;
+mod opcode;
+mod scanner;
 mod value;
+mod var_len_int;
 mod vm;
 
 use rustyline::DefaultEditor;
@@ -21,7 +21,7 @@ impl vm::Printer for DefaultPrinter {
 fn main() -> rustyline::Result<()> {
     let mut rl = DefaultEditor::new()?;
 
-    let mut printer = DefaultPrinter{};
+    let mut printer = DefaultPrinter {};
     let mut machine = vm::VM::new(&mut printer);
     loop {
         let line = rl.readline(">> ");
@@ -30,7 +30,7 @@ fn main() -> rustyline::Result<()> {
                 if let Err(e) = machine.interpret(&l) {
                     println!("Error: {}", e);
                 }
-            },
+            }
             Err(err) => {
                 println!("{}", err);
                 break;
