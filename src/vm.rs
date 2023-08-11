@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::vec::Vec;
 
-use crate::compiler::{Compiler, StringTable};
+use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
 use crate::opcode;
@@ -24,12 +24,12 @@ pub struct VM<'printer> {
     printer: &'printer mut dyn Printer,
 }
 
-struct VMStringTable<'a> {
+struct VMDataSection<'a> {
     objects: &'a mut Vec<GcValue>,
     constant_strs: &'a mut Vec<NonNull<StringValue>>,
 }
 
-impl StringTable for VMStringTable<'_> {
+impl DataSection for VMDataSection<'_> {
     fn create_constant_str(self: &mut Self, s: &str) -> u8 {
         for (idx, string) in self.constant_strs.iter().enumerate() {
             let val = unsafe { &string.as_ref().val };
@@ -94,12 +94,12 @@ impl<'printer> VM<'printer> {
     }
 
     pub fn interpret(self: &mut Self, src: &str) -> Result<(), String> {
-        let mut string_table = VMStringTable {
+        let mut data_section = VMDataSection {
             objects: &mut self.objects,
             constant_strs: &mut self.constant_strs,
         };
 
-        let chunk = self.compiler.compile(&mut string_table, src)?;
+        let chunk = self.compiler.compile(&mut data_section, src)?;
         let code = &chunk.code;
 
         let mut ds = disassembler::Disassembler::new(code);

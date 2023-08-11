@@ -47,7 +47,7 @@ impl fmt::Display for ValueType {
     }
 }
 
-pub trait StringTable {
+pub trait DataSection {
     fn create_constant_str(self: &mut Self, s: &str) -> u8;
 }
 
@@ -74,14 +74,14 @@ impl Compiler {
         }
     }
 
-    pub fn compile<'a, T: StringTable>(
+    pub fn compile<'a, T: DataSection>(
         self: &mut Self,
-        string_table: &'a mut T,
+        data_section: &'a mut T,
         src: &'a str,
     ) -> Result<Chunk, String> {
         let mut compiler = SrcCompiler::<'_, T> {
             globals: &mut self.globals,
-            string_table,
+            data_section,
             scanner: Scanner::new(&src),
             chunk: Chunk::new(),
             type_stack: Vec::new(),
@@ -97,10 +97,10 @@ pub struct SrcCompiler<'a, T> {
     scanner: Scanner<'a>,
     chunk: Chunk,
     type_stack: Vec<Type>,
-    string_table: &'a mut T,
+    data_section: &'a mut T,
 }
 
-impl<'a, T: StringTable> SrcCompiler<'a, T> {
+impl<'a, T: DataSection> SrcCompiler<'a, T> {
     pub fn compile(self: &mut Self) -> Result<(), String> {
         while self.scanner.peek_token()? != Token::Eof {
             self.declaration()?;
@@ -196,7 +196,7 @@ impl<'a, T: StringTable> SrcCompiler<'a, T> {
 
         self.chunk.write_byte(opcode::DEFINE_GLOBAL);
         self.chunk
-            .write_byte(self.string_table.create_constant_str(identifier_name));
+            .write_byte(self.data_section.create_constant_str(identifier_name));
 
         Ok(())
     }
@@ -229,11 +229,11 @@ impl<'a, T: StringTable> SrcCompiler<'a, T> {
 
             self.chunk.write_byte(opcode::SET_GLOBAL);
             self.chunk
-                .write_byte(self.string_table.create_constant_str(name));
+                .write_byte(self.data_section.create_constant_str(name));
         } else {
             self.chunk.write_byte(opcode::PUSH_GLOBAL);
             self.chunk
-                .write_byte(self.string_table.create_constant_str(name));
+                .write_byte(self.data_section.create_constant_str(name));
             self.type_stack.push(Type {
                 value_type: variable_type.value_type,
                 read_only: variable_type.read_only,
@@ -416,7 +416,7 @@ impl<'a, T: StringTable> SrcCompiler<'a, T> {
             Ok(Token::Str(s)) => {
                 self.chunk.write_byte(opcode::CONSTANT_STRING);
                 self.chunk
-                    .write_byte(self.string_table.create_constant_str(s));
+                    .write_byte(self.data_section.create_constant_str(s));
                 self.type_stack.push(Type {
                     value_type: ValueType::Str,
                     read_only: true,
