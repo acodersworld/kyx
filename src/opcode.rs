@@ -1,25 +1,16 @@
-macro_rules! OP {
-    ($name:ident, $value:expr) => {
-        pub const $name: u8 = $value;
-    };
-}
-
-OP!(CONSTANT_INTEGER, 0);
-OP!(CONSTANT_FLOAT, 1);
-
-OP!(ADDI, 2);
-OP!(SUBI, 3);
-OP!(MULI, 4);
-OP!(DIVI, 5);
-
-OP!(ADDF, 6);
-OP!(SUBF, 7);
-OP!(MULF, 8);
-OP!(DIVF, 9);
-
-OP!(PRINT, 10);
-OP!(CONSTANT_STRING, 11);
-OP!(DEFINE_GLOBAL, 12);
-OP!(SET_GLOBAL, 13);
-OP!(PUSH_GLOBAL, 14);
-OP!(POP, 15);
+pub const CONSTANT_INTEGER: u8 = 0;
+pub const CONSTANT_FLOAT: u8 = 1;
+pub const ADDI: u8 = 2;
+pub const SUBI: u8 = 3;
+pub const MULI: u8 = 4;
+pub const DIVI: u8 = 5;
+pub const ADDF: u8 = 6;
+pub const SUBF: u8 = 7;
+pub const MULF: u8 = 8;
+pub const DIVF: u8 = 9;
+pub const PRINT: u8 = 10;
+pub const CONSTANT_STRING: u8 = 11;
+pub const DEFINE_GLOBAL: u8 = 12;
+pub const SET_GLOBAL: u8 = 13;
+pub const PUSH_GLOBAL: u8 = 14;
+pub const POP: u8 = 15;
