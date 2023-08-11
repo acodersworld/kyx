@@ -24,6 +24,7 @@ impl<'a> Disassembler<'a> {
                 opcode::SET_GLOBAL => self.set_global(),
                 opcode::PUSH_GLOBAL => self.push_global(),
                 opcode::DEFINE_GLOBAL => self.define_global(),
+                opcode::DEFINE_LOCAL => self.define_global(),
                 opcode::ADDI => self.simple_instruction("addi"),
                 opcode::SUBI => self.simple_instruction("subi"),
                 opcode::MULI => self.simple_instruction("muli"),
@@ -89,5 +90,12 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("DEFINE GLOBAL idx({})", idx);
+    }
+
+    fn define_local(self: &mut Self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("DEFINE LOCAL idx({})", idx);
     }
 }

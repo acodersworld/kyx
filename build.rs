@@ -17,8 +17,11 @@ const OPCODES: &[&'static str] = &[
     "PRINT",
     "CONSTANT_STRING",
     "DEFINE_GLOBAL",
+    "DEFINE_LOCAL",
     "SET_GLOBAL",
+    "SET_LOCAL",
     "PUSH_GLOBAL",
+    "PUSH_LOCAL",
     "POP",
 ];
 
