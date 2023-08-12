@@ -23,6 +23,9 @@ const OPCODES: &[&'static str] = &[
     "PUSH_GLOBAL",
     "PUSH_LOCAL",
     "POP",
+    "LOCAL_POP",
+    "PUSH_FRAME",
+    "POP_FRAME",
 ];
 
 fn main() -> std::io::Result<()> {

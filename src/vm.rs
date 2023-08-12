@@ -43,8 +43,9 @@ impl DataSection for VMDataSection<'_> {
         let ptr = unsafe { NonNull::new_unchecked(str_val.as_mut() as *mut _) };
         self.objects.push(GcValue::Str(str_val));
 
+        let idx = self.constant_strs.len() as u8;
         self.constant_strs.push(ptr);
-        (self.constant_strs.len() - 1) as u8
+        idx
     }
 }
 
@@ -55,6 +56,7 @@ impl<'printer> VM<'printer> {
             objects: Vec::new(),
             constant_strs: Vec::new(),
             globals: HashMap::new(),
+            locals: Vec::new(),
             offset: 0,
             compiler: Compiler::new(),
             printer
@@ -72,9 +74,11 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_FLOAT => self.push_float(code),
                 opcode::CONSTANT_STRING => self.push_constant_string(code),
                 opcode::SET_GLOBAL => self.set_global(code),
+                opcode::SET_LOCAL => self.set_local(code),
                 opcode::PUSH_GLOBAL => self.push_global(code),
+                opcode::PUSH_LOCAL => self.push_local(code),
                 opcode::DEFINE_GLOBAL => self.define_global(code),
-                opcode::DEFINE_LOCAL => self.define_local(code),
+                opcode::DEFINE_LOCAL => self.define_local(),
                 opcode::ADDI => self.integer_add(),
                 opcode::SUBI => self.integer_sub(),
                 opcode::MULI => self.integer_mul(),
@@ -85,8 +89,10 @@ impl<'printer> VM<'printer> {
                 opcode::DIVF => self.float_div(),
                 opcode::PRINT => self.print(),
                 opcode::POP => self.pop(),
+                opcode::PUSH_FRAME => self.push_frame(),
+                opcode::POP_FRAME => self.pop_frame(),
                 _ => {
-                    println!("Unknown instruction: {}", code[self.offset])
+                    panic!("Unknown instruction: {}", code[self.offset-1])
                 }
             }
         }
@@ -187,6 +193,16 @@ impl<'printer> VM<'printer> {
         self.globals.insert(name, *self.stack.last().unwrap());
     }
 
+    fn set_local(self: &mut Self, code: &Vec<u8>) {
+        let idx = code[self.offset] as usize;
+        self.offset += 1;
+
+        assert!(self.locals.len() > 0);
+        assert!(self.stack.len() > 0);
+        let local = &mut self.locals.last_mut().unwrap()[idx];
+        *local = self.stack.pop().unwrap();
+    }
+
     fn push_global(self: &mut Self, code: &Vec<u8>) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
@@ -194,6 +210,15 @@ impl<'printer> VM<'printer> {
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
         self.stack.push(self.globals[&name]);
+    }
+
+    fn push_local(self: &mut Self, code: &Vec<u8>) {
+        let idx = code[self.offset] as usize;
+        self.offset += 1;
+
+        assert!(self.locals.len() > idx);
+        let locals = self.locals.last().unwrap();
+        self.stack.push(locals[idx]);
     }
 
     fn define_global(self: &mut Self, code: &Vec<u8>) {
@@ -209,10 +234,7 @@ impl<'printer> VM<'printer> {
         self.globals.insert(name, value);
     }
 
-    fn define_local(self: &mut Self, code: &Vec<u8>) {
-        let idx = code[self.offset] as usize;
-        self.offset += 1;
-
+    fn define_local(self: &mut Self) {
         let st = &mut self.stack;
         assert!(!self.locals.len() > 0);
         assert!(st.len() > 0);
@@ -236,6 +258,15 @@ impl<'printer> VM<'printer> {
     fn pop(self: &mut Self) {
         assert!(self.stack.len() > 0);
         self.stack.pop();
+    }
+
+    fn push_frame(self: &mut Self) {
+        self.locals.push(Vec::new());
+    }
+
+    fn pop_frame(self: &mut Self) {
+        assert!(self.locals.len() > 0);
+        self.locals.pop();
     }
 }
 
@@ -440,6 +471,34 @@ mod test {
         assert_eq!(vm.interpret(src), Ok(()));
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "10");
+    }
+
+    #[test]
+    fn block_declare_local() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "{ let local: int = 10; print local; }";
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        let src = "print local;";
+        assert!(vm.interpret(src).is_err());
+
+        let src = "
+        {
+            let mut local: int = 10;
+            {
+                print local;
+                local = 20;
+            }
+            print local;
+        }";
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "10");
+        assert_eq!(printer.strings[2], "20");
     }
 
 }

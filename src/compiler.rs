@@ -51,7 +51,7 @@ pub trait DataSection {
     fn create_constant_str(self: &mut Self, s: &str) -> u8;
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 struct Variable {
     value_type: ValueType,
     read_only: bool
@@ -81,6 +81,7 @@ impl Compiler {
     ) -> Result<Chunk, String> {
         let mut compiler = SrcCompiler::<'_, T> {
             globals: &mut self.globals,
+            locals: Vec::new(),
             data_section,
             scanner: Scanner::new(&src),
             chunk: Chunk::new(),
@@ -134,24 +135,40 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn statement(self: &mut Self) -> Result<(), String> {
+    fn try_statement(self: &mut Self) -> Result<bool, String> {
         if self.scanner.match_token(Token::Let)? {
             self.let_statement()?;
         }
         else if self.scanner.match_token(Token::Print)? {
-            self.print()?
+            self.print()?;
+        }
+        else if self.scanner.match_token(Token::LeftBrace)? {
+            self.block_expression()?;
+            self.clear_stack();
+            return Ok(true); // no need for SemiColon
         }
         else {
-            self.statement_expression()?
+            return Ok(false);
         }
 
         self.clear_stack();
         self.consume(Token::SemiColon)?;
+        Ok(true)
+    }
+
+    fn statement(self: &mut Self) -> Result<(), String> {
+        let is_expr = !self.try_statement()?;
+        if is_expr {
+            self.statement_expression()?
+        }
+
         Ok(())
     }
 
     fn statement_expression(self: &mut Self) -> Result<(), String> {
         self.expression()?;
+        self.clear_stack();
+        self.consume(Token::SemiColon)?;
 
         Ok(())
     }
@@ -209,29 +226,29 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn identifier(self: &mut Self, name: &str) -> Result<(), String> {
-        enum Identifier<'a> {
-            Global(&'a Variable),
-            Local(&'a Variable, u8)
+        enum Identifier {
+            Global,
+            Local(u8)
         }
 
-        let symbol = {
+        let (variable, symbol, type_str) = {
             if let Some(locals) = self.locals.last_mut() {
                 let found = locals.iter().enumerate().find(|l| l.1.name == name);
 
                 if let Some(l) = found {
-                    Identifier::Local(&l.1.v, l.0 as u8)
+                    (l.1.v, Identifier::Local(l.0 as u8), "Local")
                 }
                 else {
                     match self.globals.get(name) {
                         None => return Err(format!("Global {} not defined", name)),
-                        Some(x) => Identifier::Global(x)
+                        Some(x) => (*x, Identifier::Global, "Global")
                     }
                 }
             }
             else {
                 match self.globals.get(name) {
                     None => return Err(format!("Global {} not defined", name)),
-                    Some(x) => Identifier::Global(x)
+                    Some(x) => (*x, Identifier::Global, "Global")
                 }
             }
         };
@@ -243,51 +260,46 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 return Err("Expected right hand side value, got None".to_owned())
             }
 
+            let expr_type = self.type_stack.last().unwrap().value_type;
+            if variable.value_type != expr_type {
+                return Err(format!("Expected type {}, got {}", variable.value_type, expr_type))
+            }
+
+            if variable.read_only {
+                return Err(format!("{} {} is ready only", type_str, name))
+            }
+
             match symbol {
-                Identifier::Global(variable_type) => {
-                    if let Some(g) = self.globals.get(name) {
-                        let expr_type = self.type_stack.last().unwrap().value_type;
-                        if g.value_type != expr_type {
-                            return Err(format!("Expected type {}, got {}", g.value_type, expr_type))
-                        }
-
-                        if g.read_only {
-                            return Err(format!("Global {} is ready only", name))
-                        }
-                    }
-                    else {
-                        return Err(format!("Global {} not declared", name))
-                    }
-
+                Identifier::Global => {
                     self.chunk.write_byte(opcode::SET_GLOBAL);
                     self.chunk
                         .write_byte(self.data_section.create_constant_str(name));
                 },
-                Identifier::Local(variable_type, idx) => {
+                Identifier::Local(idx) => {
                     self.chunk.write_byte(opcode::SET_LOCAL);
                     self.chunk.write_byte(idx);
                 }
             }
+
+            assert!(self.type_stack.len() > 0);
+            self.type_stack.pop();
         } else {
             match symbol {
-                Identifier::Global(variable_type) => {
+                Identifier::Global => {
                     self.chunk.write_byte(opcode::PUSH_GLOBAL);
                     self.chunk
                         .write_byte(self.data_section.create_constant_str(name));
-                    self.type_stack.push(Variable {
-                        value_type: variable_type.value_type,
-                        read_only: variable_type.read_only,
-                    });
                 },
-                Identifier::Local(variable_type, idx) => {
+                Identifier::Local(idx) => {
                     self.chunk.write_byte(opcode::PUSH_LOCAL);
                     self.chunk.write_byte(idx);
-                    self.type_stack.push(Variable {
-                        value_type: variable_type.value_type,
-                        read_only: variable_type.read_only,
-                    });
                 }
             }
+
+            self.type_stack.push(Variable {
+                value_type: variable.value_type,
+                read_only: variable.read_only,
+            });
         }
 
         Ok(())
@@ -325,27 +337,27 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let push_local = self.locals.len() == 0;
         if push_local {
             self.locals.push(Vec::new());
+            self.chunk.code.push(opcode::PUSH_FRAME);
         }
         let locals_top = self.locals.last().unwrap().len();
 
         while !self.scanner.match_token(Token::RightBrace)? {
             if !self.type_stack.is_empty() {
-                return Err("Expected ';'".to_owned())
+                return Err("Expression is not last line, expected ';'".to_owned())
             }
 
-            self.expression()?;
-
-            if self.scanner.match_token(Token::SemiColon)? {
-                self.clear_stack();
+            let is_expr = !self.try_statement()?;
+            if is_expr {
+                self.expression()?;
+                if self.scanner.match_token(Token::SemiColon)? {
+                    self.clear_stack();
+                }
             }
         }
 
         if push_local {
-            for _ in 0..self.locals.last().unwrap().len() {
-                self.chunk.code.push(opcode::POP);
-            }
-
             self.locals.pop();
+            self.chunk.code.push(opcode::POP_FRAME);
         }
         else {
             let locals = self.locals.last_mut().unwrap();
@@ -501,7 +513,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 return Err(msg)
             },
             _ => {
-                println!("primary Unknown token: {:?}", t);
+                panic!("primary Unknown token: {:?}", t);
             }
         }
 
@@ -513,16 +525,16 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 mod test {
     use super::*;
 
-    struct TestStringTable {
+    struct TestDataSection {
     }
 
-    impl TestStringTable {
-        fn new() -> TestStringTable {
-            TestStringTable{}
+    impl TestDataSection {
+        fn new() -> TestDataSection {
+            TestDataSection{}
         }
     }
 
-    impl StringTable for TestStringTable {
+    impl DataSection for TestDataSection {
         fn create_constant_str(self: &mut Self, _s: &str) -> u8 {
             return 0;
         }
@@ -530,14 +542,14 @@ mod test {
 
     #[test]
     fn test_error_missing_semicolon() {
-        let mut table = TestStringTable::new();
+        let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!(compiler.compile(&mut table, "print 1").is_err());
     }
 
     #[test]
     fn test_error_negative_string() {
-        let mut table = TestStringTable::new();
+        let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!(compiler.compile(&mut table, "print -\"hello\";").is_err());
     }
@@ -545,25 +557,25 @@ mod test {
     #[test]
     fn test_let_statement() {
         {
-            let mut table = TestStringTable::new();
+            let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
             assert_eq!(compiler.compile(&mut table, "let identifier: int = 0;").err(), None);
         }
 
         {
-            let mut table = TestStringTable::new();
+            let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
             assert_eq!(compiler.compile(&mut table, "let identifier: float = 0.0;").err(), None);
         }
 
         {
-            let mut table = TestStringTable::new();
+            let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
             assert_eq!(compiler.compile(&mut table, "let identifier: string = \"hello\";").err(), None);
         }
 
         {
-            let mut table = TestStringTable::new();
+            let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
             assert!(compiler.compile(&mut table, "let identifier: int = \"hello\";").is_err());
         }

@@ -16,15 +16,16 @@ impl<'a> Disassembler<'a> {
         while self.offset < self.code.len() {
             let offset = self.offset;
             self.offset += 1;
-
             match self.code[offset] {
                 opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
                 opcode::CONSTANT_STRING => self.constant_string_instruction(),
                 opcode::SET_GLOBAL => self.set_global(),
+                opcode::SET_LOCAL => self.set_local(),
                 opcode::PUSH_GLOBAL => self.push_global(),
+                opcode::PUSH_LOCAL => self.push_local(),
                 opcode::DEFINE_GLOBAL => self.define_global(),
-                opcode::DEFINE_LOCAL => self.define_global(),
+                opcode::DEFINE_LOCAL => self.define_local(),
                 opcode::ADDI => self.simple_instruction("addi"),
                 opcode::SUBI => self.simple_instruction("subi"),
                 opcode::MULI => self.simple_instruction("muli"),
@@ -35,6 +36,8 @@ impl<'a> Disassembler<'a> {
                 opcode::DIVF => self.simple_instruction("divf"),
                 opcode::PRINT => self.simple_instruction("print"),
                 opcode::POP => self.simple_instruction("pop"),
+                opcode::PUSH_FRAME => self.simple_instruction("pop frame"),
+                opcode::POP_FRAME => self.simple_instruction("pop frame"),
                 code => {
                     println!("Unknown instruction {}", code);
                     return;
@@ -78,11 +81,25 @@ impl<'a> Disassembler<'a> {
         println!("SET GLOBAL: idx({})", idx);
     }
 
+    fn set_local(self: &mut Self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("SET LOCAL: idx({})", idx);
+    }
+
     fn push_global(self: &mut Self) {
         let idx = self.code[self.offset];
         self.offset += 1;
 
         println!("PUSH GLOBAL: idx({})", idx);
+    }
+
+    fn push_local(self: &mut Self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("PUSH LOCAL: idx({})", idx);
     }
 
     fn define_global(self: &mut Self) {
@@ -93,9 +110,6 @@ impl<'a> Disassembler<'a> {
     }
 
     fn define_local(self: &mut Self) {
-        let idx = self.code[self.offset];
-        self.offset += 1;
-
-        println!("DEFINE LOCAL idx({})", idx);
+        println!("DEFINE LOCAL");
     }
 }

@@ -17,3 +17,6 @@ pub const SET_LOCAL: u8 = 15;
 pub const PUSH_GLOBAL: u8 = 16;
 pub const PUSH_LOCAL: u8 = 17;
 pub const POP: u8 = 18;
+pub const LOCAL_POP: u8 = 19;
+pub const PUSH_FRAME: u8 = 20;
+pub const POP_FRAME: u8 = 21;
