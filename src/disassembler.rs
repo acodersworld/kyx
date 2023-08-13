@@ -36,7 +36,8 @@ impl<'a> Disassembler<'a> {
                 opcode::DIVF => self.simple_instruction("divf"),
                 opcode::PRINT => self.simple_instruction("print"),
                 opcode::POP => self.simple_instruction("pop"),
-                opcode::PUSH_FRAME => self.simple_instruction("pop frame"),
+                opcode::LOCAL_POP => self.simple_instruction("local pop"),
+                opcode::PUSH_FRAME => self.simple_instruction("push frame"),
                 opcode::POP_FRAME => self.simple_instruction("pop frame"),
                 code => {
                     println!("Unknown instruction {}", code);

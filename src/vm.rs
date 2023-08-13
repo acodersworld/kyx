@@ -1,12 +1,12 @@
-use std::vec::Vec;
 use std::collections::HashMap;
 use std::ptr::NonNull;
+use std::vec::Vec;
 
 use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
-use crate::value::{Value, GcValue, FromValue, StringValue};
 use crate::opcode;
+use crate::value::{FromValue, GcValue, StringValue, Value};
 use crate::var_len_int;
 
 pub trait Printer {
@@ -22,12 +22,12 @@ pub struct VM<'printer> {
     offset: usize,
 
     compiler: Compiler,
-    printer: &'printer mut dyn Printer
+    printer: &'printer mut dyn Printer,
 }
 
 struct VMDataSection<'a> {
     objects: &'a mut Vec<GcValue>,
-    constant_strs: &'a mut Vec<NonNull<StringValue>>
+    constant_strs: &'a mut Vec<NonNull<StringValue>>,
 }
 
 impl DataSection for VMDataSection<'_> {
@@ -35,11 +35,14 @@ impl DataSection for VMDataSection<'_> {
         for (idx, string) in self.constant_strs.iter().enumerate() {
             let val = unsafe { &string.as_ref().val };
             if val == s {
-                return idx as u8
+                return idx as u8;
             }
         }
 
-        let mut str_val = Box::new(StringValue { val: s.to_string(), hash: 0 });
+        let mut str_val = Box::new(StringValue {
+            val: s.to_string(),
+            hash: 0,
+        });
         let ptr = unsafe { NonNull::new_unchecked(str_val.as_mut() as *mut _) };
         self.objects.push(GcValue::Str(str_val));
 
@@ -59,7 +62,7 @@ impl<'printer> VM<'printer> {
             locals: Vec::new(),
             offset: 0,
             compiler: Compiler::new(),
-            printer
+            printer,
         }
     }
 
@@ -69,7 +72,7 @@ impl<'printer> VM<'printer> {
 
         while self.offset < len {
             self.offset += 1;
-            match code[self.offset-1] {
+            match code[self.offset - 1] {
                 opcode::CONSTANT_INTEGER => self.push_integer(code),
                 opcode::CONSTANT_FLOAT => self.push_float(code),
                 opcode::CONSTANT_STRING => self.push_constant_string(code),
@@ -89,10 +92,11 @@ impl<'printer> VM<'printer> {
                 opcode::DIVF => self.float_div(),
                 opcode::PRINT => self.print(),
                 opcode::POP => self.pop(),
+                opcode::LOCAL_POP => self.local_pop(),
                 opcode::PUSH_FRAME => self.push_frame(),
                 opcode::POP_FRAME => self.pop_frame(),
                 _ => {
-                    panic!("Unknown instruction: {}", code[self.offset-1])
+                    panic!("Unknown instruction: {}", code[self.offset - 1])
                 }
             }
         }
@@ -101,7 +105,7 @@ impl<'printer> VM<'printer> {
     pub fn interpret(self: &mut Self, src: &str) -> Result<(), String> {
         let mut data_section = VMDataSection {
             objects: &mut self.objects,
-            constant_strs: &mut self.constant_strs
+            constant_strs: &mut self.constant_strs,
         };
 
         let chunk = self.compiler.compile(&mut data_section, src)?;
@@ -114,10 +118,10 @@ impl<'printer> VM<'printer> {
         Ok(())
     }
 
-    fn binary_op<T, OP>(self: &mut Self, op: OP) 
+    fn binary_op<T, OP>(self: &mut Self, op: OP)
     where
         T: FromValue<ValueType = T>,
-        OP: FnOnce(T, T) -> Value
+        OP: FnOnce(T, T) -> Value,
     {
         let st = &mut self.stack;
 
@@ -125,43 +129,43 @@ impl<'printer> VM<'printer> {
         let left = T::from_value(&st.last().unwrap()).unwrap();
 
         let result = op(left, right);
-        *st.last_mut().unwrap() = result; 
+        *st.last_mut().unwrap() = result;
     }
 
     fn integer_add(self: &mut Self) {
-        self.binary_op::<i32, _>(|l, r| { Value::Integer(l + r) });
+        self.binary_op::<i32, _>(|l, r| Value::Integer(l + r));
     }
 
     fn integer_sub(self: &mut Self) {
-        self.binary_op::<i32, _>(|l, r| { Value::Integer(l - r) });
+        self.binary_op::<i32, _>(|l, r| Value::Integer(l - r));
     }
 
     fn integer_mul(self: &mut Self) {
-        self.binary_op::<i32, _>(|l, r| { Value::Integer(l * r) });
+        self.binary_op::<i32, _>(|l, r| Value::Integer(l * r));
     }
 
     fn integer_div(self: &mut Self) {
-        self.binary_op::<i32, _>(|l, r| { Value::Integer(l / r) });
+        self.binary_op::<i32, _>(|l, r| Value::Integer(l / r));
     }
 
     fn float_add(self: &mut Self) {
-        self.binary_op::<f32, _>(|l, r| { Value::Float(l + r) });
+        self.binary_op::<f32, _>(|l, r| Value::Float(l + r));
     }
 
     fn float_sub(self: &mut Self) {
-        self.binary_op::<f32, _>(|l, r| { Value::Float(l - r) });
+        self.binary_op::<f32, _>(|l, r| Value::Float(l - r));
     }
 
     fn float_mul(self: &mut Self) {
-        self.binary_op::<f32, _>(|l, r| { Value::Float(l * r) });
+        self.binary_op::<f32, _>(|l, r| Value::Float(l * r));
     }
 
     fn float_div(self: &mut Self) {
-        self.binary_op::<f32, _>(|l, r| { Value::Float(l / r) });
+        self.binary_op::<f32, _>(|l, r| Value::Float(l / r));
     }
 
     fn push_integer(self: &mut Self, code: &Vec<u8>) {
-        let mut decoder = var_len_int::Decoder::new(); 
+        let mut decoder = var_len_int::Decoder::new();
         while !decoder.step_decode(code[self.offset]) {
             self.offset += 1;
         }
@@ -171,7 +175,7 @@ impl<'printer> VM<'printer> {
     }
 
     fn push_float(self: &mut Self, code: &Vec<u8>) {
-        let value = float::decode(&code[self.offset..self.offset+4].try_into().unwrap());
+        let value = float::decode(&code[self.offset..self.offset + 4].try_into().unwrap());
         self.offset += 4;
 
         self.stack.push(Value::Float(value));
@@ -216,8 +220,9 @@ impl<'printer> VM<'printer> {
         let idx = code[self.offset] as usize;
         self.offset += 1;
 
-        assert!(self.locals.len() > idx);
+        assert!(self.locals.len() > 0);
         let locals = self.locals.last().unwrap();
+        assert!(locals.len() > idx);
         self.stack.push(locals[idx]);
     }
 
@@ -260,6 +265,11 @@ impl<'printer> VM<'printer> {
         self.stack.pop();
     }
 
+    fn local_pop(self: &mut Self) {
+        assert!(self.locals.len() > 0);
+        self.locals.last_mut().unwrap().pop();
+    }
+
     fn push_frame(self: &mut Self) {
         self.locals.push(Vec::new());
     }
@@ -275,12 +285,14 @@ mod test {
     use super::*;
 
     struct TestPrinter {
-        strings: Vec<String>
+        strings: Vec<String>,
     }
 
     impl TestPrinter {
         fn new() -> TestPrinter {
-            TestPrinter { strings: Vec::new() }
+            TestPrinter {
+                strings: Vec::new(),
+            }
         }
     }
 
@@ -490,15 +502,26 @@ mod test {
             {
                 print local;
                 local = 20;
+
+                {
+                    let mut local: int = 5;
+                    {
+                        let mut local: int = 15;
+                        print local;
+                    }
+                    print local;
+                }
             }
             print local;
         }";
         assert_eq!(vm.interpret(src), Ok(()));
 
-        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings.len(), 5);
         assert_eq!(printer.strings[0], "10");
-        assert_eq!(printer.strings[1], "10");
-        assert_eq!(printer.strings[2], "20");
-    }
 
+        assert_eq!(printer.strings[1], "10");
+        assert_eq!(printer.strings[2], "15");
+        assert_eq!(printer.strings[3], "5");
+        assert_eq!(printer.strings[4], "20");
+    }
 }
