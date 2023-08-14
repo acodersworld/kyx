@@ -497,6 +497,31 @@ mod test {
     }
 
     #[test]
+    fn multiple_locals() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+        {
+            let i: int = 10;
+            let s: string = \"hello\";
+            let i2: int = 20;
+            let s2: string = \"world\";
+            print i;
+            print i2;
+            print s;
+            print s2;
+        }";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "20");
+        assert_eq!(printer.strings[2], "hello");
+        assert_eq!(printer.strings[3], "world");
+    }
+
+    #[test]
     fn block_declare_local() {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
