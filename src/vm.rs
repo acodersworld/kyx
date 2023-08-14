@@ -52,6 +52,14 @@ impl DataSection for VMDataSection<'_> {
     }
 }
 
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Integer(i) => *i != 0,
+        Value::Float(f) => *f != 0.0,
+        Value::Str(_s) => true
+    }
+}
+
 impl<'printer> VM<'printer> {
     pub fn new(printer: &'printer mut dyn Printer) -> VM<'printer> {
         VM {
@@ -95,6 +103,8 @@ impl<'printer> VM<'printer> {
                 opcode::LOCAL_POP => self.local_pop(),
                 opcode::PUSH_FRAME => self.push_frame(),
                 opcode::POP_FRAME => self.pop_frame(),
+                opcode::JMP => self.jmp(code),
+                opcode::JMP_IF_FALSE => self.jmp_if_false(code),
                 _ => {
                     panic!("Unknown instruction: {}", code[self.offset - 1])
                 }
@@ -277,6 +287,23 @@ impl<'printer> VM<'printer> {
     fn pop_frame(self: &mut Self) {
         assert!(self.locals.len() > 0);
         self.locals.pop();
+    }
+
+    fn jmp(self: &mut Self, code: &Vec<u8>) {
+        let offset = code[self.offset] as usize;
+        self.offset += offset;
+    }
+
+    fn jmp_if_false(self: &mut Self, code: &Vec<u8>) {
+        assert!(self.stack.len() > 0);
+        let cond = self.stack.pop().unwrap();
+
+        if !is_truthy(&cond) {
+            self.offset += code[self.offset] as usize;
+        }
+        else {
+            self.offset += 1;
+        }
     }
 }
 
@@ -559,5 +586,66 @@ mod test {
         assert_eq!(printer.strings[2], "15");
         assert_eq!(printer.strings[3], "5");
         assert_eq!(printer.strings[4], "20");
+    }
+
+    #[test]
+    fn if_stmt_true() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+        if 1 {
+            print 1;
+        }";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "1");
+    }
+
+    #[test]
+    fn if_else_stmt_true() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+        if 1 {
+            print 1;
+        }
+        else {
+            print 0;
+        }";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "1");
+    }
+
+    #[test]
+    fn if_stmt_false() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+        if 0 {
+            print 1;
+        }";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 0);
+    }
+
+    #[test]
+    fn if_else_stmt_false() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+        if 0 {
+            print 1;
+        }
+        else {
+            print 0;
+        }";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "0");
     }
 }

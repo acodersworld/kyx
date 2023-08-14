@@ -9,7 +9,9 @@ impl Chunk {
         Chunk { code: Vec::new() }
     }
 
-    pub fn write_byte(self: &mut Self, byte: u8) {
+    pub fn write_byte(self: &mut Self, byte: u8) -> usize {
+        let idx = self.code.len();
         self.code.push(byte);
+        idx
     }
 }

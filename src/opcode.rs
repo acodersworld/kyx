@@ -20,3 +20,5 @@ pub const POP: u8 = 18;
 pub const LOCAL_POP: u8 = 19;
 pub const PUSH_FRAME: u8 = 20;
 pub const POP_FRAME: u8 = 21;
+pub const JMP: u8 = 22;
+pub const JMP_IF_FALSE: u8 = 23;

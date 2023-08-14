@@ -26,6 +26,9 @@ const OPCODES: &[&'static str] = &[
     "LOCAL_POP",
     "PUSH_FRAME",
     "POP_FRAME",
+    //
+    "JMP",
+    "JMP_IF_FALSE",
 ];
 
 fn main() -> std::io::Result<()> {

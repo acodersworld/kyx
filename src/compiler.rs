@@ -10,19 +10,24 @@ use std::vec::Vec;
 
 /*
    PROGRAM:
-       program -> declaration* EOF
+       program -> rule* EOF
+
+       rule -> declaration | expression ";"?
 
    DECLARATIONS:
-       declaration -> let_decl | print_stmt | expr_stmt
-           let_decl -> let (mut)? identifier type : = expression ";"
+       declaration -> let_decl |
+                      print_stmt
+
+           let_decl -> "let" ("mut")? ":" identifier type = expression ";"
            print_stmt -> print expression ";"
 
-   STATEMENTS:
-       expr_stmt -> block_expression | expression ";"
-
    EXPRESSIONS:
-       expression -> assignment | block_expression
-           block_expression -> { declaration* expression? }
+       expression -> assignment |
+                     if_expr |
+                     block_expression
+
+           block_expression -> "{" declaration* expression? "}"
+           if_expr -> "if" expression block_expression ("else" block_expression)?
            assignment -> identifier = expression | term
            term -> factor ( "-" | "+" factor )*
            factor -> primary ( "*" | "/" primary )*
@@ -110,14 +115,6 @@ pub struct SrcCompiler<'a, T> {
 }
 
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
-    pub fn compile(self: &mut Self) -> Result<(), String> {
-        while self.scanner.peek_token()? != Token::Eof {
-            self.declaration()?;
-        }
-
-        Ok(())
-    }
-
     fn clear_stack(self: &mut Self) {
         let pop_count = self.type_stack.len();
         self.type_stack.clear();
@@ -135,31 +132,84 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Err(format!("Expected {}", token))
     }
 
-    fn declaration(self: &mut Self) -> Result<(), String> {
-        if self.scanner.match_token(Token::Let)? {
-            self.let_statement()?;
-        } else if self.scanner.match_token(Token::Print)? {
-            self.print()?;
-        } else {
-            self.expression_statement()?;
+    pub fn compile(self: &mut Self) -> Result<(), String> {
+        while self.scanner.peek_token()? != Token::Eof {
+            self.rule()?;
         }
 
         Ok(())
     }
 
-    fn expression_statement(self: &mut Self) -> Result<(), String> {
-        if self.scanner.match_token(Token::LeftBrace)? {
-            self.block_expression()?;
-            if self.scanner.peek_token()? != Token::RightBrace {
-                self.clear_stack();
+    fn rule(self: &mut Self) -> Result<(), String> {
+        let is_declaration = self.try_declaration()?;
+
+        if !is_declaration {
+            let is_block = self.expression()?;
+
+            // only times an expression doesn't have to be followed by a ';'
+            // is when it is the last expression of a block or if it is a block itself
+            let peeked_token = self.scanner.peek_token()?;
+            if peeked_token == Token::RightBrace {
+                if self.scanner.match_token(Token::SemiColon)? {
+                    self.clear_stack();
+                }
+            } else if peeked_token != Token::Eof {
+                if is_block {
+                    if self.scanner.match_token(Token::SemiColon)? {
+                        self.clear_stack();
+                    }
+                }
+                else {
+                    self.consume(Token::SemiColon)?;
+                    self.clear_stack();
+                }
             }
-        } else {
-            self.expression()?;
-            self.clear_stack();
-            self.consume(Token::SemiColon)?;
         }
 
         Ok(())
+    }
+
+    fn try_declaration(self: &mut Self) -> Result<bool, String> {
+        if self.scanner.match_token(Token::Let)? {
+            self.let_statement()?;
+        } else if self.scanner.match_token(Token::Print)? {
+            self.print()?;
+        } else {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    fn expression(self: &mut Self) -> Result<bool, String> {
+        if self.scanner.match_token(Token::LeftBrace)? {
+            self.block_expression()?;
+            return Ok(true);
+        }
+        else if self.scanner.match_token(Token::If)? {
+            self.expression()?;
+            self.consume(Token::LeftBrace)?;
+            self.chunk.write_byte(opcode::JMP_IF_FALSE);
+            let if_jmp_idx = self.chunk.write_byte(0);
+            self.block_expression()?;
+
+            self.chunk.write_byte(opcode::JMP);
+            let jmp_skip_else_idx = self.chunk.write_byte(0);
+
+            self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
+
+            if self.scanner.match_token(Token::Else)? {
+                self.consume(Token::LeftBrace)?;
+                self.block_expression()?;
+            }
+            self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
+
+            return Ok(true);
+        } else {
+            self.term()?;
+        }
+
+        Ok(false)
     }
 
     fn let_statement(self: &mut Self) -> Result<(), String> {
@@ -338,53 +388,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn expression(self: &mut Self) -> Result<(), String> {
-        if self.scanner.match_token(Token::LeftBrace)? {
-            self.block_expression()?;
-        } else {
-            self.term()?;
-
-            if self.scanner.match_token(Token::Equal)? {
-                assert!(self.type_stack.len() > 0);
-                if self.type_stack.last().unwrap().read_only {
-                    return Err("left hand side is read only".to_string());
-                }
-
-                self.expression()?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn block(self: &mut Self) -> Result<(), String> {
-        while !(self.scanner.match_token(Token::RightBrace)?
-            || self.scanner.match_token(Token::Eof)?)
-        {
-            if self.scanner.match_token(Token::Let)? {
-                self.let_statement()?;
-            } else if self.scanner.match_token(Token::Print)? {
-                self.print()?;
-            } else if self.scanner.match_token(Token::LeftBrace)? {
-                self.block_expression()?;
-                if (self.scanner.peek_token()? != Token::RightBrace)
-                    && self.scanner.match_token(Token::SemiColon)?
-                {
-                    self.clear_stack();
-                }
-            } else {
-                self.expression()?;
-                if self.scanner.match_token(Token::SemiColon)? {
-                    self.clear_stack();
-                } else if self.scanner.peek_token()? != Token::RightBrace {
-                    return Err("Expected ';'".to_string());
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     fn block_expression(self: &mut Self) -> Result<(), String> {
         let push_local = {
             if let Some(top) = self.stack_frames.last_mut() {
@@ -401,7 +404,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         };
 
         let locals_top = self.stack_frames.last().unwrap().locals.len();
-        self.block()?;
+        while !self.scanner.match_token(Token::RightBrace)? {
+            self.rule()?;
+        }
 
         assert!(self.stack_frames.len() > 0);
         if push_local {
@@ -428,9 +433,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if left_type != right_type {
             return Err("Type error".to_owned());
         } else if left_type == ValueType::Integer {
-            self.chunk.write_byte(opi)
+            self.chunk.write_byte(opi);
         } else {
-            self.chunk.write_byte(opf)
+            self.chunk.write_byte(opf);
         }
 
         self.type_stack.pop();
@@ -464,9 +469,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if left_type != right_type {
             return Err("Type error".to_owned());
         } else if left_type == ValueType::Integer {
-            self.chunk.write_byte(opi)
+            self.chunk.write_byte(opi);
         } else {
-            self.chunk.write_byte(opf)
+            self.chunk.write_byte(opf);
         }
 
         self.type_stack.pop();

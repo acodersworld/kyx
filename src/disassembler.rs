@@ -16,6 +16,8 @@ impl<'a> Disassembler<'a> {
         while self.offset < self.code.len() {
             let offset = self.offset;
             self.offset += 1;
+
+            print!("{: >4} | ", offset);
             match self.code[offset] {
                 opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
@@ -39,6 +41,8 @@ impl<'a> Disassembler<'a> {
                 opcode::LOCAL_POP => self.simple_instruction("local pop"),
                 opcode::PUSH_FRAME => self.simple_instruction("push frame"),
                 opcode::POP_FRAME => self.simple_instruction("pop frame"),
+                opcode::JMP => self.jmp_instruction("jump"),
+                opcode::JMP_IF_FALSE => self.jmp_instruction("jump if false"),
                 code => {
                     println!("Unknown instruction {}", code);
                     return;
@@ -51,6 +55,11 @@ impl<'a> Disassembler<'a> {
         println!("{}", name);
     }
 
+    fn jmp_instruction(self: &mut Self, name: &str) {
+        let jmp_offset = self.code[self.offset];
+        println!("{}: {} -> {}", name, jmp_offset, self.offset + jmp_offset as usize);
+        self.offset += 1;
+    }
     fn constant_integer_instruction(self: &mut Self) {
         let mut decoder = var_len_int::Decoder::new();
         while !decoder.step_decode(self.code[self.offset]) {

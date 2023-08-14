@@ -4,6 +4,8 @@ use std::fmt;
 pub enum Token<'a> {
     Struct,
     Interface,
+    If,
+    Else,
     While,
     For,
     Return,
@@ -58,6 +60,8 @@ impl Token<'_> {
         let s = match self {
             Self::Struct => "struct",
             Self::Interface => "interface",
+            Self::If => "if",
+            Self::Else => "else",
             Self::While => "while",
             Self::For => "for",
             Self::Return => "return",
@@ -200,6 +204,8 @@ impl<'a> Scanner<'a> {
             "print" => Token::Print,
             "true" => Token::True,
             "false" => Token::False,
+            "if" => Token::If,
+            "else" => Token::Else,
             "while" => Token::While,
             "for" => Token::For,
             "return" => Token::Return,
