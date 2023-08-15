@@ -16,7 +16,7 @@ impl Encoder {
         Encoder { val, shift }
     }
 
-    pub fn step_encode(self: &mut Self) -> (u8, bool) {
+    pub fn step_encode(&mut self) -> (u8, bool) {
         let mut byte = ((self.val >> self.shift) & 0x7f) as u8;
 
         let mut complete = false;
@@ -40,7 +40,7 @@ impl Decoder {
         Decoder { val: 0 }
     }
 
-    pub fn step_decode(self: &mut Self, byte: u8) -> bool {
+    pub fn step_decode(&mut self, byte: u8) -> bool {
         let is_last = (byte & 0x80) == 0;
 
         self.val <<= 7;
@@ -49,7 +49,7 @@ impl Decoder {
         is_last
     }
 
-    pub fn val(self: &Self) -> i32 {
+    pub fn val(&self) -> i32 {
         self.val
     }
 }

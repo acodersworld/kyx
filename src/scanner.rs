@@ -58,7 +58,7 @@ pub enum Token<'a> {
 }
 
 impl Token<'_> {
-    fn as_string(self: &Self) -> String {
+    fn as_string(&self) -> String {
         let s = match self {
             Self::Struct => "struct",
             Self::Interface => "interface",
@@ -142,36 +142,36 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn peek(self: &Self) -> char {
+    fn peek(&self) -> char {
         self.src[self.current_idx..].chars().next().unwrap()
     }
 
-    fn advance(self: &mut Self) -> char {
+    fn advance(&mut self) -> char {
         let c = self.peek();
         self.current_idx += c.len_utf8();
         c
     }
 
-    fn match_char(self: &mut Self, c: char) -> bool {
+    fn match_char(&mut self, c: char) -> bool {
         if self.peek() == c {
             self.advance();
             return true;
         }
 
-        return false;
+        false
     }
 
-    fn at_eof(self: &Self) -> bool {
-        return (self.current_idx) >= self.src.len();
+    fn at_eof(&self) -> bool {
+        self.current_idx >= self.src.len()
     }
 
-    fn skip_to_newline(self: &mut Self) {
+    fn skip_to_newline(&mut self) {
         while !self.at_eof() && self.peek() != '\n' {
             self.advance();
         }
     }
 
-    fn skip_white_space(self: &mut Self) {
+    fn skip_white_space(&mut self) {
         if self.at_eof() {
             return;
         }
@@ -190,7 +190,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn identifier(self: &mut Self) -> Token<'a> {
+    fn identifier(&mut self) -> Token<'a> {
         while !self.at_eof() && self.peek().is_alphanumeric() {
             self.advance();
         }
@@ -218,7 +218,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn string(self: &mut Self) -> Result<Token<'a>, String> {
+    fn string(&mut self) -> Result<Token<'a>, String> {
         while !self.at_eof() && self.peek() != '"' {
             self.advance();
         }
@@ -231,14 +231,14 @@ impl<'a> Scanner<'a> {
         Ok(Token::Str(&self.src[1..self.current_idx - 1]))
     }
 
-    fn number(self: &mut Self) -> Result<Token<'a>, String> {
+    fn number(&mut self) -> Result<Token<'a>, String> {
         while !self.at_eof() && self.peek().is_numeric() {
             self.advance();
         }
 
         if !self.at_eof() && self.peek() == '.' {
             self.advance();
-            if self.at_eof() || !self.peek().is_digit(10) {
+            if self.at_eof() || !self.peek().is_ascii_digit() {
                 return Err("Expected digit after '.'".to_owned());
             }
 
@@ -254,7 +254,7 @@ impl<'a> Scanner<'a> {
         return Ok(Token::Integer(str::parse::<i32>(number_str).unwrap()));
     }
 
-    pub fn peek_token(self: &mut Self) -> Result<Token<'a>, String> {
+    pub fn peek_token(&mut self) -> Result<Token<'a>, String> {
         if let Some(token) = self.peeked_token {
             return Ok(token);
         }
@@ -264,7 +264,7 @@ impl<'a> Scanner<'a> {
         Ok(token)
     }
 
-    pub fn match_token(self: &mut Self, token: Token) -> Result<bool, String> {
+    pub fn match_token(&mut self, token: Token) -> Result<bool, String> {
         let t = self.peek_token()?;
         if t == token {
             self.peeked_token = None;
@@ -274,7 +274,7 @@ impl<'a> Scanner<'a> {
         Ok(false)
     }
 
-    pub fn scan_token(self: &mut Self) -> Result<Token<'a>, String> {
+    pub fn scan_token(&mut self) -> Result<Token<'a>, String> {
         if let Some(token) = self.peeked_token.take() {
             return Ok(token);
         }
@@ -306,7 +306,7 @@ impl<'a> Scanner<'a> {
 
         if c.is_alphabetic() {
             return Ok(self.identifier());
-        } else if c.is_digit(10) {
+        } else if c.is_ascii_digit() {
             return self.number();
         }
 
@@ -331,27 +331,27 @@ impl<'a> Scanner<'a> {
                 if self.match_char('=') {
                     return Ok(Token::BangEqual);
                 }
-                return Ok(Token::Bang);
+                Ok(Token::Bang)
             }
             '<' => {
                 if self.match_char('=') {
                     return Ok(Token::LessEqual);
                 }
-                return Ok(Token::Less);
+                Ok(Token::Less)
             }
             '>' => {
                 if self.match_char('=') {
                     return Ok(Token::GreaterEqual);
                 }
-                return Ok(Token::Greater);
+                Ok(Token::Greater)
             }
             '=' => {
                 if self.match_char('=') {
                     return Ok(Token::EqualEqual);
                 }
-                return Ok(Token::Equal);
+                Ok(Token::Equal)
             }
-            '"' => return self.string(),
+            '"' => self.string(),
             _ => Err(format!("Unexpected token '{}'", c)),
         }
     }

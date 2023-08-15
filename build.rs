@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::prelude::*;
 
-const OPCODES: &[&'static str] = &[
+const OPCODES: &[&str] = &[
     "CONSTANT_INTEGER",
     "CONSTANT_FLOAT",
     //

@@ -56,7 +56,7 @@ impl fmt::Display for ValueType {
 }
 
 pub trait DataSection {
-    fn create_constant_str(self: &mut Self, s: &str) -> u8;
+    fn create_constant_str(&mut self, s: &str) -> u8;
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -89,7 +89,7 @@ impl Compiler {
     }
 
     pub fn compile<'a, T: DataSection>(
-        self: &mut Self,
+        &mut self,
         data_section: &'a mut T,
         src: &'a str,
     ) -> Result<Chunk, String> {
@@ -97,7 +97,7 @@ impl Compiler {
             globals: &mut self.globals,
             stack_frames: Vec::new(),
             data_section,
-            scanner: Scanner::new(&src),
+            scanner: Scanner::new(src),
             chunk: Chunk::new(),
             type_stack: Vec::new(),
         };
@@ -117,7 +117,7 @@ pub struct SrcCompiler<'a, T> {
 }
 
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
-    fn clear_stack(self: &mut Self) {
+    fn clear_stack(&mut self) {
         let pop_count = self.type_stack.len();
         self.type_stack.clear();
 
@@ -126,7 +126,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
     }
 
-    fn consume(self: &mut Self, token: Token) -> Result<(), String> {
+    fn consume(&mut self, token: Token) -> Result<(), String> {
         if self.scanner.match_token(token)? {
             return Ok(());
         }
@@ -134,7 +134,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Err(format!("Expected {}", token))
     }
 
-    pub fn compile(self: &mut Self) -> Result<(), String> {
+    pub fn compile(&mut self) -> Result<(), String> {
         while self.scanner.peek_token()? != Token::Eof {
             self.rule()?;
         }
@@ -142,7 +142,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn rule(self: &mut Self) -> Result<(), String> {
+    fn rule(&mut self) -> Result<(), String> {
         let is_declaration = self.try_declaration()?;
 
         if !is_declaration {
@@ -170,7 +170,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn try_declaration(self: &mut Self) -> Result<bool, String> {
+    fn try_declaration(&mut self) -> Result<bool, String> {
         if self.scanner.match_token(Token::Let)? {
             self.let_statement()?;
         } else if self.scanner.match_token(Token::Print)? {
@@ -182,7 +182,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(true)
     }
 
-    fn expression(self: &mut Self) -> Result<bool, String> {
+    fn expression(&mut self) -> Result<bool, String> {
         if self.scanner.match_token(Token::LeftBrace)? {
             self.block_expression()?;
             return Ok(true);
@@ -227,7 +227,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(false)
     }
 
-    fn let_statement(self: &mut Self) -> Result<(), String> {
+    fn let_statement(&mut self) -> Result<(), String> {
         let mutable = self.scanner.match_token(Token::Mut)?;
         let identifier_name = match self.scanner.scan_token()? {
             Token::Identifier(ident) => ident,
@@ -246,7 +246,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::Equal)?;
         self.expression()?;
 
-        if self.type_stack.len() == 0 {
+        if self.type_stack.is_empty() {
             return Err("Expected value on right hand side of '=', got None".to_owned());
         }
 
@@ -255,7 +255,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err(format!("Expected type {}, got {}", var_type, expr_type));
         }
 
-        if self.stack_frames.len() == 0 {
+        if self.stack_frames.is_empty() {
             if self
                 .globals
                 .insert(
@@ -302,7 +302,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn find_local(self: &mut Self, name: &str) -> Option<(Variable, u32)> {
+    fn find_local(&mut self, name: &str) -> Option<(Variable, u32)> {
         if let Some(frame) = self.stack_frames.last_mut() {
             let found = frame
                 .locals
@@ -319,14 +319,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         None
     }
 
-    fn find_global(self: &Self, name: &str) -> Result<Variable, String> {
+    fn find_global(&self, name: &str) -> Result<Variable, String> {
         match self.globals.get(name) {
-            None => return Err(format!("Global {} not defined", name)),
+            None => Err(format!("Global {} not defined", name)),
             Some(x) => Ok(*x),
         }
     }
 
-    fn identifier(self: &mut Self, name: &str) -> Result<(), String> {
+    fn identifier(&mut self, name: &str) -> Result<(), String> {
         enum Identifier {
             Global,
             Local(u8),
@@ -343,7 +343,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if self.scanner.match_token(Token::Equal)? {
             self.expression()?;
 
-            if self.type_stack.len() == 0 {
+            if self.type_stack.is_empty() {
                 return Err("Expected right hand side value, got None".to_owned());
             }
 
@@ -371,7 +371,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
             }
 
-            assert!(self.type_stack.len() > 0);
+            assert!(!self.type_stack.is_empty());
             self.type_stack.pop();
         } else {
             match symbol {
@@ -395,7 +395,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn print(self: &mut Self) -> Result<(), String> {
+    fn print(&mut self) -> Result<(), String> {
         self.expression()?;
         self.chunk.write_byte(opcode::PRINT);
         self.type_stack.pop();
@@ -403,7 +403,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn block_expression(self: &mut Self) -> Result<(), String> {
+    fn block_expression(&mut self) -> Result<(), String> {
         let push_local = {
             if let Some(top) = self.stack_frames.last_mut() {
                 top.current_scope += 1;
@@ -423,7 +423,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.rule()?;
         }
 
-        assert!(self.stack_frames.len() > 0);
+        assert!(!self.stack_frames.is_empty());
         if push_local {
             self.stack_frames.pop();
             self.chunk.code.push(opcode::POP_FRAME);
@@ -438,7 +438,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn term_factor(self: &mut Self, opi: u8, opf: u8) -> Result<(), String> {
+    fn term_factor(&mut self, opi: u8, opf: u8) -> Result<(), String> {
         self.primary()?;
 
         let len = self.type_stack.len();
@@ -458,7 +458,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn factor(self: &mut Self) -> Result<(), String> {
+    fn factor(&mut self) -> Result<(), String> {
         self.primary()?;
 
         loop {
@@ -474,7 +474,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn term_right(self: &mut Self, opi: u8, opf: u8) -> Result<(), String> {
+    fn term_right(&mut self, opi: u8, opf: u8) -> Result<(), String> {
         self.factor()?;
 
         let len = self.type_stack.len();
@@ -494,7 +494,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn term(self: &mut Self) -> Result<(), String> {
+    fn term(&mut self) -> Result<(), String> {
         self.factor()?;
 
         loop {
@@ -510,7 +510,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn integer(self: &mut Self, i: i32) {
+    fn integer(&mut self, i: i32) {
         self.chunk.write_byte(opcode::CONSTANT_INTEGER);
         let mut encoder = var_len_int::Encoder::new(i);
         loop {
@@ -527,7 +527,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn float(self: &mut Self, f: f32) {
+    fn float(&mut self, f: f32) {
         self.chunk.write_byte(opcode::CONSTANT_FLOAT);
         for byte in float::encode(f) {
             self.chunk.write_byte(byte);
@@ -538,7 +538,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn primary(self: &mut Self) -> Result<(), String> {
+    fn primary(&mut self) -> Result<(), String> {
         let t = self.scanner.scan_token();
         match t {
             Ok(Token::Identifier(name)) => {
@@ -598,7 +598,7 @@ mod test {
     }
 
     impl DataSection for TestDataSection {
-        fn create_constant_str(self: &mut Self, _s: &str) -> u8 {
+        fn create_constant_str(&mut self, _s: &str) -> u8 {
             return 0;
         }
     }

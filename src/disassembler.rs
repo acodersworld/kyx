@@ -13,7 +13,7 @@ impl<'a> Disassembler<'a> {
         Disassembler { code, offset: 0 }
     }
 
-    pub fn disassemble(self: &mut Self) {
+    pub fn disassemble(&mut self) {
         while self.offset < self.code.len() {
             let offset = self.offset;
             self.offset += 1;
@@ -53,11 +53,11 @@ impl<'a> Disassembler<'a> {
         }
     }
 
-    fn simple_instruction(self: &mut Self, name: &str) {
+    fn simple_instruction(&mut self, name: &str) {
         println!("{}", name);
     }
 
-    fn jmp_instruction(self: &mut Self, name: &str) {
+    fn jmp_instruction(&mut self, name: &str) {
         let jmp_offset = self.code[self.offset];
         println!(
             "{}: {} -> {}",
@@ -68,7 +68,7 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
     }
 
-    fn read_instruction(self: &mut Self) {
+    fn read_instruction(&mut self) {
         let read_type = self.code[self.offset];
         self.offset += 1;
 
@@ -82,7 +82,7 @@ impl<'a> Disassembler<'a> {
         println!("read {}", read_type);
     }
 
-    fn constant_integer_instruction(self: &mut Self) {
+    fn constant_integer_instruction(&mut self) {
         let mut decoder = var_len_int::Decoder::new();
         while !decoder.step_decode(self.code[self.offset]) {
             self.offset += 1;
@@ -92,56 +92,56 @@ impl<'a> Disassembler<'a> {
         println!("CONSTANT INT: {}", decoder.val());
     }
 
-    fn constant_float_instruction(self: &mut Self) {
+    fn constant_float_instruction(&mut self) {
         let value = float::decode(&self.code[self.offset..self.offset + 4].try_into().unwrap());
         self.offset += 4;
 
         println!("CONSTANT FLOAT: {}", value);
     }
 
-    fn constant_string_instruction(self: &mut Self) {
+    fn constant_string_instruction(&mut self) {
         let idx = self.code[self.offset];
         self.offset += 1;
 
         println!("CONSTANT STRING: idx({})", idx);
     }
 
-    fn set_global(self: &mut Self) {
+    fn set_global(&mut self) {
         let idx = self.code[self.offset];
         self.offset += 1;
 
         println!("SET GLOBAL: idx({})", idx);
     }
 
-    fn set_local(self: &mut Self) {
+    fn set_local(&mut self) {
         let idx = self.code[self.offset];
         self.offset += 1;
 
         println!("SET LOCAL: idx({})", idx);
     }
 
-    fn push_global(self: &mut Self) {
+    fn push_global(&mut self) {
         let idx = self.code[self.offset];
         self.offset += 1;
 
         println!("PUSH GLOBAL: idx({})", idx);
     }
 
-    fn push_local(self: &mut Self) {
+    fn push_local(&mut self) {
         let idx = self.code[self.offset];
         self.offset += 1;
 
         println!("PUSH LOCAL: idx({})", idx);
     }
 
-    fn define_global(self: &mut Self) {
+    fn define_global(&mut self) {
         let idx = self.code[self.offset];
         self.offset += 1;
 
         println!("DEFINE GLOBAL idx({})", idx);
     }
 
-    fn define_local(self: &mut Self) {
+    fn define_local(&mut self) {
         println!("DEFINE LOCAL");
     }
 }

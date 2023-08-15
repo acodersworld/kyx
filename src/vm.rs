@@ -31,7 +31,7 @@ struct VMDataSection<'a> {
 }
 
 impl DataSection for VMDataSection<'_> {
-    fn create_constant_str(self: &mut Self, s: &str) -> u8 {
+    fn create_constant_str(&mut self, s: &str) -> u8 {
         for (idx, string) in self.constant_strs.iter().enumerate() {
             let val = unsafe { &string.as_ref().val };
             if val == s {
@@ -74,7 +74,7 @@ impl<'printer> VM<'printer> {
         }
     }
 
-    fn run(self: &mut Self, code: &Vec<u8>) {
+    fn run(&mut self, code: &[u8]) {
         self.offset = 0;
         let len = code.len();
 
@@ -113,7 +113,7 @@ impl<'printer> VM<'printer> {
         }
     }
 
-    pub fn interpret(self: &mut Self, src: &str) -> Result<(), String> {
+    pub fn interpret(&mut self, src: &str) -> Result<(), String> {
         let mut data_section = VMDataSection {
             objects: &mut self.objects,
             constant_strs: &mut self.constant_strs,
@@ -129,7 +129,7 @@ impl<'printer> VM<'printer> {
         Ok(())
     }
 
-    fn binary_op<T, OP>(self: &mut Self, op: OP)
+    fn binary_op<T, OP>(&mut self, op: OP)
     where
         T: FromValue<ValueType = T>,
         OP: FnOnce(T, T) -> Value,
@@ -137,45 +137,45 @@ impl<'printer> VM<'printer> {
         let st = &mut self.stack;
 
         let right = T::from_value(&st.pop().unwrap()).unwrap();
-        let left = T::from_value(&st.last().unwrap()).unwrap();
+        let left = T::from_value(st.last().unwrap()).unwrap();
 
         let result = op(left, right);
         *st.last_mut().unwrap() = result;
     }
 
-    fn integer_add(self: &mut Self) {
+    fn integer_add(&mut self) {
         self.binary_op::<i32, _>(|l, r| Value::Integer(l + r));
     }
 
-    fn integer_sub(self: &mut Self) {
+    fn integer_sub(&mut self) {
         self.binary_op::<i32, _>(|l, r| Value::Integer(l - r));
     }
 
-    fn integer_mul(self: &mut Self) {
+    fn integer_mul(&mut self) {
         self.binary_op::<i32, _>(|l, r| Value::Integer(l * r));
     }
 
-    fn integer_div(self: &mut Self) {
+    fn integer_div(&mut self) {
         self.binary_op::<i32, _>(|l, r| Value::Integer(l / r));
     }
 
-    fn float_add(self: &mut Self) {
+    fn float_add(&mut self) {
         self.binary_op::<f32, _>(|l, r| Value::Float(l + r));
     }
 
-    fn float_sub(self: &mut Self) {
+    fn float_sub(&mut self) {
         self.binary_op::<f32, _>(|l, r| Value::Float(l - r));
     }
 
-    fn float_mul(self: &mut Self) {
+    fn float_mul(&mut self) {
         self.binary_op::<f32, _>(|l, r| Value::Float(l * r));
     }
 
-    fn float_div(self: &mut Self) {
+    fn float_div(&mut self) {
         self.binary_op::<f32, _>(|l, r| Value::Float(l / r));
     }
 
-    fn push_integer(self: &mut Self, code: &Vec<u8>) {
+    fn push_integer(&mut self, code: &[u8]) {
         let mut decoder = var_len_int::Decoder::new();
         while !decoder.step_decode(code[self.offset]) {
             self.offset += 1;
@@ -185,21 +185,21 @@ impl<'printer> VM<'printer> {
         self.stack.push(Value::Integer(decoder.val()));
     }
 
-    fn push_float(self: &mut Self, code: &Vec<u8>) {
+    fn push_float(&mut self, code: &[u8]) {
         let value = float::decode(&code[self.offset..self.offset + 4].try_into().unwrap());
         self.offset += 4;
 
         self.stack.push(Value::Float(value));
     }
 
-    fn push_constant_string(self: &mut Self, code: &Vec<u8>) {
+    fn push_constant_string(&mut self, code: &[u8]) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
 
         self.stack.push(Value::Str(self.constant_strs[idx]));
     }
 
-    fn set_global(self: &mut Self, code: &Vec<u8>) {
+    fn set_global(&mut self, code: &[u8]) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
 
@@ -208,17 +208,17 @@ impl<'printer> VM<'printer> {
         self.globals.insert(name, *self.stack.last().unwrap());
     }
 
-    fn set_local(self: &mut Self, code: &Vec<u8>) {
+    fn set_local(&mut self, code: &[u8]) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
 
-        assert!(self.locals.len() > 0);
-        assert!(self.stack.len() > 0);
+        assert!(!self.locals.is_empty());
+        assert!(!self.stack.is_empty());
         let local = &mut self.locals.last_mut().unwrap()[idx];
         *local = self.stack.pop().unwrap();
     }
 
-    fn push_global(self: &mut Self, code: &Vec<u8>) {
+    fn push_global(&mut self, code: &[u8]) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
 
@@ -227,76 +227,76 @@ impl<'printer> VM<'printer> {
         self.stack.push(self.globals[&name]);
     }
 
-    fn push_local(self: &mut Self, code: &Vec<u8>) {
+    fn push_local(&mut self, code: &[u8]) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
 
-        assert!(self.locals.len() > 0);
+        assert!(!self.locals.is_empty());
         let locals = self.locals.last().unwrap();
-        assert!(locals.len() > idx);
+        assert!(!locals.is_empty());
         self.stack.push(locals[idx]);
     }
 
-    fn define_global(self: &mut Self, code: &Vec<u8>) {
+    fn define_global(&mut self, code: &[u8]) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
 
         let name = self.constant_strs[idx];
         let st = &mut self.stack;
         assert!(!self.globals.contains_key(&name));
-        assert!(st.len() > 0);
+        assert!(!st.is_empty());
 
         let value = st.pop().unwrap();
         self.globals.insert(name, value);
     }
 
-    fn define_local(self: &mut Self) {
+    fn define_local(&mut self) {
         let st = &mut self.stack;
-        assert!(!self.locals.len() > 0);
-        assert!(st.len() > 0);
+        assert!(!self.locals.is_empty());
+        assert!(!st.is_empty());
 
         let locals = self.locals.last_mut().unwrap();
         let value = st.pop().unwrap();
         locals.push(value);
     }
 
-    fn print(self: &mut Self) {
+    fn print(&mut self) {
         let value = self.stack.pop().unwrap();
         let s = match value {
             Value::Float(f) => format!("{}", f),
             Value::Integer(i) => format!("{}", i),
-            Value::Str(s) => format!("{}", unsafe { &s.as_ref().val }),
+            Value::Str(s) => unsafe { &s.as_ref().val }.to_string(),
         };
 
         self.printer.print(&s);
     }
 
-    fn pop(self: &mut Self) {
-        assert!(self.stack.len() > 0);
+    fn pop(&mut self) {
+        assert!(!self.stack.is_empty());
         self.stack.pop();
     }
 
-    fn local_pop(self: &mut Self) {
-        assert!(self.locals.len() > 0);
+    fn local_pop(&mut self) {
+        assert!(!self.locals.is_empty());
         self.locals.last_mut().unwrap().pop();
     }
 
-    fn push_frame(self: &mut Self) {
+    fn push_frame(&mut self) {
         self.locals.push(Vec::new());
     }
 
-    fn pop_frame(self: &mut Self) {
-        assert!(self.locals.len() > 0);
+    fn pop_frame(&mut self) {
+        assert!(!self.locals.is_empty());
         self.locals.pop();
     }
 
-    fn jmp(self: &mut Self, code: &Vec<u8>) {
+    fn jmp(&mut self, code: &[u8]) {
         let offset = code[self.offset] as usize;
         self.offset += offset;
     }
 
-    fn jmp_if_false(self: &mut Self, code: &Vec<u8>) {
-        assert!(self.stack.len() > 0);
+    fn jmp_if_false(&mut self, code: &[u8]) {
+        assert!(!self.stack.is_empty());
         let cond = self.stack.pop().unwrap();
 
         if !is_truthy(&cond) {
@@ -306,7 +306,7 @@ impl<'printer> VM<'printer> {
         }
     }
 
-    fn read_input(self: &mut Self, code: &Vec<u8>) {
+    fn read_input(&mut self, code: &[u8]) {
         let read_type = code[self.offset];
         self.offset += 1;
 
@@ -314,18 +314,10 @@ impl<'printer> VM<'printer> {
         std::io::stdin().read_line(&mut line).unwrap();
 
         if read_type == 0 {
-            let val = match line.trim().parse::<i32>() {
-                Ok(v) => v,
-                Err(_) => 0,
-            };
-
+            let val = line.trim().parse::<i32>().unwrap_or(0);
             self.stack.push(Value::Integer(val));
         } else if read_type == 1 {
-            let val = match line.trim().parse::<f32>() {
-                Ok(v) => v,
-                Err(_) => 0.0,
-            };
-
+            let val = line.trim().parse::<f32>().unwrap_or(0.0);
             self.stack.push(Value::Float(val));
         } else {
             let mut data_section = VMDataSection {
