@@ -30,7 +30,7 @@ const OPCODES: &[&'static str] = &[
     "JMP",
     "JMP_IF_FALSE",
     //
-    "READ_INPUT"
+    "READ_INPUT",
 ];
 
 fn main() -> std::io::Result<()> {

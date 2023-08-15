@@ -56,7 +56,7 @@ fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Integer(i) => *i != 0,
         Value::Float(f) => *f != 0.0,
-        Value::Str(_s) => true
+        Value::Str(_s) => true,
     }
 }
 
@@ -301,8 +301,7 @@ impl<'printer> VM<'printer> {
 
         if !is_truthy(&cond) {
             self.offset += code[self.offset] as usize;
-        }
-        else {
+        } else {
             self.offset += 1;
         }
     }
@@ -317,20 +316,18 @@ impl<'printer> VM<'printer> {
         if read_type == 0 {
             let val = match line.trim().parse::<i32>() {
                 Ok(v) => v,
-                Err(_) => 0
+                Err(_) => 0,
             };
 
             self.stack.push(Value::Integer(val));
-        }
-        else if read_type == 1 {
+        } else if read_type == 1 {
             let val = match line.trim().parse::<f32>() {
                 Ok(v) => v,
-                Err(_) => 0.0
+                Err(_) => 0.0,
             };
 
             self.stack.push(Value::Float(val));
-        }
-        else {
+        } else {
             let mut data_section = VMDataSection {
                 objects: &mut self.objects,
                 constant_strs: &mut self.constant_strs,

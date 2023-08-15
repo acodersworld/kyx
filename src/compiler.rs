@@ -160,8 +160,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     if self.scanner.match_token(Token::SemiColon)? {
                         self.clear_stack();
                     }
-                }
-                else {
+                } else {
                     self.consume(Token::SemiColon)?;
                     self.clear_stack();
                 }
@@ -187,8 +186,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if self.scanner.match_token(Token::LeftBrace)? {
             self.block_expression()?;
             return Ok(true);
-        }
-        else if self.scanner.match_token(Token::If)? {
+        } else if self.scanner.match_token(Token::If)? {
             self.expression()?;
             self.consume(Token::LeftBrace)?;
             self.chunk.write_byte(opcode::JMP_IF_FALSE);
@@ -217,7 +215,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 token => return Err(format!("Expected type but got {}", token)),
             };
 
-            self.type_stack.push(Variable { value_type, read_only: true });
+            self.type_stack.push(Variable {
+                value_type,
+                read_only: true,
+            });
             self.chunk.write_byte(type_code);
         } else {
             self.term()?;

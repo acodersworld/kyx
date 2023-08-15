@@ -1,7 +1,7 @@
 use crate::float;
 use crate::opcode;
-use crate::var_len_int;
 use crate::read_input_type;
+use crate::var_len_int;
 
 pub struct Disassembler<'a> {
     code: &'a [u8],
@@ -59,7 +59,12 @@ impl<'a> Disassembler<'a> {
 
     fn jmp_instruction(self: &mut Self, name: &str) {
         let jmp_offset = self.code[self.offset];
-        println!("{}: {} -> {}", name, jmp_offset, self.offset + jmp_offset as usize);
+        println!(
+            "{}: {} -> {}",
+            name,
+            jmp_offset,
+            self.offset + jmp_offset as usize
+        );
         self.offset += 1;
     }
 
@@ -71,7 +76,7 @@ impl<'a> Disassembler<'a> {
             read_input_type::INTEGER => "integer",
             read_input_type::FLOAT => "float",
             read_input_type::STRING => "string",
-            _ => "UNKNOWN"
+            _ => "UNKNOWN",
         };
 
         println!("read {}", read_type);
