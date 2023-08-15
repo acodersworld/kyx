@@ -52,6 +52,8 @@ pub enum Token<'a> {
     Colon,
     Comma,
 
+    ReadInput,
+
     Eof,
 }
 
@@ -107,6 +109,8 @@ impl Token<'_> {
             Self::SemiColon => ";",
             Self::Colon => ":",
             Self::Comma => ",",
+
+            Self::ReadInput => "read",
 
             Self::Eof => "<EOF>",
         };
@@ -209,6 +213,7 @@ impl<'a> Scanner<'a> {
             "while" => Token::While,
             "for" => Token::For,
             "return" => Token::Return,
+            "read" => Token::ReadInput,
             _ => Token::Identifier(ident),
         }
     }

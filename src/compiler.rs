@@ -24,10 +24,12 @@ use std::vec::Vec;
    EXPRESSIONS:
        expression -> assignment |
                      if_expr |
-                     block_expression
+                     block_expression |
+                     read_expr
 
            block_expression -> "{" declaration* expression? "}"
            if_expr -> "if" expression block_expression ("else" block_expression)?
+           read_expr -> "read" type
            assignment -> identifier = expression | term
            term -> factor ( "-" | "+" factor )*
            factor -> primary ( "*" | "/" primary )*
@@ -205,6 +207,18 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
 
             return Ok(true);
+        } else if self.scanner.match_token(Token::ReadInput)? {
+            self.chunk.write_byte(opcode::READ_INPUT);
+
+            let (value_type, type_code): (ValueType, u8) = match self.scanner.scan_token()? {
+                Token::TypeInt => (ValueType::Integer, 0),
+                Token::TypeFloat => (ValueType::Float, 1),
+                Token::TypeString => (ValueType::Str, 2),
+                token => return Err(format!("Expected type but got {}", token)),
+            };
+
+            self.type_stack.push(Variable { value_type, read_only: true });
+            self.chunk.write_byte(type_code);
         } else {
             self.term()?;
         }

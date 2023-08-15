@@ -105,6 +105,7 @@ impl<'printer> VM<'printer> {
                 opcode::POP_FRAME => self.pop_frame(),
                 opcode::JMP => self.jmp(code),
                 opcode::JMP_IF_FALSE => self.jmp_if_false(code),
+                opcode::READ_INPUT => self.read_input(code),
                 _ => {
                     panic!("Unknown instruction: {}", code[self.offset - 1])
                 }
@@ -303,6 +304,40 @@ impl<'printer> VM<'printer> {
         }
         else {
             self.offset += 1;
+        }
+    }
+
+    fn read_input(self: &mut Self, code: &Vec<u8>) {
+        let read_type = code[self.offset];
+        self.offset += 1;
+
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).unwrap();
+
+        if read_type == 0 {
+            let val = match line.trim().parse::<i32>() {
+                Ok(v) => v,
+                Err(_) => 0
+            };
+
+            self.stack.push(Value::Integer(val));
+        }
+        else if read_type == 1 {
+            let val = match line.trim().parse::<f32>() {
+                Ok(v) => v,
+                Err(_) => 0.0
+            };
+
+            self.stack.push(Value::Float(val));
+        }
+        else {
+            let mut data_section = VMDataSection {
+                objects: &mut self.objects,
+                constant_strs: &mut self.constant_strs,
+            };
+
+            let idx = data_section.create_constant_str(line.trim()) as usize;
+            self.stack.push(Value::Str(self.constant_strs[idx]));
         }
     }
 }

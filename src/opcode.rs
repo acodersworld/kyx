@@ -22,3 +22,4 @@ pub const PUSH_FRAME: u8 = 20;
 pub const POP_FRAME: u8 = 21;
 pub const JMP: u8 = 22;
 pub const JMP_IF_FALSE: u8 = 23;
+pub const READ_INPUT: u8 = 24;

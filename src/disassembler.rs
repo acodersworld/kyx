@@ -1,6 +1,7 @@
 use crate::float;
 use crate::opcode;
 use crate::var_len_int;
+use crate::read_input_type;
 
 pub struct Disassembler<'a> {
     code: &'a [u8],
@@ -43,6 +44,7 @@ impl<'a> Disassembler<'a> {
                 opcode::POP_FRAME => self.simple_instruction("pop frame"),
                 opcode::JMP => self.jmp_instruction("jump"),
                 opcode::JMP_IF_FALSE => self.jmp_instruction("jump if false"),
+                opcode::READ_INPUT => self.read_instruction(),
                 code => {
                     println!("Unknown instruction {}", code);
                     return;
@@ -60,6 +62,21 @@ impl<'a> Disassembler<'a> {
         println!("{}: {} -> {}", name, jmp_offset, self.offset + jmp_offset as usize);
         self.offset += 1;
     }
+
+    fn read_instruction(self: &mut Self) {
+        let read_type = self.code[self.offset];
+        self.offset += 1;
+
+        let read_type = match read_type {
+            read_input_type::INTEGER => "integer",
+            read_input_type::FLOAT => "float",
+            read_input_type::STRING => "string",
+            _ => "UNKNOWN"
+        };
+
+        println!("read {}", read_type);
+    }
+
     fn constant_integer_instruction(self: &mut Self) {
         let mut decoder = var_len_int::Decoder::new();
         while !decoder.step_decode(self.code[self.offset]) {

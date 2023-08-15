@@ -7,6 +7,7 @@ mod scanner;
 mod value;
 mod var_len_int;
 mod vm;
+mod read_input_type;
 
 use rustyline::DefaultEditor;
 
