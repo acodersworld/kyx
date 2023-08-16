@@ -23,12 +23,14 @@ use std::vec::Vec;
 
    EXPRESSIONS:
        expression -> assignment |
-                     if_expr |
                      block_expression |
+                     if_expr |
+                     while_expr |
                      read_expr
 
            block_expression -> "{" declaration* expression? "}"
            if_expr -> "if" expression block_expression ("else" block_expression)?
+           while_expr -> "while" exxpression block_expression
            read_expr -> "read" type
 
            assignment -> identifier = expression | equality
@@ -206,6 +208,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.block_expression()?;
             }
             self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
+
+            return Ok(true);
+        } else if self.scanner.match_token(Token::While)? {
+            let loop_begin_idx = self.chunk.code.len() + 1;
+            self.expression()?;
+            self.chunk.write_byte(opcode::JMP_IF_FALSE);
+            let cond_break_idx = self.chunk.write_byte(0);
+            self.block_expression()?;
+            self.chunk.write_byte(opcode::JMP);
+            self.chunk.write_byte((self.chunk.code.len() - loop_begin_idx) as u8);
+            self.chunk.code[cond_break_idx] = (self.chunk.code.len() - cond_break_idx) as u8;
 
             return Ok(true);
         } else if self.scanner.match_token(Token::ReadInput)? {
