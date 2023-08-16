@@ -14,6 +14,13 @@ const OPCODES: &[&str] = &[
     "MULF",
     "DIVF",
     //
+    "EQI",
+    "EQF",
+    "EQS",
+    "NEQI",
+    "NEQF",
+    "NEQS",
+    //
     "PRINT",
     "CONSTANT_STRING",
     "DEFINE_GLOBAL",

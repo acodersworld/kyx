@@ -30,7 +30,9 @@ use std::vec::Vec;
            block_expression -> "{" declaration* expression? "}"
            if_expr -> "if" expression block_expression ("else" block_expression)?
            read_expr -> "read" type
-           assignment -> identifier = expression | term
+
+           assignment -> identifier = expression | equality
+           equality -> term ("!=" | "==" term)?
            term -> factor ( "-" | "+" factor )*
            factor -> primary ( "*" | "/" primary )*
            primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
@@ -221,7 +223,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             });
             self.chunk.write_byte(type_code);
         } else {
-            self.term()?;
+            self.equality()?;
         }
 
         Ok(false)
@@ -438,7 +440,41 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn term_factor(&mut self, opi: u8, opf: u8) -> Result<(), String> {
+    fn equality_right(&mut self, opi: u8, opf: u8, ops: u8) -> Result<(), String> {
+        self.term()?;
+
+        let len = self.type_stack.len();
+        let left_type = self.type_stack[len - 2].value_type;
+        let right_type = self.type_stack[len - 1].value_type;
+
+        if left_type != right_type {
+            return Err("Type error".to_owned());
+        } else if left_type == ValueType::Integer {
+            self.chunk.write_byte(opi);
+        } else if left_type == ValueType::Float {
+            self.chunk.write_byte(opf);
+        } else {
+            assert_eq!(left_type, ValueType::Str);
+            self.chunk.write_byte(ops);
+        }
+
+        Ok(())
+    }
+
+    fn equality(&mut self) -> Result<(), String> {
+        self.term()?;
+
+        if self.scanner.match_token(Token::EqualEqual)? {
+            self.equality_right(opcode::EQI, opcode::EQF, opcode::EQS)?;
+        }
+        else if self.scanner.match_token(Token::BangEqual)? {
+            self.equality_right(opcode::NEQI, opcode::NEQF, opcode::NEQS)?;
+        }
+
+        Ok(())
+    }
+
+    fn factor_right(&mut self, opi: u8, opf: u8) -> Result<(), String> {
         self.primary()?;
 
         let len = self.type_stack.len();
@@ -450,6 +486,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         } else if left_type == ValueType::Integer {
             self.chunk.write_byte(opi);
         } else {
+            assert_eq!(left_type, ValueType::Float);
             self.chunk.write_byte(opf);
         }
 
@@ -463,9 +500,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         loop {
             if self.scanner.match_token(Token::Star)? {
-                self.term_factor(opcode::MULI, opcode::MULF)?;
+                self.factor_right(opcode::MULI, opcode::MULF)?;
             } else if self.scanner.match_token(Token::Slash)? {
-                self.term_factor(opcode::DIVI, opcode::DIVF)?;
+                self.factor_right(opcode::DIVI, opcode::DIVF)?;
             } else {
                 break;
             }
@@ -486,6 +523,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         } else if left_type == ValueType::Integer {
             self.chunk.write_byte(opi);
         } else {
+            assert_eq!(left_type, ValueType::Float);
             self.chunk.write_byte(opf);
         }
 

@@ -56,7 +56,8 @@ fn is_truthy(value: &Value) -> bool {
     match value {
         Value::Integer(i) => *i != 0,
         Value::Float(f) => *f != 0.0,
-        Value::Str(_s) => true,
+        Value::Str(s) => unsafe { !s.as_ref().val.is_empty() },
+        Value::Bool(b) => *b,
     }
 }
 
@@ -98,6 +99,12 @@ impl<'printer> VM<'printer> {
                 opcode::SUBF => self.float_sub(),
                 opcode::MULF => self.float_mul(),
                 opcode::DIVF => self.float_div(),
+                opcode::EQI => self.integer_equals(),
+                opcode::EQF => self.float_equals(),
+                opcode::EQS => self.string_equals(),
+                opcode::NEQI => self.integer_not_equals(),
+                opcode::NEQF => self.float_not_equals(),
+                opcode::NEQS => self.string_not_equals(),
                 opcode::PRINT => self.print(),
                 opcode::POP => self.pop(),
                 opcode::LOCAL_POP => self.local_pop(),
@@ -132,7 +139,7 @@ impl<'printer> VM<'printer> {
     fn binary_op<T, OP>(&mut self, op: OP)
     where
         T: FromValue<ValueType = T>,
-        OP: FnOnce(T, T) -> Value,
+        OP: FnOnce(T::ValueType, T::ValueType) -> Value,
     {
         let st = &mut self.stack;
 
@@ -173,6 +180,30 @@ impl<'printer> VM<'printer> {
 
     fn float_div(&mut self) {
         self.binary_op::<f32, _>(|l, r| Value::Float(l / r));
+    }
+
+    fn integer_equals(&mut self) {
+        self.binary_op::<i32, _>(|l, r| Value::Bool(l == r));
+    }
+
+    fn float_equals(&mut self) {
+        self.binary_op::<f32, _>(|l, r| Value::Bool(l == r));
+    }
+
+    fn string_equals(&mut self) {
+        self.binary_op::<NonNull<StringValue>, _>(|l, r| Value::Bool(l == r));
+    }
+
+    fn integer_not_equals(&mut self) {
+        self.binary_op::<i32, _>(|l, r| Value::Bool(l != r));
+    }
+
+    fn float_not_equals(&mut self) {
+        self.binary_op::<f32, _>(|l, r| Value::Bool(l != r));
+    }
+
+    fn string_not_equals(&mut self) {
+        self.binary_op::<NonNull<StringValue>, _>(|l, r| Value::Bool(l != r));
     }
 
     fn push_integer(&mut self, code: &[u8]) {
@@ -266,6 +297,7 @@ impl<'printer> VM<'printer> {
             Value::Float(f) => format!("{}", f),
             Value::Integer(i) => format!("{}", i),
             Value::Str(s) => unsafe { &s.as_ref().val }.to_string(),
+            Value::Bool(b) => format!("{}", b),
         };
 
         self.printer.print(&s);
@@ -671,5 +703,53 @@ mod test {
         assert_eq!(vm.interpret(src), Ok(()));
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "0");
+    }
+
+    #[test]
+    fn equals() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            print 1 == 1;
+            print 3.142 == 3.142;
+            print \"hello\" == \"hello\";
+
+            print 1 == 2;
+            print 3.142 == 1.42;
+            print \"hello\" == \"world\";
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 6);
+        assert_eq!(printer.strings[0], "true");
+        assert_eq!(printer.strings[1], "true");
+        assert_eq!(printer.strings[2], "true");
+        assert_eq!(printer.strings[3], "false");
+        assert_eq!(printer.strings[4], "false");
+        assert_eq!(printer.strings[5], "false");
+    }
+
+    #[test]
+    fn not_equals() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            print 1 != 1;
+            print 3.142 != 3.142;
+            print \"hello\" != \"hello\";
+
+            print 1 != 2;
+            print 3.142 != 1.42;
+            print \"hello\" != \"world\";
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 6);
+        assert_eq!(printer.strings[0], "false");
+        assert_eq!(printer.strings[1], "false");
+        assert_eq!(printer.strings[2], "false");
+        assert_eq!(printer.strings[3], "true");
+        assert_eq!(printer.strings[4], "true");
+        assert_eq!(printer.strings[5], "true");
     }
 }

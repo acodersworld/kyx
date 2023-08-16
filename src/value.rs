@@ -18,6 +18,7 @@ pub enum Value {
     Float(f32),
     Integer(i32),
     Str(NonNull<StringValue>),
+    Bool(bool),
 }
 
 pub trait FromValue {
@@ -46,7 +47,7 @@ impl FromValue for i32 {
     }
 }
 
-impl FromValue for StringValue {
+impl FromValue for NonNull<StringValue> {
     type ValueType = NonNull<StringValue>;
     fn from_value(value: &Value) -> Option<NonNull<StringValue>> {
         match value {
