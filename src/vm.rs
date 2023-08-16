@@ -6,7 +6,7 @@ use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
 use crate::opcode;
-use crate::value::{FromValue, GcValue, StringValue, Value};
+use crate::value::{GcValue, StringValue, Value};
 use crate::var_len_int;
 
 pub trait Printer {
@@ -61,6 +61,45 @@ fn is_truthy(value: &Value) -> bool {
     }
 }
 
+macro_rules! bin_op {
+    ($self:ident, $op:tt) => {
+        {
+            let st = &mut $self.stack;
+
+            let right = &st.pop().unwrap();
+            let left = st.last().unwrap();
+
+            let result = match (left, right) {
+                (Value::Integer(l), Value::Integer(r)) => Value::Integer(l $op r),
+                (Value::Float(l), Value::Float(r)) => Value::Float(l $op r),
+                _ => panic!("")
+            };
+
+            *st.last_mut().unwrap() = result;
+        }
+    }
+}
+
+macro_rules! bin_op_bool {
+    ($self:ident, $op:tt) => {
+        {
+            let st = &mut $self.stack;
+
+            let right = &st.pop().unwrap();
+            let left = st.last().unwrap();
+
+            let result = match (left, right) {
+                (Value::Integer(l), Value::Integer(r)) => Value::Bool(l $op r),
+                (Value::Float(l), Value::Float(r)) => Value::Bool(l $op r),
+                (Value::Str(l), Value::Str(r)) => Value::Bool(l $op r),
+                _ => panic!("")
+            };
+
+            *st.last_mut().unwrap() = result;
+        }
+    }
+}
+
 impl<'printer> VM<'printer> {
     pub fn new(printer: &'printer mut dyn Printer) -> VM<'printer> {
         VM {
@@ -91,20 +130,12 @@ impl<'printer> VM<'printer> {
                 opcode::PUSH_LOCAL => self.push_local(code),
                 opcode::DEFINE_GLOBAL => self.define_global(code),
                 opcode::DEFINE_LOCAL => self.define_local(),
-                opcode::ADDI => self.integer_add(),
-                opcode::SUBI => self.integer_sub(),
-                opcode::MULI => self.integer_mul(),
-                opcode::DIVI => self.integer_div(),
-                opcode::ADDF => self.float_add(),
-                opcode::SUBF => self.float_sub(),
-                opcode::MULF => self.float_mul(),
-                opcode::DIVF => self.float_div(),
-                opcode::EQI => self.integer_equals(),
-                opcode::EQF => self.float_equals(),
-                opcode::EQS => self.string_equals(),
-                opcode::NEQI => self.integer_not_equals(),
-                opcode::NEQF => self.float_not_equals(),
-                opcode::NEQS => self.string_not_equals(),
+                opcode::ADD => self.add(),
+                opcode::SUB => self.sub(),
+                opcode::MUL => self.mul(),
+                opcode::DIV => self.div(),
+                opcode::EQ => self.equals(),
+                opcode::NEQ => self.not_equals(),
                 opcode::PRINT => self.print(),
                 opcode::POP => self.pop(),
                 opcode::LOCAL_POP => self.local_pop(),
@@ -136,74 +167,28 @@ impl<'printer> VM<'printer> {
         Ok(())
     }
 
-    fn binary_op<T, OP>(&mut self, op: OP)
-    where
-        T: FromValue<ValueType = T>,
-        OP: FnOnce(T::ValueType, T::ValueType) -> Value,
-    {
-        let st = &mut self.stack;
-
-        let right = T::from_value(&st.pop().unwrap()).unwrap();
-        let left = T::from_value(st.last().unwrap()).unwrap();
-
-        let result = op(left, right);
-        *st.last_mut().unwrap() = result;
+    fn add(&mut self) {
+        bin_op!(self, +);
     }
 
-    fn integer_add(&mut self) {
-        self.binary_op::<i32, _>(|l, r| Value::Integer(l + r));
+    fn sub(&mut self) {
+        bin_op!(self, -);
     }
 
-    fn integer_sub(&mut self) {
-        self.binary_op::<i32, _>(|l, r| Value::Integer(l - r));
+    fn mul(&mut self) {
+        bin_op!(self, *);
     }
 
-    fn integer_mul(&mut self) {
-        self.binary_op::<i32, _>(|l, r| Value::Integer(l * r));
+    fn div(&mut self) {
+        bin_op!(self, /);
     }
 
-    fn integer_div(&mut self) {
-        self.binary_op::<i32, _>(|l, r| Value::Integer(l / r));
+    fn equals(&mut self) {
+        bin_op_bool!(self, ==);
     }
 
-    fn float_add(&mut self) {
-        self.binary_op::<f32, _>(|l, r| Value::Float(l + r));
-    }
-
-    fn float_sub(&mut self) {
-        self.binary_op::<f32, _>(|l, r| Value::Float(l - r));
-    }
-
-    fn float_mul(&mut self) {
-        self.binary_op::<f32, _>(|l, r| Value::Float(l * r));
-    }
-
-    fn float_div(&mut self) {
-        self.binary_op::<f32, _>(|l, r| Value::Float(l / r));
-    }
-
-    fn integer_equals(&mut self) {
-        self.binary_op::<i32, _>(|l, r| Value::Bool(l == r));
-    }
-
-    fn float_equals(&mut self) {
-        self.binary_op::<f32, _>(|l, r| Value::Bool(l == r));
-    }
-
-    fn string_equals(&mut self) {
-        self.binary_op::<NonNull<StringValue>, _>(|l, r| Value::Bool(l == r));
-    }
-
-    fn integer_not_equals(&mut self) {
-        self.binary_op::<i32, _>(|l, r| Value::Bool(l != r));
-    }
-
-    fn float_not_equals(&mut self) {
-        self.binary_op::<f32, _>(|l, r| Value::Bool(l != r));
-    }
-
-    fn string_not_equals(&mut self) {
-        self.binary_op::<NonNull<StringValue>, _>(|l, r| Value::Bool(l != r));
+    fn not_equals(&mut self) {
+        bin_op_bool!(self, !=);
     }
 
     fn push_integer(&mut self, code: &[u8]) {

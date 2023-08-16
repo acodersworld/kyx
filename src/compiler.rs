@@ -440,7 +440,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn equality_right(&mut self, opi: u8, opf: u8, ops: u8) -> Result<(), String> {
+    fn equality_right(&mut self, op: u8) -> Result<(), String> {
         self.term()?;
 
         let len = self.type_stack.len();
@@ -449,13 +449,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if left_type != right_type {
             return Err("Type error".to_owned());
-        } else if left_type == ValueType::Integer {
-            self.chunk.write_byte(opi);
-        } else if left_type == ValueType::Float {
-            self.chunk.write_byte(opf);
         } else {
-            assert_eq!(left_type, ValueType::Str);
-            self.chunk.write_byte(ops);
+            match left_type {
+                ValueType::Integer | ValueType::Float | ValueType::Str => self.chunk.write_byte(op)
+            };
         }
 
         Ok(())
@@ -465,16 +462,16 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.term()?;
 
         if self.scanner.match_token(Token::EqualEqual)? {
-            self.equality_right(opcode::EQI, opcode::EQF, opcode::EQS)?;
+            self.equality_right(opcode::EQ)?;
         }
         else if self.scanner.match_token(Token::BangEqual)? {
-            self.equality_right(opcode::NEQI, opcode::NEQF, opcode::NEQS)?;
+            self.equality_right(opcode::NEQ)?;
         }
 
         Ok(())
     }
 
-    fn factor_right(&mut self, opi: u8, opf: u8) -> Result<(), String> {
+    fn factor_right(&mut self, op: u8) -> Result<(), String> {
         self.primary()?;
 
         let len = self.type_stack.len();
@@ -483,11 +480,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if left_type != right_type {
             return Err("Type error".to_owned());
-        } else if left_type == ValueType::Integer {
-            self.chunk.write_byte(opi);
         } else {
-            assert_eq!(left_type, ValueType::Float);
-            self.chunk.write_byte(opf);
+            match left_type {
+                ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
+                _ => return Err("Type error".to_owned())
+            };
         }
 
         self.type_stack.pop();
@@ -500,9 +497,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         loop {
             if self.scanner.match_token(Token::Star)? {
-                self.factor_right(opcode::MULI, opcode::MULF)?;
+                self.factor_right(opcode::MUL)?;
             } else if self.scanner.match_token(Token::Slash)? {
-                self.factor_right(opcode::DIVI, opcode::DIVF)?;
+                self.factor_right(opcode::DIV)?;
             } else {
                 break;
             }
@@ -511,7 +508,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn term_right(&mut self, opi: u8, opf: u8) -> Result<(), String> {
+    fn term_right(&mut self, op: u8) -> Result<(), String> {
         self.factor()?;
 
         let len = self.type_stack.len();
@@ -520,11 +517,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if left_type != right_type {
             return Err("Type error".to_owned());
-        } else if left_type == ValueType::Integer {
-            self.chunk.write_byte(opi);
         } else {
-            assert_eq!(left_type, ValueType::Float);
-            self.chunk.write_byte(opf);
+            match left_type {
+                ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
+                _ => return Err("Type error".to_owned())
+            };
         }
 
         self.type_stack.pop();
@@ -537,9 +534,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         loop {
             if self.scanner.match_token(Token::Plus)? {
-                self.term_right(opcode::ADDI, opcode::ADDF)?;
+                self.term_right(opcode::ADD)?;
             } else if self.scanner.match_token(Token::Minus)? {
-                self.term_right(opcode::SUBI, opcode::SUBF)?;
+                self.term_right(opcode::SUB)?;
             } else {
                 break;
             }
