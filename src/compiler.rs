@@ -30,7 +30,7 @@ use std::vec::Vec;
 
            block_expression -> "{" declaration* expression? "}"
            if_expr -> "if" expression block_expression ("else" block_expression)?
-           while_expr -> "while" exxpression block_expression
+           while_expr -> "while" expression block_expression
            read_expr -> "read" type
 
            assignment -> identifier = expression | equality
@@ -192,52 +192,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.block_expression()?;
             return Ok(true);
         } else if self.scanner.match_token(Token::If)? {
-            self.expression()?;
-            self.consume(Token::LeftBrace)?;
-            self.chunk.write_byte(opcode::JMP_IF_FALSE);
-            let if_jmp_idx = self.chunk.write_byte(0);
-            self.block_expression()?;
-
-            self.chunk.write_byte(opcode::JMP);
-            let jmp_skip_else_idx = self.chunk.write_byte(0);
-
-            self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
-
-            if self.scanner.match_token(Token::Else)? {
-                self.consume(Token::LeftBrace)?;
-                self.block_expression()?;
-            }
-            self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
-
+            self.if_expression()?;
             return Ok(true);
         } else if self.scanner.match_token(Token::While)? {
-            let loop_begin_idx = self.chunk.code.len() + 1;
-            self.expression()?;
-            self.consume(Token::LeftBrace)?;
-            self.chunk.write_byte(opcode::JMP_IF_FALSE);
-            let cond_break_idx = self.chunk.write_byte(0);
-            self.block_expression()?;
-            self.chunk.write_byte(opcode::LOOP);
-            self.chunk
-                .write_byte((self.chunk.code.len() - loop_begin_idx + 1) as u8);
-            self.chunk.code[cond_break_idx] = (self.chunk.code.len() - cond_break_idx) as u8;
-
+            self.while_expression()?;
             return Ok(true);
         } else if self.scanner.match_token(Token::ReadInput)? {
-            self.chunk.write_byte(opcode::READ_INPUT);
-
-            let (value_type, type_code): (ValueType, u8) = match self.scanner.scan_token()? {
-                Token::TypeInt => (ValueType::Integer, 0),
-                Token::TypeFloat => (ValueType::Float, 1),
-                Token::TypeString => (ValueType::Str, 2),
-                token => return Err(format!("Expected type but got {}", token)),
-            };
-
-            self.type_stack.push(Variable {
-                value_type,
-                read_only: true,
-            });
-            self.chunk.write_byte(type_code);
+            self.read_expression()?;
         } else {
             self.equality()?;
         }
@@ -418,6 +379,61 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.chunk.write_byte(opcode::PRINT);
         self.type_stack.pop();
         self.consume(Token::SemiColon)?;
+        Ok(())
+    }
+
+    fn if_expression(&mut self) -> Result<(), String> {
+        self.expression()?;
+        self.consume(Token::LeftBrace)?;
+        self.chunk.write_byte(opcode::JMP_IF_FALSE);
+        let if_jmp_idx = self.chunk.write_byte(0);
+        self.block_expression()?;
+
+        self.chunk.write_byte(opcode::JMP);
+        let jmp_skip_else_idx = self.chunk.write_byte(0);
+
+        self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
+
+        if self.scanner.match_token(Token::Else)? {
+            self.consume(Token::LeftBrace)?;
+            self.block_expression()?;
+        }
+        self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
+
+        Ok(())
+    }
+
+    fn while_expression(&mut self) -> Result<(), String> {
+        let loop_begin_idx = self.chunk.code.len() + 1;
+        self.expression()?;
+        self.consume(Token::LeftBrace)?;
+        self.chunk.write_byte(opcode::JMP_IF_FALSE);
+        let cond_break_idx = self.chunk.write_byte(0);
+        self.block_expression()?;
+        self.chunk.write_byte(opcode::LOOP);
+        self.chunk
+            .write_byte((self.chunk.code.len() - loop_begin_idx + 1) as u8);
+        self.chunk.code[cond_break_idx] = (self.chunk.code.len() - cond_break_idx) as u8;
+
+        Ok(())
+    }
+
+    fn read_expression(&mut self) -> Result<(), String> {
+        self.chunk.write_byte(opcode::READ_INPUT);
+
+        let (value_type, type_code): (ValueType, u8) = match self.scanner.scan_token()? {
+            Token::TypeInt => (ValueType::Integer, 0),
+            Token::TypeFloat => (ValueType::Float, 1),
+            Token::TypeString => (ValueType::Str, 2),
+            token => return Err(format!("Expected type but got {}", token)),
+        };
+
+        self.type_stack.push(Variable {
+            value_type,
+            read_only: true,
+        });
+        self.chunk.write_byte(type_code);
+
         Ok(())
     }
 
