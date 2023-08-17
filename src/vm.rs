@@ -138,8 +138,11 @@ impl<'printer> VM<'printer> {
         let len = code.len();
 
         while self.offset < len {
+            let op = code[self.offset];
+            //println!("{}", opcode::to_string(op));
+            //println!("{:?}", self.stack);
             self.offset += 1;
-            match code[self.offset - 1] {
+            match op {
                 opcode::CONSTANT_INTEGER => self.push_integer(code),
                 opcode::CONSTANT_FLOAT => self.push_float(code),
                 opcode::CONSTANT_STRING => self.push_constant_string(code),
@@ -164,6 +167,7 @@ impl<'printer> VM<'printer> {
                 opcode::LOCAL_POP => self.local_pop(),
                 opcode::PUSH_FRAME => self.push_frame(),
                 opcode::POP_FRAME => self.pop_frame(),
+                opcode::LOOP => self.jmp_loop(code),
                 opcode::JMP => self.jmp(code),
                 opcode::JMP_IF_FALSE => self.jmp_if_false(code),
                 opcode::READ_INPUT => self.read_input(code),
@@ -344,6 +348,11 @@ impl<'printer> VM<'printer> {
     fn pop_frame(&mut self) {
         assert!(!self.locals.is_empty());
         self.locals.pop();
+    }
+
+    fn jmp_loop(&mut self, code: &[u8]) {
+        let offset = code[self.offset] as usize;
+        self.offset -= offset;
     }
 
     fn jmp(&mut self, code: &[u8]) {
@@ -830,5 +839,26 @@ mod test {
         assert_eq!(printer.strings[3], "true");
         assert_eq!(printer.strings[4], "true");
         assert_eq!(printer.strings[5], "true");
+    }
+
+    #[test]
+    fn while_loop() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut i: int = 0;
+            while i < 5 {
+                print i;
+                i = i + 1;
+            }
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings[0], "0");
+        assert_eq!(printer.strings[1], "1");
+        assert_eq!(printer.strings[2], "2");
+        assert_eq!(printer.strings[3], "3");
+        assert_eq!(printer.strings[4], "4");
     }
 }

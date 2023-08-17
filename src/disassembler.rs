@@ -44,8 +44,9 @@ impl<'a> Disassembler<'a> {
                 opcode::LOCAL_POP => self.simple_instruction("local pop"),
                 opcode::PUSH_FRAME => self.simple_instruction("push frame"),
                 opcode::POP_FRAME => self.simple_instruction("pop frame"),
-                opcode::JMP => self.jmp_instruction("jump"),
-                opcode::JMP_IF_FALSE => self.jmp_instruction("jump if false"),
+                opcode::LOOP => self.jmp_instruction("loop", -1),
+                opcode::JMP => self.jmp_instruction("jump", 1),
+                opcode::JMP_IF_FALSE => self.jmp_instruction("jump if false", 1),
                 opcode::READ_INPUT => self.read_instruction(),
                 code => {
                     println!("Unknown instruction {}", code);
@@ -59,13 +60,13 @@ impl<'a> Disassembler<'a> {
         println!("{}", name);
     }
 
-    fn jmp_instruction(&mut self, name: &str) {
-        let jmp_offset = self.code[self.offset];
+    fn jmp_instruction(&mut self, name: &str, sign: i64) {
+        let jmp_offset = self.code[self.offset] as i64 * sign;
         println!(
             "{}: {} -> {}",
             name,
             jmp_offset,
-            self.offset + jmp_offset as usize
+            self.offset as i64 + jmp_offset
         );
         self.offset += 1;
     }
