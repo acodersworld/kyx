@@ -13,6 +13,10 @@ const OPCODES: &[&str] = &[
     //
     "EQ",
     "NEQ",
+    "LESS",
+    "LESS_EQUAL",
+    "GREATER",
+    "GREATER_EQUAL",
     //
     "PRINT",
     "DEFINE_GLOBAL",

@@ -80,7 +80,7 @@ macro_rules! bin_op {
     }
 }
 
-macro_rules! bin_op_bool {
+macro_rules! bin_op_equality {
     ($self:ident, $op:tt) => {
         {
             let st = &mut $self.stack;
@@ -92,6 +92,25 @@ macro_rules! bin_op_bool {
                 (Value::Integer(l), Value::Integer(r)) => Value::Bool(l $op r),
                 (Value::Float(l), Value::Float(r)) => Value::Bool(l $op r),
                 (Value::Str(l), Value::Str(r)) => Value::Bool(l $op r),
+                _ => panic!("")
+            };
+
+            *st.last_mut().unwrap() = result;
+        }
+    }
+}
+
+macro_rules! bin_op_comparison {
+    ($self:ident, $op:tt) => {
+        {
+            let st = &mut $self.stack;
+
+            let right = &st.pop().unwrap();
+            let left = st.last().unwrap();
+
+            let result = match (left, right) {
+                (Value::Integer(l), Value::Integer(r)) => Value::Bool(l $op r),
+                (Value::Float(l), Value::Float(r)) => Value::Bool(l $op r),
                 _ => panic!("")
             };
 
@@ -136,6 +155,10 @@ impl<'printer> VM<'printer> {
                 opcode::DIV => self.div(),
                 opcode::EQ => self.equals(),
                 opcode::NEQ => self.not_equals(),
+                opcode::LESS => self.less(),
+                opcode::LESS_EQUAL => self.less_equal(),
+                opcode::GREATER => self.greater(),
+                opcode::GREATER_EQUAL => self.greater_equal(),
                 opcode::PRINT => self.print(),
                 opcode::POP => self.pop(),
                 opcode::LOCAL_POP => self.local_pop(),
@@ -184,11 +207,27 @@ impl<'printer> VM<'printer> {
     }
 
     fn equals(&mut self) {
-        bin_op_bool!(self, ==);
+        bin_op_equality!(self, ==);
     }
 
     fn not_equals(&mut self) {
-        bin_op_bool!(self, !=);
+        bin_op_equality!(self, !=);
+    }
+
+    fn less(&mut self) {
+        bin_op_comparison!(self, <);
+    }
+
+    fn less_equal(&mut self) {
+        bin_op_comparison!(self, <=);
+    }
+
+    fn greater(&mut self) {
+        bin_op_comparison!(self, >);
+    }
+
+    fn greater_equal(&mut self) {
+        bin_op_comparison!(self, >=);
     }
 
     fn push_integer(&mut self, code: &[u8]) {
@@ -733,6 +772,61 @@ mod test {
         assert_eq!(printer.strings[0], "false");
         assert_eq!(printer.strings[1], "false");
         assert_eq!(printer.strings[2], "false");
+        assert_eq!(printer.strings[3], "true");
+        assert_eq!(printer.strings[4], "true");
+        assert_eq!(printer.strings[5], "true");
+    }
+
+    #[test]
+    fn comparison() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            print 1 <= 1;
+            print 1 >= 1;
+
+            print 1 < 2;
+            print 1 <= 2;
+            print 2 > 1;
+            print 2 >= 1;
+
+            print 1 > 2;
+            print 1 >= 2;
+            print 2 < 1;
+            print 2 <= 1;
+
+            print 1 < 2;
+            print 1 <= 2;
+            print 2 > 1;
+            print 2 >= 1;
+
+            print 1 > 2;
+            print 1 >= 2;
+            print 2 < 1;
+            print 2 <= 1;
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 18);
+        assert_eq!(printer.strings[0], "true");
+        assert_eq!(printer.strings[1], "true");
+
+        assert_eq!(printer.strings[2], "true");
+        assert_eq!(printer.strings[3], "true");
+        assert_eq!(printer.strings[4], "true");
+        assert_eq!(printer.strings[5], "true");
+
+        assert_eq!(printer.strings[6], "false");
+        assert_eq!(printer.strings[7], "false");
+        assert_eq!(printer.strings[8], "false");
+        assert_eq!(printer.strings[9], "false");
+
+        assert_eq!(printer.strings[6], "false");
+        assert_eq!(printer.strings[7], "false");
+        assert_eq!(printer.strings[8], "false");
+        assert_eq!(printer.strings[9], "false");
+
+        assert_eq!(printer.strings[2], "true");
         assert_eq!(printer.strings[3], "true");
         assert_eq!(printer.strings[4], "true");
         assert_eq!(printer.strings[5], "true");

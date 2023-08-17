@@ -32,7 +32,8 @@ use std::vec::Vec;
            read_expr -> "read" type
 
            assignment -> identifier = expression | equality
-           equality -> term ("!=" | "==" term)?
+           equality -> comparison (("!=" | "==") comparison)?
+           comparison -> term (("<" | "<=" | ">" | ">=") term)?
            term -> factor ( "-" | "+" factor )*
            factor -> primary ( "*" | "/" primary )*
            primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
@@ -440,8 +441,46 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn equality_right(&mut self, op: u8) -> Result<(), String> {
+    fn comparison_right(&mut self, op: u8) -> Result<(), String> {
         self.term()?;
+
+        let len = self.type_stack.len();
+        let left_type = self.type_stack[len - 2].value_type;
+        let right_type = self.type_stack[len - 1].value_type;
+
+        if left_type != right_type {
+            return Err("Type error".to_owned());
+        } else {
+            match left_type {
+                ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
+                ValueType::Str => return Err("Cannot use comparison with string".to_owned())
+            };
+        }
+
+        Ok(())
+    }
+
+    fn comparison(&mut self) -> Result<(), String> {
+        self.term()?;
+
+        if self.scanner.match_token(Token::Less)? {
+            self.comparison_right(opcode::LESS)?;
+        }
+        else if self.scanner.match_token(Token::LessEqual)? {
+            self.comparison_right(opcode::LESS_EQUAL)?;
+        } 
+        else if self.scanner.match_token(Token::Greater)? {
+            self.comparison_right(opcode::GREATER)?;
+        }
+        else if self.scanner.match_token(Token::GreaterEqual)? {
+            self.comparison_right(opcode::GREATER_EQUAL)?;
+        }
+
+        Ok(())
+    }
+
+    fn equality_right(&mut self, op: u8) -> Result<(), String> {
+        self.comparison()?;
 
         let len = self.type_stack.len();
         let left_type = self.type_stack[len - 2].value_type;
@@ -459,7 +498,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn equality(&mut self) -> Result<(), String> {
-        self.term()?;
+        self.comparison()?;
 
         if self.scanner.match_token(Token::EqualEqual)? {
             self.equality_right(opcode::EQ)?;
