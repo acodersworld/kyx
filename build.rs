@@ -46,17 +46,17 @@ fn main() -> std::io::Result<()> {
         file.write_all(line.as_bytes())?;
     }
 
-    file.write_all(b"\n\n")?;
+    file.write_all(b"\n")?;
 
     file.write_all(b"pub fn to_string(code: u8) -> String {\n")?;
-    file.write_all(b"   match code {\n")?;
+    file.write_all(b"    match code {\n")?;
 
     for (i, opcode) in OPCODES.iter().enumerate() {
         let line = format!("        {} => \"{}\".to_owned(),\n", i, opcode);
         file.write_all(line.as_bytes())?;
     }
-    file.write_all(b"       _ => \"UNKNOWN\".to_owned(),\n")?;
-    file.write_all(b"   }\n")?;
+    file.write_all(b"        _ => \"UNKNOWN\".to_owned(),\n")?;
+    file.write_all(b"    }\n")?;
     file.write_all(b"}\n")?;
 
     Ok(())

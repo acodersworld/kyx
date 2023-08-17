@@ -27,9 +27,8 @@ pub const JMP: u8 = 25;
 pub const JMP_IF_FALSE: u8 = 26;
 pub const READ_INPUT: u8 = 27;
 
-
 pub fn to_string(code: u8) -> String {
-   match code {
+    match code {
         0 => "CONSTANT_INTEGER".to_owned(),
         1 => "CONSTANT_FLOAT".to_owned(),
         2 => "CONSTANT_STRING".to_owned(),
@@ -58,6 +57,6 @@ pub fn to_string(code: u8) -> String {
         25 => "JMP".to_owned(),
         26 => "JMP_IF_FALSE".to_owned(),
         27 => "READ_INPUT".to_owned(),
-       _ => "UNKNOWN".to_owned(),
-   }
+        _ => "UNKNOWN".to_owned(),
+    }
 }

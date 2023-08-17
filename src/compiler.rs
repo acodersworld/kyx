@@ -218,7 +218,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let cond_break_idx = self.chunk.write_byte(0);
             self.block_expression()?;
             self.chunk.write_byte(opcode::LOOP);
-            self.chunk.write_byte((self.chunk.code.len() - loop_begin_idx + 1) as u8);
+            self.chunk
+                .write_byte((self.chunk.code.len() - loop_begin_idx + 1) as u8);
             self.chunk.code[cond_break_idx] = (self.chunk.code.len() - cond_break_idx) as u8;
 
             return Ok(true);
@@ -467,7 +468,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         } else {
             match left_type {
                 ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
-                ValueType::Str => return Err("Cannot use comparison with string".to_owned())
+                ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
             };
         }
 
@@ -481,14 +482,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if self.scanner.match_token(Token::Less)? {
             self.comparison_right(opcode::LESS)?;
-        }
-        else if self.scanner.match_token(Token::LessEqual)? {
+        } else if self.scanner.match_token(Token::LessEqual)? {
             self.comparison_right(opcode::LESS_EQUAL)?;
-        } 
-        else if self.scanner.match_token(Token::Greater)? {
+        } else if self.scanner.match_token(Token::Greater)? {
             self.comparison_right(opcode::GREATER)?;
-        }
-        else if self.scanner.match_token(Token::GreaterEqual)? {
+        } else if self.scanner.match_token(Token::GreaterEqual)? {
             self.comparison_right(opcode::GREATER_EQUAL)?;
         }
 
@@ -506,7 +504,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Integer | ValueType::Float | ValueType::Str => self.chunk.write_byte(op)
+                ValueType::Integer | ValueType::Float | ValueType::Str => self.chunk.write_byte(op),
             };
         }
 
@@ -520,8 +518,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if self.scanner.match_token(Token::EqualEqual)? {
             self.equality_right(opcode::EQ)?;
-        }
-        else if self.scanner.match_token(Token::BangEqual)? {
+        } else if self.scanner.match_token(Token::BangEqual)? {
             self.equality_right(opcode::NEQ)?;
         }
 
@@ -540,7 +537,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         } else {
             match left_type {
                 ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
-                _ => return Err("Type error".to_owned())
+                _ => return Err("Type error".to_owned()),
             };
         }
 
@@ -577,7 +574,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         } else {
             match left_type {
                 ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
-                _ => return Err("Type error".to_owned())
+                _ => return Err("Type error".to_owned()),
             };
         }
 
