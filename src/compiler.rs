@@ -16,21 +16,21 @@ use std::vec::Vec;
 
    DECLARATIONS:
        declaration -> let_decl |
+                      while_stmt |
                       print_stmt
 
            let_decl -> "let" ("mut")? ":" identifier type = expression ";"
            print_stmt -> print expression ";"
+           while_statement -> "while" expression block_expression
 
    EXPRESSIONS:
        expression -> assignment |
                      block_expression |
                      if_expr |
-                     while_expr |
                      read_expr
 
            block_expression -> "{" declaration* expression? "}"
            if_expr -> "if" expression block_expression ("else" block_expression)?
-           while_expr -> "while" expression block_expression
            read_expr -> "read" type
 
            assignment -> identifier = expression | equality
@@ -180,6 +180,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.let_statement()?;
         } else if self.scanner.match_token(Token::Print)? {
             self.print()?;
+        } else if self.scanner.match_token(Token::While)? {
+            self.while_statement()?;
+            return Ok(true);
         } else {
             return Ok(false);
         }
@@ -193,9 +196,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Ok(true);
         } else if self.scanner.match_token(Token::If)? {
             self.if_expression()?;
-            return Ok(true);
-        } else if self.scanner.match_token(Token::While)? {
-            self.while_expression()?;
             return Ok(true);
         } else if self.scanner.match_token(Token::ReadInput)? {
             self.read_expression()?;
@@ -403,7 +403,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn while_expression(&mut self) -> Result<(), String> {
+    fn while_statement(&mut self) -> Result<(), String> {
         let loop_begin_idx = self.chunk.code.len() + 1;
         self.expression()?;
         self.consume(Token::LeftBrace)?;
