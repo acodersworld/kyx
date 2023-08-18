@@ -861,4 +861,42 @@ mod test {
         assert_eq!(printer.strings[3], "3");
         assert_eq!(printer.strings[4], "4");
     }
+
+    #[test]
+    fn for_loop() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                for i : [0..4] {
+                    print i;
+                }
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 4);
+            assert_eq!(printer.strings[0], "0");
+            assert_eq!(printer.strings[1], "1");
+            assert_eq!(printer.strings[2], "2");
+            assert_eq!(printer.strings[3], "3");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                for i : [0..=4] {
+                    print i;
+                }
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 5);
+            assert_eq!(printer.strings[0], "0");
+            assert_eq!(printer.strings[1], "1");
+            assert_eq!(printer.strings[2], "2");
+            assert_eq!(printer.strings[3], "3");
+            assert_eq!(printer.strings[4], "4");
+        }
+    }
 }

@@ -51,6 +51,8 @@ pub enum Token<'a> {
     SemiColon,
     Colon,
     Comma,
+    DotDot,
+    DotDotEqual,
 
     ReadInput,
 
@@ -109,6 +111,8 @@ impl Token<'_> {
             Self::SemiColon => ";",
             Self::Colon => ":",
             Self::Comma => ",",
+            Self::DotDot => "..",
+            Self::DotDotEqual => "..=",
 
             Self::ReadInput => "read",
 
@@ -144,6 +148,17 @@ impl<'a> Scanner<'a> {
 
     fn peek(&self) -> char {
         self.src[self.current_idx..].chars().next().unwrap()
+    }
+
+    fn peek_next(&self) -> Option<char> {
+        let mut iter = self.src[self.current_idx..].chars();
+        iter.next();
+
+        if let Some(c) = iter.next() {
+            return Some(c)
+        }
+
+        None
     }
 
     fn advance(&mut self) -> char {
@@ -236,7 +251,7 @@ impl<'a> Scanner<'a> {
             self.advance();
         }
 
-        if !self.at_eof() && self.peek() == '.' {
+        if !self.at_eof() && self.peek() == '.' && self.peek_next() != Some('.') {
             self.advance();
             if self.at_eof() || !self.peek().is_ascii_digit() {
                 return Err("Expected digit after '.'".to_owned());
@@ -322,7 +337,17 @@ impl<'a> Scanner<'a> {
             '[' => Ok(Token::LeftBracket),
             ']' => Ok(Token::RightBracket),
 
-            '.' => Ok(Token::Dot),
+            '.' => {
+                if self.match_char('.') {
+                    if self.match_char('=') {
+                        return Ok(Token::DotDotEqual);
+                    } else {
+                        return Ok(Token::DotDot);
+                    }
+                }
+
+                Ok(Token::Dot)
+            }
             ';' => Ok(Token::SemiColon),
             ':' => Ok(Token::Colon),
             ',' => Ok(Token::Comma),
@@ -529,8 +554,10 @@ mod tests {
 
     #[test]
     fn test_punctuation() {
-        let src = ".;:,".to_owned();
+        let src = "..=...;:,".to_owned();
         let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::DotDotEqual));
+        assert_eq!(scanner.scan_token(), Ok(Token::DotDot));
         assert_eq!(scanner.scan_token(), Ok(Token::Dot));
         assert_eq!(scanner.scan_token(), Ok(Token::SemiColon));
         assert_eq!(scanner.scan_token(), Ok(Token::Colon));

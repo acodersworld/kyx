@@ -17,11 +17,13 @@ use std::vec::Vec;
    DECLARATIONS:
        declaration -> let_decl |
                       while_stmt |
+                      for_stmt
                       print_stmt
 
            let_decl -> "let" ("mut")? ":" identifier type = expression ";"
            print_stmt -> print expression ";"
-           while_statement -> "while" expression block_expression
+           while_stmt -> "while" expression block_expression
+           for_stmt "for" identifier ":" [NUMBER (".." | "..=") NUMBER] block_expression
 
    EXPRESSIONS:
        expression -> assignment |
@@ -136,7 +138,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Ok(());
         }
 
-        Err(format!("Expected {}", token))
+        Err(format!("Expected {}, got {}", token, self.scanner.peek_token()?))
     }
 
     pub fn compile(&mut self) -> Result<(), String> {
@@ -182,6 +184,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.print()?;
         } else if self.scanner.match_token(Token::While)? {
             self.while_statement()?;
+            return Ok(true);
+        } else if self.scanner.match_token(Token::For)? {
+            self.for_statement()?;
             return Ok(true);
         } else {
             return Ok(false);
@@ -405,7 +410,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn while_statement(&mut self) -> Result<(), String> {
         let loop_begin_idx = self.chunk.code.len() + 1;
-        self.expression()?;
+        self.equality()?;
         self.consume(Token::LeftBrace)?;
         self.chunk.write_byte(opcode::JMP_IF_FALSE);
         let cond_break_idx = self.chunk.write_byte(0);
@@ -414,6 +419,137 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.chunk
             .write_byte((self.chunk.code.len() - loop_begin_idx + 1) as u8);
         self.chunk.code[cond_break_idx] = (self.chunk.code.len() - cond_break_idx) as u8;
+
+        Ok(())
+    }
+
+    fn scoped_block<F>(&mut self, block: F) -> Result<(), String> 
+        where F: FnOnce(&mut Self) -> Result<(), String>
+    {
+        let push_local = {
+            if let Some(top) = self.stack_frames.last_mut() {
+                top.current_scope += 1;
+                false
+            } else {
+                self.stack_frames.push(StackFrame {
+                    current_scope: 0,
+                    locals: Vec::new(),
+                });
+                self.chunk.code.push(opcode::PUSH_FRAME);
+                true
+            }
+        };
+
+        let locals_top = self.stack_frames.last().unwrap().locals.len();
+        block(self)?;
+
+        assert!(!self.stack_frames.is_empty());
+        if push_local {
+            self.stack_frames.pop();
+            self.chunk.code.push(opcode::POP_FRAME);
+        } else {
+            let frame = self.stack_frames.last_mut().unwrap();
+            while frame.locals.len() > locals_top {
+                self.chunk.code.push(opcode::LOCAL_POP);
+                frame.locals.pop();
+            }
+        }
+
+        Ok(())
+    }
+
+    fn for_block(&mut self) -> Result<(), String> {
+        while !self.scanner.match_token(Token::RightBrace)? {
+            self.rule()?;
+        }
+
+        Ok(())
+    }
+
+    fn for_statement(&mut self) ->Result<(), String> {
+        self.scoped_block(|c| {
+            let identifier_name = {
+                match c.scanner.scan_token()? {
+                    Token::Identifier(i) => i,
+                    _ => return Err("Expected identifier".to_owned())
+                }
+            };
+
+            c.consume(Token::Colon)?;
+            c.consume(Token::LeftBracket)?;
+            let start = {
+                match c.scanner.scan_token()? {
+                    Token::Integer(i) => i,
+                    _ => return Err("Expected number".to_owned())
+                }
+            };
+
+            let is_inclusive = 
+                if c.scanner.match_token(Token::DotDot)? {
+                    false
+                }
+                else if c.scanner.match_token(Token::DotDotEqual)? {
+                    true
+                }
+                else {
+                    return Err("Expected range delimiter '..' or '..='".to_owned());
+                };
+
+            let end = {
+                match c.scanner.scan_token()? {
+                    Token::Integer(i) => i,
+                    _ => return Err("Expected number".to_owned())
+                }
+            };
+
+            c.consume(Token::RightBracket)?;
+
+            let frame = c.stack_frames.last_mut().unwrap();
+            let var_idx = frame.locals.len() as u8;
+            frame.locals.push(LocalVariable {
+                name: identifier_name.to_string(),
+                v: Variable {
+                    read_only: true,
+                    value_type: ValueType::Integer,
+                },
+                scope: frame.current_scope,
+            });
+            c.integer(start);
+            c.chunk.write_byte(opcode::DEFINE_LOCAL);
+            c.type_stack.pop();
+
+            c.consume(Token::LeftBrace)?;
+            c.scoped_block(|c| {
+                let loop_begin_idx = c.chunk.write_byte(opcode::PUSH_LOCAL);
+                c.chunk.write_byte(var_idx);
+                c.integer(end);
+                if is_inclusive {
+                    c.chunk.write_byte(opcode::LESS_EQUAL);
+                } else {
+                    c.chunk.write_byte(opcode::LESS);
+                }
+
+                c.chunk.write_byte(opcode::JMP_IF_FALSE);
+                let cond_break_idx = c.chunk.write_byte(0);
+
+                c.for_block()?;
+
+
+                c.chunk.write_byte(opcode::PUSH_LOCAL);
+                c.chunk.write_byte(var_idx);
+                c.integer(1);
+                c.chunk.write_byte(opcode::ADD);
+                c.chunk.write_byte(opcode::SET_LOCAL);
+                c.chunk.write_byte(var_idx);
+
+                c.chunk.write_byte(opcode::LOOP);
+                c.chunk.write_byte((c.chunk.code.len() - loop_begin_idx) as u8);
+                c.chunk.code[cond_break_idx] = (c.chunk.code.len() - cond_break_idx) as u8;
+
+                Ok(())
+            })?;
+            Ok(())
+        })?;
 
         Ok(())
     }
@@ -438,36 +574,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn block_expression(&mut self) -> Result<(), String> {
-        let push_local = {
-            if let Some(top) = self.stack_frames.last_mut() {
-                top.current_scope += 1;
-                false
-            } else {
-                self.stack_frames.push(StackFrame {
-                    current_scope: 0,
-                    locals: Vec::new(),
-                });
-                self.chunk.code.push(opcode::PUSH_FRAME);
-                true
+        self.scoped_block(|c| {
+            while !c.scanner.match_token(Token::RightBrace)? {
+                c.rule()?;
             }
-        };
 
-        let locals_top = self.stack_frames.last().unwrap().locals.len();
-        while !self.scanner.match_token(Token::RightBrace)? {
-            self.rule()?;
-        }
-
-        assert!(!self.stack_frames.is_empty());
-        if push_local {
-            self.stack_frames.pop();
-            self.chunk.code.push(opcode::POP_FRAME);
-        } else {
-            let frame = self.stack_frames.last_mut().unwrap();
-            while frame.locals.len() > locals_top {
-                self.chunk.code.push(opcode::LOCAL_POP);
-                frame.locals.pop();
-            }
-        }
+            Ok(())
+        })?;
 
         Ok(())
     }
