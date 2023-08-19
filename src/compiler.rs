@@ -50,6 +50,7 @@ enum ValueType {
     Integer,
     Float,
     Str,
+    Bool
 }
 
 impl fmt::Display for ValueType {
@@ -58,6 +59,7 @@ impl fmt::Display for ValueType {
             Self::Integer => "int",
             Self::Float => "float",
             Self::Str => "string",
+            Self::Bool => "bool",
         };
 
         write!(f, "{}", s)
@@ -97,6 +99,7 @@ pub struct SrcCompiler<'a, T> {
     chunk: Chunk,
     type_stack: Vec<Variable>,
     data_section: &'a mut T,
+    unpatched_break_offsets: Vec<usize>,
     is_in_loop: bool
 }
 
@@ -119,6 +122,7 @@ impl Compiler {
             scanner: Scanner::new(src),
             chunk: Chunk::new(),
             type_stack: Vec::new(),
+            unpatched_break_offsets: Vec::new(),
             is_in_loop: false
         };
 
@@ -425,16 +429,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn patch_break(&mut self, start_idx: usize, jmp_idx: usize) {
-        let mut iter = self.chunk.code[start_idx..].iter_mut().enumerate();
-
-        while let Some((_, op)) = iter.next() {
-            if *op == opcode::BREAK || *op == opcode::JMP {
-                let (idx, offset_op) = iter.next().unwrap();
-                if *offset_op == opcode::JMP_STUB {
-                    *offset_op = (jmp_idx - (start_idx + idx)) as u8;
-                }
+        self.unpatched_break_offsets.retain(|&idx| {
+            if idx > start_idx {
+                self.chunk.code[idx] = (jmp_idx - idx) as u8;
+                false
             }
-        }
+            else {
+                true
+            }
+        });
     }
 
     fn while_statement(&mut self) -> Result<(), String> {
@@ -609,7 +612,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::SemiColon)?;
 
         self.chunk.write_byte(opcode::BREAK);
-        self.chunk.write_byte(opcode::JMP_STUB);
+        let idx = self.chunk.write_byte(0);
+        self.unpatched_break_offsets.push(idx);
 
         Ok(())
     }
@@ -622,7 +626,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::SemiColon)?;
 
         self.chunk.write_byte(opcode::JMP);
-        self.chunk.write_byte(opcode::JMP_STUB);
+        let idx = self.chunk.write_byte(0);
+        self.unpatched_break_offsets.push(idx);
 
         Ok(())
     }
@@ -671,6 +676,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             match left_type {
                 ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
+                ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
             };
         }
 
@@ -706,7 +712,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Integer | ValueType::Float | ValueType::Str => self.chunk.write_byte(op),
+                ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool => self.chunk.write_byte(op),
             };
         }
 
@@ -829,6 +835,28 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
+    fn string(&mut self, s: &str) {
+        self.chunk.write_byte(opcode::CONSTANT_STRING);
+        self.chunk
+            .write_byte(self.data_section.create_constant_str(s));
+        self.type_stack.push(Variable {
+            value_type: ValueType::Str,
+            read_only: true,
+        });
+    }
+
+    fn boolean(&mut self, b: bool) {
+        let value = if b { 1 } else { 0 };
+
+        self.chunk.write_byte(opcode::CONSTANT_BOOL);
+        self.chunk.write_byte(value);
+
+        self.type_stack.push(Variable {
+            value_type: ValueType::Bool,
+            read_only: true,
+        });
+    }
+
     fn primary(&mut self) -> Result<(), String> {
         let t = self.scanner.scan_token();
         match t {
@@ -858,13 +886,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.float(f);
             }
             Ok(Token::Str(s)) => {
-                self.chunk.write_byte(opcode::CONSTANT_STRING);
-                self.chunk
-                    .write_byte(self.data_section.create_constant_str(s));
-                self.type_stack.push(Variable {
-                    value_type: ValueType::Str,
-                    read_only: true,
-                });
+                self.string(s);
+            }
+            Ok(Token::True) => {
+                self.boolean(true);
+            }
+            Ok(Token::False) => {
+                self.boolean(false);
             }
             Err(msg) => return Err(msg),
             _ => {

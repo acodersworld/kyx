@@ -148,6 +148,7 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_INTEGER => self.push_integer(code),
                 opcode::CONSTANT_FLOAT => self.push_float(code),
                 opcode::CONSTANT_STRING => self.push_constant_string(code),
+                opcode::CONSTANT_BOOL => self.push_constant_bool(code),
                 opcode::SET_GLOBAL => self.set_global(code),
                 opcode::SET_LOCAL => self.set_local(code),
                 opcode::PUSH_GLOBAL => self.push_global(code),
@@ -259,6 +260,13 @@ impl<'printer> VM<'printer> {
         self.offset += 1;
 
         self.stack.push(Value::Str(self.constant_strs[idx]));
+    }
+
+    fn push_constant_bool(&mut self, code: &[u8]) {
+        let value = code[self.offset] != 0;
+        self.offset += 1;
+
+        self.stack.push(Value::Bool(value));
     }
 
     fn set_global(&mut self, code: &[u8]) {

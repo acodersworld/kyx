@@ -5,6 +5,7 @@ const OPCODES: &[&str] = &[
     "CONSTANT_INTEGER",
     "CONSTANT_FLOAT",
     "CONSTANT_STRING",
+    "CONSTANT_BOOL",
     //
     "ADD",
     "SUB",
@@ -49,9 +50,6 @@ fn main() -> std::io::Result<()> {
     }
     file.write_all(b"// OP CODE END\n")?;
 
-    file.write_all(b"\n")?;
-
-    file.write_all(b"pub const JMP_STUB: u8 = 0xff; // Stub jmp value for loop breaks & continues \n")?;
     file.write_all(b"\n")?;
 
     file.write_all(b"#[allow(dead_code)]\n")?;
