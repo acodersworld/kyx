@@ -894,7 +894,7 @@ mod test {
             let mut vm = VM::new(&mut printer);
 
             let src = "
-                for i : [0..4] {
+                for i : 0..4 {
                     print i;
                 }
             ";
@@ -911,8 +911,27 @@ mod test {
             let mut vm = VM::new(&mut printer);
 
             let src = "
-                for i : [0..=4] {
+                for i : 0..=4 {
                     print i;
+                }
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 5);
+            assert_eq!(printer.strings[0], "0");
+            assert_eq!(printer.strings[1], "1");
+            assert_eq!(printer.strings[2], "2");
+            assert_eq!(printer.strings[3], "3");
+            assert_eq!(printer.strings[4], "4");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                for i : 0..=4 {
+                    let j: int = i;
+                    print j;
                 }
             ";
             assert_eq!(vm.interpret(src), Ok(()));

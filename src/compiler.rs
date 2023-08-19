@@ -25,7 +25,7 @@ use std::vec::Vec;
            print_stmt -> print expression ";"
            while_stmt -> "while" expression block_expression
            break_stmt -> "break" ";"
-           for_stmt "for" identifier ":" [NUMBER (".." | "..=") NUMBER] block_expression
+           for_stmt "for" identifier ":" NUMBER (".." | "..=") NUMBER block_expression
 
    EXPRESSIONS:
        expression -> assignment |
@@ -526,11 +526,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn for_block(&mut self) -> Result<(), String> {
-        while !self.scanner.match_token(Token::RightBrace)? {
-            self.rule()?;
-        }
-
-        Ok(())
+        self.scoped_block(|c| {
+            while !c.scanner.match_token(Token::RightBrace)? {
+                c.rule()?;
+            }
+            Ok(())
+        })
     }
 
     fn for_statement(&mut self) ->Result<(), String> {
@@ -546,7 +547,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             };
 
             c.consume(Token::Colon)?;
-            c.consume(Token::LeftBracket)?;
             let start = {
                 match c.scanner.scan_token()? {
                     Token::Integer(i) => i,
@@ -571,8 +571,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     _ => return Err("Expected number".to_owned())
                 }
             };
-
-            c.consume(Token::RightBracket)?;
 
             let frame = c.stack_frames.last_mut().unwrap();
             let var_idx = frame.locals.len() as u8;
@@ -603,7 +601,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 let cond_break_idx = c.chunk.write_byte(0);
 
                 c.for_block()?;
-
 
                 c.chunk.write_byte(opcode::PUSH_LOCAL);
                 c.chunk.write_byte(var_idx);
