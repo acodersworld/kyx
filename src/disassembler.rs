@@ -23,6 +23,7 @@ impl<'a> Disassembler<'a> {
                 opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
                 opcode::CONSTANT_STRING => self.constant_string_instruction(),
+                opcode::CONSTANT_BOOL => self.constant_bool_instruction(),
                 opcode::SET_GLOBAL => self.set_global(),
                 opcode::SET_LOCAL => self.set_local(),
                 opcode::PUSH_GLOBAL => self.push_global(),
@@ -108,6 +109,13 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("CONSTANT STRING: idx({})", idx);
+    }
+
+    fn constant_bool_instruction(&mut self) {
+        let value = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CONSTANT BOOL: {}", if value != 0 { true } else { false } );
     }
 
     fn set_global(&mut self) {

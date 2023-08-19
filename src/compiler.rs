@@ -50,7 +50,7 @@ enum ValueType {
     Integer,
     Float,
     Str,
-    Bool
+    Bool,
 }
 
 impl fmt::Display for ValueType {
@@ -166,11 +166,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             // only times an expression doesn't have to be followed by a ';'
             // is when it is the last expression of a block or if it is a block itself
             let peeked_token = self.scanner.peek_token()?;
-            if peeked_token == Token::RightBrace {
-                if self.scanner.match_token(Token::SemiColon)? {
-                    self.clear_stack();
-                }
-            } else if peeked_token != Token::Eof {
+            if peeked_token != Token::RightBrace && peeked_token != Token::Eof {
                 if is_block {
                     if self.scanner.match_token(Token::SemiColon)? {
                         self.clear_stack();
@@ -408,9 +404,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.type_stack.pop();
 
         let if_jmp_idx = self.chunk.write_byte(0);
+
+        let stack_top = self.type_stack.len();
         self.block_expression()?;
 
         if self.scanner.match_token(Token::Else)? {
+            let if_type = {
+                if self.type_stack.len() == stack_top {
+                    None
+                } else {
+                    Some(self.type_stack.pop().unwrap().value_type)
+                }
+            };
+
             self.chunk.write_byte(opcode::JMP);
             let jmp_skip_else_idx = self.chunk.write_byte(0);
 
@@ -419,9 +425,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.consume(Token::LeftBrace)?;
             self.block_expression()?;
 
+            let else_type = {
+                if self.type_stack.len() == stack_top {
+                    None
+                } else {
+                    Some(self.type_stack.last().unwrap().value_type)
+                }
+            };
+
+            if else_type != if_type {
+                return Err(format!("if & else arms return different types. if: {:?}, else: {:?}", if_type, else_type));
+            }
+
             self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
         }
         else {
+            // If there is no else, this cannot always return a value.
+            assert!(self.type_stack.len() >= stack_top);
+            unsafe { self.type_stack.set_len(stack_top); }
             self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
         }
 
@@ -934,6 +955,37 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!(compiler.compile(&mut table, "print -\"hello\";").is_err());
+    }
+
+    #[test]
+    fn test_if_no_else_expression() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        let src = "
+        let i: int = if true {
+            10
+        };
+        ";
+
+        assert_ne!(compiler.compile(&mut table, src).err(), None);
+    }
+
+    #[test]
+    fn test_if_with_else_expression() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        let src = "
+        let i: int = if true {
+            if true { 1 } // not the last expression so should not cause an error
+            if false { 5 } else { 10 }
+        } else {
+            20
+        };
+        ";
+
+        assert_eq!(compiler.compile(&mut table, src).err(), None);
     }
 
     #[test]
