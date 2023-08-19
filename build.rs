@@ -31,6 +31,7 @@ const OPCODES: &[&str] = &[
     "POP_FRAME",
     //
     "LOOP",
+    "BREAK",
     "JMP",
     "JMP_IF_FALSE",
     //
@@ -41,13 +42,19 @@ fn main() -> std::io::Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
 
     let mut file = File::create("src/opcode.rs")?;
+    file.write_all(b"// OP CODE START\n")?;
     for (i, opcode) in OPCODES.iter().enumerate() {
         let line = format!("pub const {}: u8 = {};\n", opcode, i);
         file.write_all(line.as_bytes())?;
     }
+    file.write_all(b"// OP CODE END\n")?;
 
     file.write_all(b"\n")?;
 
+    file.write_all(b"pub const JMP_STUB: u8 = 0xff; // Stub jmp value for loop breaks & continues \n")?;
+    file.write_all(b"\n")?;
+
+    file.write_all(b"#[allow(dead_code)]\n")?;
     file.write_all(b"pub fn to_string(code: u8) -> String {\n")?;
     file.write_all(b"    match code {\n")?;
 

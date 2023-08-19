@@ -1,3 +1,4 @@
+// OP CODE START
 pub const CONSTANT_INTEGER: u8 = 0;
 pub const CONSTANT_FLOAT: u8 = 1;
 pub const CONSTANT_STRING: u8 = 2;
@@ -23,10 +24,15 @@ pub const LOCAL_POP: u8 = 21;
 pub const PUSH_FRAME: u8 = 22;
 pub const POP_FRAME: u8 = 23;
 pub const LOOP: u8 = 24;
-pub const JMP: u8 = 25;
-pub const JMP_IF_FALSE: u8 = 26;
-pub const READ_INPUT: u8 = 27;
+pub const BREAK: u8 = 25;
+pub const JMP: u8 = 26;
+pub const JMP_IF_FALSE: u8 = 27;
+pub const READ_INPUT: u8 = 28;
+// OP CODE END
 
+pub const JMP_STUB: u8 = 0xff; // Stub jmp value for loop breaks & continues 
+
+#[allow(dead_code)]
 pub fn to_string(code: u8) -> String {
     match code {
         0 => "CONSTANT_INTEGER".to_owned(),
@@ -54,9 +60,10 @@ pub fn to_string(code: u8) -> String {
         22 => "PUSH_FRAME".to_owned(),
         23 => "POP_FRAME".to_owned(),
         24 => "LOOP".to_owned(),
-        25 => "JMP".to_owned(),
-        26 => "JMP_IF_FALSE".to_owned(),
-        27 => "READ_INPUT".to_owned(),
+        25 => "BREAK".to_owned(),
+        26 => "JMP".to_owned(),
+        27 => "JMP_IF_FALSE".to_owned(),
+        28 => "READ_INPUT".to_owned(),
         _ => "UNKNOWN".to_owned(),
     }
 }

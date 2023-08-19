@@ -17,12 +17,14 @@ use std::vec::Vec;
    DECLARATIONS:
        declaration -> let_decl |
                       while_stmt |
-                      for_stmt
-                      print_stmt
+                      for_stmt |
+                      break |
+                      print_stmt |
 
            let_decl -> "let" ("mut")? ":" identifier type = expression ";"
            print_stmt -> print expression ";"
            while_stmt -> "while" expression block_expression
+           break_stmt -> "break" ";"
            for_stmt "for" identifier ":" [NUMBER (".." | "..=") NUMBER] block_expression
 
    EXPRESSIONS:
@@ -88,6 +90,16 @@ pub struct Compiler {
     globals: HashMap<String, Variable>,
 }
 
+pub struct SrcCompiler<'a, T> {
+    globals: &'a mut HashMap<String, Variable>,
+    stack_frames: Vec<StackFrame>,
+    scanner: Scanner<'a>,
+    chunk: Chunk,
+    type_stack: Vec<Variable>,
+    data_section: &'a mut T,
+    is_in_loop: bool
+}
+
 impl Compiler {
     pub fn new() -> Compiler {
         Compiler {
@@ -107,20 +119,12 @@ impl Compiler {
             scanner: Scanner::new(src),
             chunk: Chunk::new(),
             type_stack: Vec::new(),
+            is_in_loop: false
         };
 
         compiler.compile()?;
         Ok(compiler.chunk)
     }
-}
-
-pub struct SrcCompiler<'a, T> {
-    globals: &'a mut HashMap<String, Variable>,
-    stack_frames: Vec<StackFrame>,
-    scanner: Scanner<'a>,
-    chunk: Chunk,
-    type_stack: Vec<Variable>,
-    data_section: &'a mut T,
 }
 
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
@@ -187,6 +191,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Ok(true);
         } else if self.scanner.match_token(Token::For)? {
             self.for_statement()?;
+            return Ok(true);
+        } else if self.scanner.match_token(Token::Break)? {
+            self.break_statement()?;
+            return Ok(true);
+        } else if self.scanner.match_token(Token::Continue)? {
+            self.continue_statement()?;
             return Ok(true);
         } else {
             return Ok(false);
@@ -391,35 +401,68 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.expression()?;
         self.consume(Token::LeftBrace)?;
         self.chunk.write_byte(opcode::JMP_IF_FALSE);
+        self.type_stack.pop();
+
         let if_jmp_idx = self.chunk.write_byte(0);
         self.block_expression()?;
 
-        self.chunk.write_byte(opcode::JMP);
-        let jmp_skip_else_idx = self.chunk.write_byte(0);
-
-        self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
-
         if self.scanner.match_token(Token::Else)? {
+            self.chunk.write_byte(opcode::JMP);
+            let jmp_skip_else_idx = self.chunk.write_byte(0);
+
+            self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
+
             self.consume(Token::LeftBrace)?;
             self.block_expression()?;
+
+            self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
         }
-        self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
+        else {
+            self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
+        }
 
         Ok(())
     }
 
+    fn patch_break(&mut self, start_idx: usize, jmp_idx: usize) {
+        let mut iter = self.chunk.code[start_idx..].iter_mut().enumerate();
+
+        while let Some((_, op)) = iter.next() {
+            if *op == opcode::BREAK || *op == opcode::JMP {
+                let (idx, offset_op) = iter.next().unwrap();
+                if *offset_op == opcode::JMP_STUB {
+                    *offset_op = (jmp_idx - (start_idx + idx)) as u8;
+                }
+            }
+        }
+    }
+
     fn while_statement(&mut self) -> Result<(), String> {
+        let prev_in_loop = self.is_in_loop;
+        self.is_in_loop = true;
+
         let loop_begin_idx = self.chunk.code.len() + 1;
         self.equality()?;
         self.consume(Token::LeftBrace)?;
         self.chunk.write_byte(opcode::JMP_IF_FALSE);
+        self.type_stack.pop();
         let cond_break_idx = self.chunk.write_byte(0);
-        self.block_expression()?;
+
+        self.scoped_block(|c| {
+            while !c.scanner.match_token(Token::RightBrace)? {
+                c.rule()?;
+            }
+
+            c.patch_break(loop_begin_idx, c.chunk.code.len());
+            Ok(())
+        })?;
+
         self.chunk.write_byte(opcode::LOOP);
         self.chunk
             .write_byte((self.chunk.code.len() - loop_begin_idx + 1) as u8);
         self.chunk.code[cond_break_idx] = (self.chunk.code.len() - cond_break_idx) as u8;
 
+        self.is_in_loop = prev_in_loop;
         Ok(())
     }
 
@@ -467,6 +510,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn for_statement(&mut self) ->Result<(), String> {
+        let prev_in_loop = self.is_in_loop;
+        self.is_in_loop = true;
+
         self.scoped_block(|c| {
             let identifier_name = {
                 match c.scanner.scan_token()? {
@@ -550,6 +596,33 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             })?;
             Ok(())
         })?;
+
+        self.is_in_loop = prev_in_loop;
+        Ok(())
+    }
+
+    fn break_statement(&mut self) -> Result<(), String> {
+        if !self.is_in_loop {
+            return Err("break can only be used in a loop".to_owned());
+        }
+
+        self.consume(Token::SemiColon)?;
+
+        self.chunk.write_byte(opcode::BREAK);
+        self.chunk.write_byte(opcode::JMP_STUB);
+
+        Ok(())
+    }
+
+    fn continue_statement(&mut self) -> Result<(), String> {
+        if !self.is_in_loop {
+            return Err("continue can only be used in a loop".to_owned());
+        }
+
+        self.consume(Token::SemiColon)?;
+
+        self.chunk.write_byte(opcode::JMP);
+        self.chunk.write_byte(opcode::JMP_STUB);
 
         Ok(())
     }
@@ -877,5 +950,23 @@ mod test {
                 .compile(&mut table, "let identifier: int = \"hello\";")
                 .is_err());
         }
+    }
+
+    #[test]
+    fn test_break_error() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!(compiler
+            .compile(&mut table, "break;")
+            .is_err());
+    }
+
+    #[test]
+    fn test_continue_error() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!(compiler
+            .compile(&mut table, "continue;")
+            .is_err());
     }
 }

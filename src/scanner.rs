@@ -56,6 +56,9 @@ pub enum Token<'a> {
 
     ReadInput,
 
+    Break,
+    Continue,
+
     Eof,
 }
 
@@ -115,6 +118,9 @@ impl Token<'_> {
             Self::DotDotEqual => "..=",
 
             Self::ReadInput => "read",
+
+            Self::Break => "break",
+            Self::Continue => "continue",
 
             Self::Eof => "<EOF>",
         };
@@ -229,6 +235,8 @@ impl<'a> Scanner<'a> {
             "for" => Token::For,
             "return" => Token::Return,
             "read" => Token::ReadInput,
+            "break" => Token::Break,
+            "continue" => Token::Continue,
             _ => Token::Identifier(ident),
         }
     }

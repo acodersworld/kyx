@@ -45,6 +45,7 @@ impl<'a> Disassembler<'a> {
                 opcode::PUSH_FRAME => self.simple_instruction("push frame"),
                 opcode::POP_FRAME => self.simple_instruction("pop frame"),
                 opcode::LOOP => self.jmp_instruction("loop", -1),
+                opcode::BREAK => self.jmp_instruction("break", 1),
                 opcode::JMP => self.jmp_instruction("jump", 1),
                 opcode::JMP_IF_FALSE => self.jmp_instruction("jump if false", 1),
                 opcode::READ_INPUT => self.read_instruction(),

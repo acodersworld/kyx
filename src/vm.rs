@@ -20,6 +20,7 @@ pub struct VM<'printer> {
     globals: HashMap<NonNull<StringValue>, Value>,
     locals: Vec<Vec<Value>>,
     offset: usize,
+    break_loop_flag: bool,
 
     compiler: Compiler,
     printer: &'printer mut dyn Printer,
@@ -128,6 +129,7 @@ impl<'printer> VM<'printer> {
             globals: HashMap::new(),
             locals: Vec::new(),
             offset: 0,
+            break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
         }
@@ -168,11 +170,12 @@ impl<'printer> VM<'printer> {
                 opcode::PUSH_FRAME => self.push_frame(),
                 opcode::POP_FRAME => self.pop_frame(),
                 opcode::LOOP => self.jmp_loop(code),
+                opcode::BREAK => self.break_loop(code),
                 opcode::JMP => self.jmp(code),
                 opcode::JMP_IF_FALSE => self.jmp_if_false(code),
                 opcode::READ_INPUT => self.read_input(code),
                 _ => {
-                    panic!("Unknown instruction: {}", code[self.offset - 1])
+                    panic!("Unknown instruction: {} @ {}", code[self.offset - 1], self.offset - 1)
                 }
             }
         }
@@ -352,7 +355,21 @@ impl<'printer> VM<'printer> {
 
     fn jmp_loop(&mut self, code: &[u8]) {
         let offset = code[self.offset] as usize;
-        self.offset -= offset;
+
+        let do_loop = !self.break_loop_flag;
+        self.break_loop_flag = false;
+        if do_loop {
+            self.offset -= offset;
+        }
+        else {
+            self.offset += 1;
+        }
+    }
+
+    fn break_loop(&mut self, code: &[u8]) {
+        let offset = code[self.offset] as usize;
+        self.offset += offset;
+        self.break_loop_flag = true;
     }
 
     fn jmp(&mut self, code: &[u8]) {
@@ -898,5 +915,144 @@ mod test {
             assert_eq!(printer.strings[3], "3");
             assert_eq!(printer.strings[4], "4");
         }
+    }
+
+    #[test]
+    fn while_loop_break() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut i: int = 0;
+            while i < 5 {
+                if i > 2 {
+                    break;
+                }
+
+                print i;
+                i = i + 1;
+            }
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "0");
+        assert_eq!(printer.strings[1], "1");
+        assert_eq!(printer.strings[2], "2");
+    }
+
+    #[test]
+    fn while_loop_nested_break() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut i: int = 0;
+            while i < 5 {
+                if i > 2 {
+                    break;
+                }
+
+                print i;
+                i = i + 1;
+
+                let mut j: int = 0;
+                while j < 5 {
+                    if j > 3 {
+                        break;
+                    }
+                    print j;
+                    j = j + 1;
+                }
+
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 15);
+        assert_eq!(printer.strings[0], "0");
+        assert_eq!(printer.strings[1], "0");
+        assert_eq!(printer.strings[2], "1");
+        assert_eq!(printer.strings[3], "2");
+        assert_eq!(printer.strings[4], "3");
+
+        assert_eq!(printer.strings[5], "1");
+        assert_eq!(printer.strings[6], "0");
+        assert_eq!(printer.strings[7], "1");
+        assert_eq!(printer.strings[8], "2");
+        assert_eq!(printer.strings[9], "3");
+
+        assert_eq!(printer.strings[10], "2");
+        assert_eq!(printer.strings[11], "0");
+        assert_eq!(printer.strings[12], "1");
+        assert_eq!(printer.strings[13], "2");
+        assert_eq!(printer.strings[14], "3");
+    }
+
+    #[test]
+    fn while_loop_continue() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut i: int = 0;
+            while i < 5 {
+                if i < 2 {
+                    i = i + 1;
+                    continue;
+                }
+
+                print i;
+                i = i + 1;
+            }
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "2");
+        assert_eq!(printer.strings[1], "3");
+        assert_eq!(printer.strings[2], "4");
+    }
+
+
+    #[test]
+    fn while_loop_nested_continue() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut i: int = 0;
+            while i < 5 {
+                if i < 2 {
+                    i = i + 1;
+                    continue;
+                }
+
+                print i;
+                i = i + 1;
+
+                let mut j: int = 0;
+                while j < 5 {
+                    if j < 3 {
+                        j = j + 1;
+                        continue;
+                    }
+
+                    print j;
+                    j = j + 1;
+                }
+            }
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 9);
+        assert_eq!(printer.strings[0], "2");
+        assert_eq!(printer.strings[1], "3");
+        assert_eq!(printer.strings[2], "4");
+
+        assert_eq!(printer.strings[3], "3");
+        assert_eq!(printer.strings[4], "3");
+        assert_eq!(printer.strings[5], "4");
+
+        assert_eq!(printer.strings[6], "4");
+        assert_eq!(printer.strings[7], "3");
+        assert_eq!(printer.strings[8], "4");
     }
 }
