@@ -15,7 +15,7 @@ use std::rc::Rc;
 
        rule -> declaration | expression ";"?
 
-       type -> "int" | "float" | "string" | "[" type "]"
+       type -> "int" | "float" | "string" | "[" type "]" | "[" type ":" type "]"
 
    DECLARATIONS:
        declaration -> let_decl |
@@ -35,20 +35,23 @@ use std::rc::Rc;
                      block_expression |
                      if_expr |
                      vector_constructor |
+                     hash_map_constructor
                      read_expr
 
-           block_expression -> "{" declaration* expression? "}"
-           if_expr -> "if" expression block_expression ("else" block_expression)?
-           vector_constructor -> vec{ expression* }
-           read_expr -> "read" type
+            block_expression -> "{" declaration* expression? "}"
+            if_expr -> "if" expression block_expression ("else" block_expression)?
+            vector_constructor -> vec<type>{ expression? ("," expression)* }
+            hash_map_constructor -> hash_map<type, type>{ hash_map_argument? ("," hash_map_argument)* }
+                 hash_map_argument -> expression ":" expression
+            read_expr -> "read" type
 
-           assignment -> identifier = expression | equality
-           equality -> comparison (("!=" | "==") comparison)?
-           comparison -> term (("<" | "<=" | ">" | ">=") term)?
-           term -> factor ( "-" | "+" factor )*
-           factor -> index ( "*" | "/" index )*
-           index -> primary ("[" expression "]")* |
-           primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
+            assignment -> identifier = expression | equality
+            equality -> comparison (("!=" | "==") comparison)?
+            comparison -> term (("<" | "<=" | ">" | ">=") term)?
+            term -> factor ( "-" | "+" factor )*
+            factor -> index ( "*" | "/" index )*
+            index -> primary ("[" expression "]")* |
+            primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
 */
 
 #[derive(Debug, PartialEq, Clone)]
@@ -58,6 +61,7 @@ enum ValueType {
     Str,
     Bool,
     Vector(Rc<ValueType>),
+    HashMap(Rc<(ValueType, ValueType)>),
 }
 
 impl fmt::Display for ValueType {
@@ -67,7 +71,8 @@ impl fmt::Display for ValueType {
             Self::Float => "float".to_owned(),
             Self::Str => "string".to_owned(),
             Self::Bool => "bool".to_owned(),
-            Self::Vector(tp) => format!("[{}]", tp)
+            Self::Vector(tp) => format!("[{}]", tp),
+            Self::HashMap(tp) => format!("[{}: {}]", tp.0, tp.1)
         };
 
         write!(f, "{}", s)
@@ -225,6 +230,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.read_expression()?;
         } else if self.scanner.match_token(Token::Vector)? {
             self.vector_constructor()?;
+        } else if self.scanner.match_token(Token::HashMap)? {
+            self.hash_map_constructor()?;
         } else {
             self.equality()?;
         }
@@ -252,24 +259,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.expression()?;
         {
-            let tp = &self.type_stack.last().unwrap().value_type;
+            let tp = &self.type_stack.pop().unwrap().value_type;
             if elem_type != *tp {
                 return Err(format!("Vector argument type mismatch. Expected {}, got {}", elem_type, tp));
             }
-            self.type_stack.pop();
         }
 
         let mut arg_count = 1;
         while !self.scanner.match_token(Token::RightBrace)? {
             self.consume(Token::Comma)?;
             self.expression()?;
-            let tp = &self.type_stack.last().unwrap().value_type;
+            let tp = &self.type_stack.pop().unwrap().value_type;
             if elem_type != *tp {
                 return Err(format!("Vector argument type mismatch. Expected {}, got {}", elem_type, tp));
             }
 
             arg_count += 1;
-            self.type_stack.pop();
         }
 
         self.chunk.write_byte(opcode::CREATE_VEC);
@@ -281,11 +286,76 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn parse_type_vec(&mut self) -> Result<ValueType, String> {
-        let t = ValueType::Vector(Rc::new(self.parse_type()?));
-        self.consume(Token::RightBracket)?;
+    fn hash_map_constructor_arg(&mut self, key_type: &ValueType, value_type: &ValueType) -> Result<(), String> {
+        self.expression()?;
+        let expr_key_type = &self.type_stack.pop().unwrap().value_type;
+        if key_type != expr_key_type {
+            return Err(format!("Hash map key argument type mismatch. Expected {}, got {}", key_type, expr_key_type));
+        }
 
-        Ok(t)
+        self.consume(Token::Colon)?;
+        self.expression()?;
+        let expr_value_type = &self.type_stack.pop().unwrap().value_type;
+        if value_type != expr_value_type {
+            return Err(format!("Hash map key argument type mismatch. Expected {}, got {}", key_type, expr_value_type));
+        }
+
+        Ok(())
+    }
+
+    fn hash_map_constructor(&mut self) -> Result<(), String> {
+        self.consume(Token::Less)?;
+        let key_type = self.parse_type()?;
+        self.consume(Token::Comma)?;
+        let value_type = self.parse_type()?;
+        self.consume(Token::Greater)?;
+
+        self.consume(Token::LeftBrace)?;
+        if self.scanner.match_token(Token::RightBrace)? {
+
+            self.chunk.write_byte(opcode::CREATE_HASH_MAP);
+            self.chunk.write_byte(0);
+            self.type_stack.push(Variable {
+                value_type: ValueType::HashMap(Rc::new((key_type, value_type))),
+                read_only: false,
+            });
+            return Ok(())
+        }
+
+        self.hash_map_constructor_arg(&key_type, &value_type)?;
+
+        let mut arg_count = 1;
+        while !self.scanner.match_token(Token::RightBrace)? {
+            self.consume(Token::Comma)?;
+            self.hash_map_constructor_arg(&key_type, &value_type)?;
+
+            arg_count += 1;
+        }
+
+        self.chunk.write_byte(opcode::CREATE_HASH_MAP);
+        self.chunk.write_byte(arg_count);
+        self.type_stack.push(Variable {
+            value_type: ValueType::HashMap(Rc::new((key_type, value_type))),
+            read_only: false,
+        });
+        Ok(())
+    }
+
+    fn parse_type_vec_or_map(&mut self) -> Result<ValueType, String> {
+        let t0 = self.parse_type()?;
+
+        let result = {
+            if self.scanner.match_token(Token::Colon)? {
+                let t1 = self.parse_type()?;
+                Ok(ValueType::HashMap(Rc::new((t0, t1))))
+            }
+            else {
+                Ok(ValueType::Vector(Rc::new(t0)))
+            }
+        };
+
+        self.consume(Token::RightBracket)?;
+        result
     }
 
     fn parse_type(&mut self) -> Result<ValueType, String> {
@@ -293,7 +363,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::TypeInt => ValueType::Integer,
             Token::TypeFloat => ValueType::Float,
             Token::TypeString => ValueType::Str,
-            Token::LeftBracket => self.parse_type_vec()?,
+            Token::LeftBracket => self.parse_type_vec_or_map()?,
             token => return Err(format!("Expected type but got {}", token)),
         };
 
@@ -781,6 +851,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
                 ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
+                ValueType::HashMap(_) => return Err("Cannot use comparison with hash map".to_owned()),
             };
         }
 
@@ -816,7 +887,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool | ValueType::Vector(_) => self.chunk.write_byte(op),
+                ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool | ValueType::Vector(_) | ValueType::HashMap(_) => self.chunk.write_byte(op),
             };
         }
 

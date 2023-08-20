@@ -1,5 +1,8 @@
 use std::ptr::NonNull;
 use std::vec::Vec;
+use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
+use ordered_float::OrderedFloat;
 
 #[derive(Debug)]
 pub struct StringValue {
@@ -8,6 +11,7 @@ pub struct StringValue {
 }
 
 pub type VectorValue = Vec<Value>;
+pub type HashMapValue = HashMap<Value, Value>;
 
 #[derive(Debug)]
 pub enum GcValue {
@@ -15,49 +19,29 @@ pub enum GcValue {
     //    Integer(i32),
     Str(Box<StringValue>),
     Vector(Box<VectorValue>),
+    HashMap(Box<HashMapValue>),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Value {
-    Float(f32),
+    Float(OrderedFloat<f32>),
     Integer(i32),
     Str(NonNull<StringValue>),
     Bool(bool),
-    Vector(NonNull<VectorValue>)
+    Vector(NonNull<VectorValue>),
+    HashMap(NonNull<HashMapValue>)
 }
 
-pub trait FromValue {
-    type ValueType;
-
-    fn from_value(value: &Value) -> Option<Self::ValueType>;
-}
-
-impl FromValue for f32 {
-    type ValueType = f32;
-    fn from_value(value: &Value) -> Option<f32> {
-        match value {
-            Value::Float(f) => Some(*f),
-            _ => None,
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Value::Float(f) => unimplemented!("Cannot use float as hash!"),
+            Value::Integer(i) => i.hash(state),
+            Value::Str(s) => s.hash(state),
+            Value::Bool(b) => b.hash(state),
+            Value::Vector(v) => v.hash(state),
+            Value::HashMap(h) => h.hash(state)
         }
     }
 }
 
-impl FromValue for i32 {
-    type ValueType = i32;
-    fn from_value(value: &Value) -> Option<i32> {
-        match value {
-            Value::Integer(i) => Some(*i),
-            _ => None,
-        }
-    }
-}
-
-impl FromValue for NonNull<StringValue> {
-    type ValueType = NonNull<StringValue>;
-    fn from_value(value: &Value) -> Option<NonNull<StringValue>> {
-        match value {
-            Value::Str(s) => Some(*s),
-            _ => None,
-        }
-    }
-}

@@ -11,6 +11,10 @@ const OPCODES: &[&str] = &[
     "INDEX_VEC",
     "SET_VEC",
     //
+    "CREATE_HASH_MAP",
+    "INDEX_HASH_MAP",
+    "SET_HASH_MAP",
+    //
     "ADD",
     "SUB",
     "MUL",

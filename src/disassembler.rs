@@ -27,6 +27,7 @@ impl<'a> Disassembler<'a> {
                 opcode::CREATE_VEC => self.create_vec(),
                 opcode::INDEX_VEC => self.simple_instruction("index vec"),
                 opcode::SET_VEC => self.simple_instruction("set vec"),
+                opcode::CREATE_HASH_MAP => self.create_hash_map(),
                 opcode::SET_GLOBAL => self.set_global(),
                 opcode::SET_LOCAL => self.set_local(),
                 opcode::PUSH_GLOBAL => self.push_global(),
@@ -140,6 +141,13 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("SET LOCAL: idx({})", idx);
+    }
+
+    fn create_hash_map(&mut self) {
+        let arg_count = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CREATE HASH MAP: {}", arg_count);
     }
 
     fn push_global(&mut self) {

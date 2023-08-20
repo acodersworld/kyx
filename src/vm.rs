@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::vec::Vec;
 
+use ordered_float::OrderedFloat;
+use itertools::Itertools;
+
 use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
@@ -60,6 +63,7 @@ fn is_truthy(value: &Value) -> bool {
         Value::Str(s) => unsafe { !s.as_ref().val.is_empty() },
         Value::Bool(b) => *b,
         Value::Vector(v) => unsafe { v.as_ref().len() > 0 },
+        Value::HashMap(h) => unsafe { h.as_ref().len() > 0 },
     }
 }
 
@@ -73,7 +77,7 @@ macro_rules! bin_op {
 
             let result = match (left, right) {
                 (Value::Integer(l), Value::Integer(r)) => Value::Integer(l $op r),
-                (Value::Float(l), Value::Float(r)) => Value::Float(l $op r),
+                (Value::Float(l), Value::Float(r)) => Value::Float(*l $op *r),
                 _ => panic!("")
             };
 
@@ -153,6 +157,7 @@ impl<'printer> VM<'printer> {
                 opcode::CREATE_VEC => self.create_vec(code),
                 opcode::INDEX_VEC => self.index_vec(),
                 opcode::SET_VEC => self.set_vec(),
+                opcode::CREATE_HASH_MAP => self.create_hash_map(code),
                 opcode::SET_GLOBAL => self.set_global(code),
                 opcode::SET_LOCAL => self.set_local(code),
                 opcode::PUSH_GLOBAL => self.push_global(code),
@@ -256,7 +261,7 @@ impl<'printer> VM<'printer> {
         let value = float::decode(&code[self.offset..self.offset + 4].try_into().unwrap());
         self.offset += 4;
 
-        self.stack.push(Value::Float(value));
+        self.stack.push(Value::Float(OrderedFloat(value)));
     }
 
     fn push_constant_string(&mut self, code: &[u8]) {
@@ -317,6 +322,26 @@ impl<'printer> VM<'printer> {
 
         vector[index] = new_value;
         self.stack.push(new_value);
+    }
+
+    fn create_hash_map(&mut self, code: &[u8]) {
+        let arg_count = code[self.offset] as usize * 2;
+        self.offset += 1;
+
+        assert!(self.stack.len() >= arg_count);
+        let args: Vec<Value> = self.stack.drain((self.stack.len() - arg_count)..).collect();
+
+        let mut hash_map = HashMap::<Value, Value>::new();
+
+        for kv in args.chunks(2) {
+            hash_map.insert(kv[0], kv[1]);
+        }
+
+        let mut hash_map_val = Box::new(hash_map);
+        let ptr = unsafe { NonNull::new_unchecked(hash_map_val.as_mut() as *mut _) };
+        self.objects.push(GcValue::HashMap(hash_map_val));
+
+        self.stack.push(Value::HashMap(ptr));
     }
 
     fn set_global(&mut self, code: &[u8]) {
@@ -391,13 +416,25 @@ impl<'printer> VM<'printer> {
         s 
     }
 
+    fn format_hash_map(hash_map: &HashMap<Value, Value>) -> String {
+        let mut s = "hash_map{".to_owned();
+
+        let values = hash_map.iter().sorted().map(|(k, v)| {
+            format!("{}: {}", Self::format_value(k), Self::format_value(v))
+        }).collect::<Vec<String>>();
+
+        s += &(values.join(&",") + "}");
+        s 
+    }
+
     fn format_value(value: &Value) -> String {
         match value {
             Value::Float(f) => format!("{}", f),
             Value::Integer(i) => format!("{}", i),
             Value::Str(s) => unsafe { &s.as_ref().val }.to_string(),
             Value::Bool(b) => format!("{}", b),
-            Value::Vector(v) => Self::format_vec(unsafe { v.as_ref() })
+            Value::Vector(v) => Self::format_vec(unsafe { v.as_ref() }),
+            Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() })
         }
     }
 
@@ -473,7 +510,7 @@ impl<'printer> VM<'printer> {
             self.stack.push(Value::Integer(val));
         } else if read_type == 1 {
             let val = line.trim().parse::<f32>().unwrap_or(0.0);
-            self.stack.push(Value::Float(val));
+            self.stack.push(Value::Float(OrderedFloat(val)));
         } else {
             let mut data_section = VMDataSection {
                 objects: &mut self.objects,
@@ -1238,5 +1275,23 @@ mod test {
         assert_eq!(printer.strings[2], "30");
         assert_eq!(printer.strings[3], "20");
         assert_eq!(printer.strings[4], "100");
+    }
+
+    #[test]
+    fn construct_hash_map() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let v: [int: string] = hash_map<int, string>{
+                10: \"Hello\",
+                20: \"World\",
+                30: \"Kyx\"
+            };
+            print v;
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "hash_map{10: Hello,20: World,30: Kyx}");
     }
 }

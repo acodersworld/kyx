@@ -21,6 +21,7 @@ pub enum Token<'a> {
     TypeString,
 
     Vector,
+    HashMap,
 
     Identifier(&'a str),
     Integer(i32),
@@ -86,6 +87,7 @@ impl Token<'_> {
             Self::TypeString => "string",
 
             Self::Vector => "vec",
+            Self::HashMap => "hash_map",
 
             Self::Identifier(id) => id,
             Self::Integer(i) => return i.to_string(),
@@ -216,7 +218,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn identifier(&mut self) -> Token<'a> {
-        while !self.at_eof() && self.peek().is_alphanumeric() {
+        while !self.at_eof() && (self.peek().is_alphanumeric() || self.peek() == '_') {
             self.advance();
         }
 
@@ -226,6 +228,7 @@ impl<'a> Scanner<'a> {
             "float" => Token::TypeFloat,
             "string" => Token::TypeString,
             "vec" => Token::Vector,
+            "hash_map" => Token::HashMap,
             "struct" => Token::Struct,
             "interface" => Token::Interface,
             "fn" => Token::Fn,
@@ -459,12 +462,14 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let src = "int float string vec struct interface while for return fn let mut true false";
+        let src = "int float string vec hash_map struct interface while for return fn let mut true false";
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::TypeInt));
         assert_eq!(scanner.scan_token(), Ok(Token::TypeFloat));
         assert_eq!(scanner.scan_token(), Ok(Token::TypeString));
+
         assert_eq!(scanner.scan_token(), Ok(Token::Vector));
+        assert_eq!(scanner.scan_token(), Ok(Token::HashMap));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Struct));
         assert_eq!(scanner.scan_token(), Ok(Token::Interface));
