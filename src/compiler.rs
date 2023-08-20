@@ -409,11 +409,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.block_expression()?;
 
         if self.scanner.match_token(Token::Else)? {
-            let if_type = {
+            let (if_type, if_is_read_only) = {
                 if self.type_stack.len() == stack_top {
-                    None
+                    (None, true)
                 } else {
-                    Some(self.type_stack.pop().unwrap().value_type)
+                    let t = self.type_stack.pop().unwrap();
+                    (Some(t.value_type), t.read_only)
                 }
             };
 
@@ -425,16 +426,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.consume(Token::LeftBrace)?;
             self.block_expression()?;
 
-            let else_type = {
+            let (else_type, else_is_read_only) = {
                 if self.type_stack.len() == stack_top {
-                    None
+                    (None, true)
                 } else {
-                    Some(self.type_stack.last().unwrap().value_type)
+                    let t = self.type_stack.last().unwrap();
+                    (Some(t.value_type), t.read_only)
                 }
             };
 
             if else_type != if_type {
                 return Err(format!("if & else arms return different types. if: {:?}, else: {:?}", if_type, else_type));
+            }
+
+            if else_is_read_only != if_is_read_only {
+                // one is read only, make the result read only
+                if let Some(t) = self.type_stack.last_mut() {
+                    t.read_only = true;
+                }
             }
 
             self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
