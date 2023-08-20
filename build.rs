@@ -7,6 +7,10 @@ const OPCODES: &[&str] = &[
     "CONSTANT_STRING",
     "CONSTANT_BOOL",
     //
+    "CREATE_VEC",
+    "INDEX_VEC",
+    "SET_VEC",
+    //
     "ADD",
     "SUB",
     "MUL",

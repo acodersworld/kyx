@@ -20,6 +20,8 @@ pub enum Token<'a> {
     TypeFloat,
     TypeString,
 
+    Vector,
+
     Identifier(&'a str),
     Integer(i32),
     Float(f32),
@@ -82,6 +84,8 @@ impl Token<'_> {
             Self::TypeInt => "int",
             Self::TypeFloat => "float",
             Self::TypeString => "string",
+
+            Self::Vector => "vec",
 
             Self::Identifier(id) => id,
             Self::Integer(i) => return i.to_string(),
@@ -221,6 +225,7 @@ impl<'a> Scanner<'a> {
             "int" => Token::TypeInt,
             "float" => Token::TypeFloat,
             "string" => Token::TypeString,
+            "vec" => Token::Vector,
             "struct" => Token::Struct,
             "interface" => Token::Interface,
             "fn" => Token::Fn,
@@ -454,8 +459,13 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let src = "struct interface while for return fn let mut true false";
+        let src = "int float string vec struct interface while for return fn let mut true false";
         let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::TypeInt));
+        assert_eq!(scanner.scan_token(), Ok(Token::TypeFloat));
+        assert_eq!(scanner.scan_token(), Ok(Token::TypeString));
+        assert_eq!(scanner.scan_token(), Ok(Token::Vector));
+
         assert_eq!(scanner.scan_token(), Ok(Token::Struct));
         assert_eq!(scanner.scan_token(), Ok(Token::Interface));
         assert_eq!(scanner.scan_token(), Ok(Token::While));

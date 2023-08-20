@@ -24,6 +24,9 @@ impl<'a> Disassembler<'a> {
                 opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
                 opcode::CONSTANT_STRING => self.constant_string_instruction(),
                 opcode::CONSTANT_BOOL => self.constant_bool_instruction(),
+                opcode::CREATE_VEC => self.create_vec(),
+                opcode::INDEX_VEC => self.simple_instruction("index vec"),
+                opcode::SET_VEC => self.simple_instruction("set vec"),
                 opcode::SET_GLOBAL => self.set_global(),
                 opcode::SET_LOCAL => self.set_local(),
                 opcode::PUSH_GLOBAL => self.push_global(),
@@ -116,6 +119,13 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("CONSTANT BOOL: {}", if value != 0 { true } else { false } );
+    }
+
+    fn create_vec(&mut self) {
+        let arg_count = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CREATE VEC: {}", arg_count);
     }
 
     fn set_global(&mut self) {

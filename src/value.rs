@@ -1,4 +1,5 @@
 use std::ptr::NonNull;
+use std::vec::Vec;
 
 #[derive(Debug)]
 pub struct StringValue {
@@ -6,11 +7,14 @@ pub struct StringValue {
     pub hash: usize,
 }
 
+pub type VectorValue = Vec<Value>;
+
 #[derive(Debug)]
 pub enum GcValue {
     //    Float(f32),
     //    Integer(i32),
     Str(Box<StringValue>),
+    Vector(Box<VectorValue>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -19,6 +23,7 @@ pub enum Value {
     Integer(i32),
     Str(NonNull<StringValue>),
     Bool(bool),
+    Vector(NonNull<VectorValue>)
 }
 
 pub trait FromValue {

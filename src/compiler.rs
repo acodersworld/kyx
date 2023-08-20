@@ -7,12 +7,15 @@ use crate::var_len_int;
 use std::collections::HashMap;
 use std::fmt;
 use std::vec::Vec;
+use std::rc::Rc;
 
 /*
    PROGRAM:
        program -> rule* EOF
 
        rule -> declaration | expression ";"?
+
+       type -> "int" | "float" | "string" | "[" type "]"
 
    DECLARATIONS:
        declaration -> let_decl |
@@ -31,35 +34,40 @@ use std::vec::Vec;
        expression -> assignment |
                      block_expression |
                      if_expr |
+                     vector_constructor |
                      read_expr
 
            block_expression -> "{" declaration* expression? "}"
            if_expr -> "if" expression block_expression ("else" block_expression)?
+           vector_constructor -> vec{ expression* }
            read_expr -> "read" type
 
            assignment -> identifier = expression | equality
            equality -> comparison (("!=" | "==") comparison)?
            comparison -> term (("<" | "<=" | ">" | ">=") term)?
            term -> factor ( "-" | "+" factor )*
-           factor -> primary ( "*" | "/" primary )*
+           factor -> index ( "*" | "/" index )*
+           index -> primary ("[" expression "]")* |
            primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
 */
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 enum ValueType {
     Integer,
     Float,
     Str,
     Bool,
+    Vector(Rc<ValueType>),
 }
 
 impl fmt::Display for ValueType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            Self::Integer => "int",
-            Self::Float => "float",
-            Self::Str => "string",
-            Self::Bool => "bool",
+            Self::Integer => "int".to_owned(),
+            Self::Float => "float".to_owned(),
+            Self::Str => "string".to_owned(),
+            Self::Bool => "bool".to_owned(),
+            Self::Vector(tp) => format!("[{}]", tp)
         };
 
         write!(f, "{}", s)
@@ -70,7 +78,7 @@ pub trait DataSection {
     fn create_constant_str(&mut self, s: &str) -> u8;
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 struct Variable {
     value_type: ValueType,
     read_only: bool,
@@ -206,19 +214,90 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn expression(&mut self) -> Result<bool, String> {
+        let mut is_block = false;
         if self.scanner.match_token(Token::LeftBrace)? {
             self.block_expression()?;
-            return Ok(true);
+            is_block = true;
         } else if self.scanner.match_token(Token::If)? {
             self.if_expression()?;
-            return Ok(true);
+            is_block = true;
         } else if self.scanner.match_token(Token::ReadInput)? {
             self.read_expression()?;
+        } else if self.scanner.match_token(Token::Vector)? {
+            self.vector_constructor()?;
         } else {
             self.equality()?;
         }
 
-        Ok(false)
+        Ok(is_block)
+    }
+
+    fn vector_constructor(&mut self) -> Result<(), String> {
+        
+        self.consume(Token::Less)?;
+        let elem_type = self.parse_type()?;
+        self.consume(Token::Greater)?;
+
+        self.consume(Token::LeftBrace)?;
+        if self.scanner.match_token(Token::RightBrace)? {
+
+            self.chunk.write_byte(opcode::CREATE_VEC);
+            self.chunk.write_byte(0);
+            self.type_stack.push(Variable {
+                value_type: ValueType::Vector(Rc::new(elem_type)),
+                read_only: false,
+            });
+            return Ok(())
+        }
+
+        self.expression()?;
+        {
+            let tp = &self.type_stack.last().unwrap().value_type;
+            if elem_type != *tp {
+                return Err(format!("Vector argument type mismatch. Expected {}, got {}", elem_type, tp));
+            }
+            self.type_stack.pop();
+        }
+
+        let mut arg_count = 1;
+        while !self.scanner.match_token(Token::RightBrace)? {
+            self.consume(Token::Comma)?;
+            self.expression()?;
+            let tp = &self.type_stack.last().unwrap().value_type;
+            if elem_type != *tp {
+                return Err(format!("Vector argument type mismatch. Expected {}, got {}", elem_type, tp));
+            }
+
+            arg_count += 1;
+            self.type_stack.pop();
+        }
+
+        self.chunk.write_byte(opcode::CREATE_VEC);
+        self.chunk.write_byte(arg_count);
+        self.type_stack.push(Variable {
+            value_type: ValueType::Vector(Rc::new(elem_type)),
+            read_only: false,
+        });
+        Ok(())
+    }
+
+    fn parse_type_vec(&mut self) -> Result<ValueType, String> {
+        let t = ValueType::Vector(Rc::new(self.parse_type()?));
+        self.consume(Token::RightBracket)?;
+
+        Ok(t)
+    }
+
+    fn parse_type(&mut self) -> Result<ValueType, String> {
+        let var_type = match self.scanner.scan_token()? {
+            Token::TypeInt => ValueType::Integer,
+            Token::TypeFloat => ValueType::Float,
+            Token::TypeString => ValueType::Str,
+            Token::LeftBracket => self.parse_type_vec()?,
+            token => return Err(format!("Expected type but got {}", token)),
+        };
+
+        Ok(var_type)
     }
 
     fn let_statement(&mut self) -> Result<(), String> {
@@ -230,12 +309,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.consume(Token::Colon)?;
 
-        let var_type = match self.scanner.scan_token()? {
-            Token::TypeInt => ValueType::Integer,
-            Token::TypeFloat => ValueType::Float,
-            Token::TypeString => ValueType::Str,
-            token => return Err(format!("Expected type but got {}", token)),
-        };
+        let var_type = self.parse_type()?;
 
         self.consume(Token::Equal)?;
         self.expression()?;
@@ -306,7 +380,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 .find(|l| l.1.name == name);
 
             if let Some(l) = found {
-                return Some((l.1.v, l.0 as u32));
+                return Some((l.1.v.clone(), l.0 as u32));
             }
         }
 
@@ -316,7 +390,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn find_global(&self, name: &str) -> Result<Variable, String> {
         match self.globals.get(name) {
             None => Err(format!("Global {} not defined", name)),
-            Some(x) => Ok(*x),
+            Some(x) => Ok(x.clone()),
         }
     }
 
@@ -341,8 +415,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 return Err("Expected right hand side value, got None".to_owned());
             }
 
-            let expr_type = self.type_stack.last().unwrap().value_type;
-            if variable.value_type != expr_type {
+            let expr_type = &self.type_stack.last().unwrap().value_type;
+            if variable.value_type != *expr_type {
                 return Err(format!(
                     "Expected type {}, got {}",
                     variable.value_type, expr_type
@@ -431,7 +505,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     (None, true)
                 } else {
                     let t = self.type_stack.last().unwrap();
-                    (Some(t.value_type), t.read_only)
+                    (Some(t.value_type.clone()), t.read_only)
                 }
             };
 
@@ -663,11 +737,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn read_expression(&mut self) -> Result<(), String> {
         self.chunk.write_byte(opcode::READ_INPUT);
 
-        let (value_type, type_code): (ValueType, u8) = match self.scanner.scan_token()? {
-            Token::TypeInt => (ValueType::Integer, 0),
-            Token::TypeFloat => (ValueType::Float, 1),
-            Token::TypeString => (ValueType::Str, 2),
-            token => return Err(format!("Expected type but got {}", token)),
+        let value_type = self.parse_type()?;
+        let type_code = match value_type {
+            ValueType::Integer => 0,
+            ValueType::Float => 1,
+            ValueType::Str => 2,
+            t => return Err(format!("Cannot read type {:?}", t))
         };
 
         self.type_stack.push(Variable {
@@ -695,8 +770,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.term()?;
 
         let len = self.type_stack.len();
-        let left_type = self.type_stack[len - 2].value_type;
-        let right_type = self.type_stack[len - 1].value_type;
+        let left_type = &self.type_stack[len - 2].value_type;
+        let right_type = &self.type_stack[len - 1].value_type;
 
         if left_type != right_type {
             return Err("Type error".to_owned());
@@ -705,6 +780,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
+                ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
             };
         }
 
@@ -733,14 +809,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.comparison()?;
 
         let len = self.type_stack.len();
-        let left_type = self.type_stack[len - 2].value_type;
-        let right_type = self.type_stack[len - 1].value_type;
+        let left_type = &self.type_stack[len - 2].value_type;
+        let right_type = &self.type_stack[len - 1].value_type;
 
         if left_type != right_type {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool => self.chunk.write_byte(op),
+                ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool | ValueType::Vector(_) => self.chunk.write_byte(op),
             };
         }
 
@@ -762,11 +838,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn factor_right(&mut self, op: u8) -> Result<(), String> {
-        self.primary()?;
+        self.index()?;
 
         let len = self.type_stack.len();
-        let left_type = self.type_stack[len - 2].value_type;
-        let right_type = self.type_stack[len - 1].value_type;
+        let left_type = &self.type_stack[len - 2].value_type;
+        let right_type = &self.type_stack[len - 1].value_type;
 
         if left_type != right_type {
             return Err("Type error".to_owned());
@@ -783,7 +859,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn factor(&mut self) -> Result<(), String> {
-        self.primary()?;
+        self.index()?;
 
         loop {
             if self.scanner.match_token(Token::Star)? {
@@ -798,12 +874,54 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn index(&mut self) -> Result<(), String> {
+        self.primary()?;
+
+        if self.scanner.match_token(Token::LeftBracket)? {
+            let vector = self.type_stack.pop().unwrap();
+            let elem_type = match &vector.value_type {
+                ValueType::Vector(e) => {
+                    e.clone()
+                },
+                t => return Err(format!("Cannot index type {}", t))
+            };
+
+            self.expression()?;
+            let index_type = self.type_stack.pop().unwrap();
+            if index_type.value_type != ValueType::Integer {
+                return Err(format!("Can only index using Integer. Got {}", index_type.value_type));
+            }
+
+            self.consume(Token::RightBracket)?;
+
+            if self.scanner.match_token(Token::Equal)? {
+                self.expression()?;
+                let new_value_type = self.type_stack.pop().unwrap().value_type;
+                if new_value_type != *elem_type {
+                    return Err(format!("Type mismatch for setting vector. Expected {}, got {}", *elem_type, new_value_type));
+                }
+
+                self.chunk.write_byte(opcode::SET_VEC);
+            }
+            else {
+                self.chunk.write_byte(opcode::INDEX_VEC);
+            }
+
+            self.type_stack.push(Variable {
+                value_type: (*elem_type).clone(),
+                read_only: vector.read_only
+            });
+        }
+
+        Ok(())
+    }
+
     fn term_right(&mut self, op: u8) -> Result<(), String> {
         self.factor()?;
 
         let len = self.type_stack.len();
-        let left_type = self.type_stack[len - 2].value_type;
-        let right_type = self.type_stack[len - 1].value_type;
+        let left_type = &self.type_stack[len - 2].value_type;
+        let right_type = &self.type_stack[len - 1].value_type;
 
         if left_type != right_type {
             return Err("Type error".to_owned());
@@ -993,6 +1111,79 @@ mod test {
         ";
 
         assert_eq!(compiler.compile(&mut table, src).err(), None);
+    }
+
+    #[test]
+    fn test_vector_decl() {
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let v: [int] = vec<int>{};
+            ";
+
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let v: [int] = vec<int>{1};
+            ";
+
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let v: [int] = vec<int>{1, 2, 3};
+            ";
+
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let v: [string] = vec<string>{\"hello\", \"world\"};
+            ";
+
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let v: [string] = vec<string>{0, \"world\"};
+            ";
+
+            assert_ne!(compiler.compile(&mut table, src).err(), None);
+        }
+    }
+
+    #[test]
+    fn test_vector_index() {
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let v: [int] = vec<int>{1,2,3};
+                print v[0];
+            ";
+
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
+        }
     }
 
     #[test]

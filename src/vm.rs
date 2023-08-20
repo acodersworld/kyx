@@ -59,6 +59,7 @@ fn is_truthy(value: &Value) -> bool {
         Value::Float(f) => *f != 0.0,
         Value::Str(s) => unsafe { !s.as_ref().val.is_empty() },
         Value::Bool(b) => *b,
+        Value::Vector(v) => unsafe { v.as_ref().len() > 0 },
     }
 }
 
@@ -149,6 +150,9 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_FLOAT => self.push_float(code),
                 opcode::CONSTANT_STRING => self.push_constant_string(code),
                 opcode::CONSTANT_BOOL => self.push_constant_bool(code),
+                opcode::CREATE_VEC => self.create_vec(code),
+                opcode::INDEX_VEC => self.index_vec(),
+                opcode::SET_VEC => self.set_vec(),
                 opcode::SET_GLOBAL => self.set_global(code),
                 opcode::SET_LOCAL => self.set_local(code),
                 opcode::PUSH_GLOBAL => self.push_global(code),
@@ -269,6 +273,56 @@ impl<'printer> VM<'printer> {
         self.stack.push(Value::Bool(value));
     }
 
+    fn create_vec(&mut self, code: &[u8]) {
+        let arg_count = code[self.offset] as usize;
+        self.offset += 1;
+
+        assert_eq!(self.stack.len(), arg_count);
+        let mut vector = Vec::with_capacity(arg_count);
+        for val in &self.stack {
+            vector.push(*val);
+        }
+        self.stack.clear();
+
+        let mut vec_val = Box::new(vector);
+        let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+        self.objects.push(GcValue::Vector(vec_val));
+
+        self.stack.push(Value::Vector(ptr));
+    }
+
+    fn index_vec(&mut self) {
+        assert!(self.stack.len() > 1);
+        let index = match self.stack.pop().unwrap() {
+            Value::Integer(i) => i as usize,
+            _ => panic!("Bad index value")
+        };
+
+        let vector = match self.stack.pop().unwrap() {
+            Value::Vector(v) => unsafe { v.as_ref() },
+            _ => panic!("Not a vector")
+        };
+
+        self.stack.push(vector[index]);
+    }
+
+    fn set_vec(&mut self) {
+        assert!(self.stack.len() > 2);
+        let new_value = self.stack.pop().unwrap();
+        let index = match self.stack.pop().unwrap() {
+            Value::Integer(i) => i as usize,
+            _ => panic!("Bad index value")
+        };
+
+        let vector = match self.stack.pop().unwrap() {
+            Value::Vector(mut v) => unsafe { v.as_mut() },
+            _ => panic!("Not a vector")
+        };
+
+        vector[index] = new_value;
+        self.stack.push(new_value);
+    }
+
     fn set_global(&mut self, code: &[u8]) {
         let idx = code[self.offset] as usize;
         self.offset += 1;
@@ -330,15 +384,30 @@ impl<'printer> VM<'printer> {
         locals.push(value);
     }
 
-    fn print(&mut self) {
-        let value = self.stack.pop().unwrap();
-        let s = match value {
+    fn format_vec(vector: &Vec<Value>) -> String {
+        let mut s = "vec{".to_owned();
+
+        let values = vector.iter().map(|v| {
+            Self::format_value(v)
+        }).collect::<Vec<String>>();
+
+        s += &(values.join(&",") + "}");
+        s 
+    }
+
+    fn format_value(value: &Value) -> String {
+        match value {
             Value::Float(f) => format!("{}", f),
             Value::Integer(i) => format!("{}", i),
             Value::Str(s) => unsafe { &s.as_ref().val }.to_string(),
             Value::Bool(b) => format!("{}", b),
-        };
+            Value::Vector(v) => Self::format_vec(unsafe { v.as_ref() })
+        }
+    }
 
+    fn print(&mut self) {
+        let value = self.stack.pop().unwrap();
+        let s = Self::format_value(&value);
         self.printer.print(&s);
     }
 
@@ -1081,5 +1150,63 @@ mod test {
         assert_eq!(printer.strings[6], "4");
         assert_eq!(printer.strings[7], "3");
         assert_eq!(printer.strings[8], "4");
+    }
+
+    #[test]
+    fn construct_vector() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let v: [int] = vec<int>{10,20,30,40};
+            print v;
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "vec{10,20,30,40}");
+    }
+
+    #[test]
+    fn vector_index() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let v: [int] = vec<int>{10,20,30,40};
+            print v[0];
+            print v[3];
+            print v[2];
+            print v[1];
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "40");
+        assert_eq!(printer.strings[2], "30");
+        assert_eq!(printer.strings[3], "20");
+    }
+
+    #[test]
+    fn vector_set() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let v: [int] = vec<int>{10,20,30,40};
+            print v[0];
+            print v[3];
+            print v[2];
+            print v[1];
+
+            v[1] = 100;
+            print v[1];
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "40");
+        assert_eq!(printer.strings[2], "30");
+        assert_eq!(printer.strings[3], "20");
+        assert_eq!(printer.strings[4], "100");
     }
 }
