@@ -277,12 +277,8 @@ impl<'printer> VM<'printer> {
         let arg_count = code[self.offset] as usize;
         self.offset += 1;
 
-        assert_eq!(self.stack.len(), arg_count);
-        let mut vector = Vec::with_capacity(arg_count);
-        for val in &self.stack {
-            vector.push(*val);
-        }
-        self.stack.clear();
+        assert!(self.stack.len() >= arg_count);
+        let vector: Vec<Value> = self.stack.drain((self.stack.len() - arg_count)..).collect();
 
         let mut vec_val = Box::new(vector);
         let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
@@ -1186,6 +1182,40 @@ mod test {
         assert_eq!(printer.strings[3], "20");
     }
 
+    #[test]
+    fn vector_nested_index() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let v: [[int]] = vec<[int]>{vec<int>{1,2,3}, vec<int>{40,50,60}, vec<int>{700,800,900}};
+
+            for i : 0..3 {
+                print \"row\";
+                for j : 0..3 {
+                    print v[i][j];
+                }
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        println!("{:?}", printer.strings);
+        assert_eq!(printer.strings.len(), 12);
+        assert_eq!(printer.strings[0], "row");
+        assert_eq!(printer.strings[1], "1");
+        assert_eq!(printer.strings[2], "2");
+        assert_eq!(printer.strings[3], "3");
+
+        assert_eq!(printer.strings[4], "row");
+        assert_eq!(printer.strings[5], "40");
+        assert_eq!(printer.strings[6], "50");
+        assert_eq!(printer.strings[7], "60");
+
+        assert_eq!(printer.strings[8], "row");
+        assert_eq!(printer.strings[9], "700");
+        assert_eq!(printer.strings[10], "800");
+        assert_eq!(printer.strings[11], "900");
+    }
     #[test]
     fn vector_set() {
         let mut printer = TestPrinter::new();

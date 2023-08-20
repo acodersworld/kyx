@@ -877,7 +877,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn index(&mut self) -> Result<(), String> {
         self.primary()?;
 
-        if self.scanner.match_token(Token::LeftBracket)? {
+        while self.scanner.match_token(Token::LeftBracket)? {
             let vector = self.type_stack.pop().unwrap();
             let elem_type = match &vector.value_type {
                 ValueType::Vector(e) => {
