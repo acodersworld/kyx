@@ -545,7 +545,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn for_statement(&mut self) ->Result<(), String> {
         let prev_in_loop = self.is_in_loop;
-        self.is_in_loop = true;
+        self.is_in_loop = false; // disable break (maybe enable later)
 
         self.scoped_block(|c| {
             let identifier_name = {
@@ -611,6 +611,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 c.for_block()?;
 
+                // This will need to be shifted to the top of the loop if breaks are to be enabled.
                 c.chunk.write_byte(opcode::PUSH_LOCAL);
                 c.chunk.write_byte(var_idx);
                 c.integer(1);
