@@ -167,7 +167,7 @@ impl<'a> Scanner<'a> {
         iter.next();
 
         if let Some(c) = iter.next() {
-            return Some(c)
+            return Some(c);
         }
 
         None
@@ -462,7 +462,8 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let src = "int float string vec hash_map struct interface while for return fn let mut true false";
+        let src =
+            "int float string vec hash_map struct interface while for return fn let mut true false";
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::TypeInt));
         assert_eq!(scanner.scan_token(), Ok(Token::TypeFloat));

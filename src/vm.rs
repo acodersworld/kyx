@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::vec::Vec;
 
-use ordered_float::OrderedFloat;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 
 use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
@@ -185,7 +185,11 @@ impl<'printer> VM<'printer> {
                 opcode::JMP_IF_FALSE => self.jmp_if_false(code),
                 opcode::READ_INPUT => self.read_input(code),
                 _ => {
-                    panic!("Unknown instruction: {} @ {}", code[self.offset - 1], self.offset - 1)
+                    panic!(
+                        "Unknown instruction: {} @ {}",
+                        code[self.offset - 1],
+                        self.offset - 1
+                    )
                 }
             }
         }
@@ -296,12 +300,12 @@ impl<'printer> VM<'printer> {
         assert!(self.stack.len() > 1);
         let index = match self.stack.pop().unwrap() {
             Value::Integer(i) => i as usize,
-            _ => panic!("Bad index value")
+            _ => panic!("Bad index value"),
         };
 
         let vector = match self.stack.pop().unwrap() {
             Value::Vector(v) => unsafe { v.as_ref() },
-            _ => panic!("Not a vector")
+            _ => panic!("Not a vector"),
         };
 
         self.stack.push(vector[index]);
@@ -312,12 +316,12 @@ impl<'printer> VM<'printer> {
         let new_value = self.stack.pop().unwrap();
         let index = match self.stack.pop().unwrap() {
             Value::Integer(i) => i as usize,
-            _ => panic!("Bad index value")
+            _ => panic!("Bad index value"),
         };
 
         let vector = match self.stack.pop().unwrap() {
             Value::Vector(mut v) => unsafe { v.as_mut() },
-            _ => panic!("Not a vector")
+            _ => panic!("Not a vector"),
         };
 
         vector[index] = new_value;
@@ -408,23 +412,26 @@ impl<'printer> VM<'printer> {
     fn format_vec(vector: &Vec<Value>) -> String {
         let mut s = "vec{".to_owned();
 
-        let values = vector.iter().map(|v| {
-            Self::format_value(v)
-        }).collect::<Vec<String>>();
+        let values = vector
+            .iter()
+            .map(|v| Self::format_value(v))
+            .collect::<Vec<String>>();
 
         s += &(values.join(&",") + "}");
-        s 
+        s
     }
 
     fn format_hash_map(hash_map: &HashMap<Value, Value>) -> String {
         let mut s = "hash_map{".to_owned();
 
-        let values = hash_map.iter().sorted().map(|(k, v)| {
-            format!("{}: {}", Self::format_value(k), Self::format_value(v))
-        }).collect::<Vec<String>>();
+        let values = hash_map
+            .iter()
+            .sorted()
+            .map(|(k, v)| format!("{}: {}", Self::format_value(k), Self::format_value(v)))
+            .collect::<Vec<String>>();
 
         s += &(values.join(&",") + "}");
-        s 
+        s
     }
 
     fn format_value(value: &Value) -> String {
@@ -434,7 +441,7 @@ impl<'printer> VM<'printer> {
             Value::Str(s) => unsafe { &s.as_ref().val }.to_string(),
             Value::Bool(b) => format!("{}", b),
             Value::Vector(v) => Self::format_vec(unsafe { v.as_ref() }),
-            Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() })
+            Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
         }
     }
 
@@ -470,8 +477,7 @@ impl<'printer> VM<'printer> {
         self.break_loop_flag = false;
         if do_loop {
             self.offset -= offset;
-        }
-        else {
+        } else {
             self.offset += 1;
         }
     }
@@ -1140,7 +1146,6 @@ mod test {
         assert_eq!(printer.strings[1], "3");
         assert_eq!(printer.strings[2], "4");
     }
-
 
     #[test]
     fn while_loop_nested_continue() {

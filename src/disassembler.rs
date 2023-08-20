@@ -119,7 +119,7 @@ impl<'a> Disassembler<'a> {
         let value = self.code[self.offset];
         self.offset += 1;
 
-        println!("CONSTANT BOOL: {}", if value != 0 { true } else { false } );
+        println!("CONSTANT BOOL: {}", if value != 0 { true } else { false });
     }
 
     fn create_vec(&mut self) {

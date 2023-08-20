@@ -9,9 +9,9 @@ mod value;
 mod var_len_int;
 mod vm;
 
+use rustyline::DefaultEditor;
 use std::env;
 use std::io::Read;
-use rustyline::DefaultEditor;
 
 pub struct DefaultPrinter {}
 
@@ -23,7 +23,7 @@ impl vm::Printer for DefaultPrinter {
 
 fn repl() {
     let mut rl = {
-        match DefaultEditor::new(){
+        match DefaultEditor::new() {
             Ok(x) => x,
             Err(e) => {
                 eprintln!("{}", e);
@@ -81,8 +81,7 @@ fn main() {
 
     if args.len() == 2 {
         run_file(&args.last().unwrap());
-    }
-    else {
+    } else {
         repl();
     }
 }

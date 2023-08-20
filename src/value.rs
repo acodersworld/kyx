@@ -1,8 +1,8 @@
+use ordered_float::OrderedFloat;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 use std::vec::Vec;
-use std::hash::{Hash, Hasher};
-use std::collections::HashMap;
-use ordered_float::OrderedFloat;
 
 #[derive(Debug)]
 pub struct StringValue {
@@ -29,7 +29,7 @@ pub enum Value {
     Str(NonNull<StringValue>),
     Bool(bool),
     Vector(NonNull<VectorValue>),
-    HashMap(NonNull<HashMapValue>)
+    HashMap(NonNull<HashMapValue>),
 }
 
 impl Hash for Value {
@@ -40,8 +40,7 @@ impl Hash for Value {
             Value::Str(s) => s.hash(state),
             Value::Bool(b) => b.hash(state),
             Value::Vector(v) => v.hash(state),
-            Value::HashMap(h) => h.hash(state)
+            Value::HashMap(h) => h.hash(state),
         }
     }
 }
-

@@ -6,8 +6,8 @@ use crate::var_len_int;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::vec::Vec;
 use std::rc::Rc;
+use std::vec::Vec;
 
 /*
    PROGRAM:
@@ -72,7 +72,7 @@ impl fmt::Display for ValueType {
             Self::Str => "string".to_owned(),
             Self::Bool => "bool".to_owned(),
             Self::Vector(tp) => format!("[{}]", tp),
-            Self::HashMap(tp) => format!("[{}: {}]", tp.0, tp.1)
+            Self::HashMap(tp) => format!("[{}: {}]", tp.0, tp.1),
         };
 
         write!(f, "{}", s)
@@ -113,7 +113,7 @@ pub struct SrcCompiler<'a, T> {
     type_stack: Vec<Variable>,
     data_section: &'a mut T,
     unpatched_break_offsets: Vec<usize>,
-    is_in_loop: bool
+    is_in_loop: bool,
 }
 
 impl Compiler {
@@ -136,7 +136,7 @@ impl Compiler {
             chunk: Chunk::new(),
             type_stack: Vec::new(),
             unpatched_break_offsets: Vec::new(),
-            is_in_loop: false
+            is_in_loop: false,
         };
 
         compiler.compile()?;
@@ -159,7 +159,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Ok(());
         }
 
-        Err(format!("Expected {}, got {}", token, self.scanner.peek_token()?))
+        Err(format!(
+            "Expected {}, got {}",
+            token,
+            self.scanner.peek_token()?
+        ))
     }
 
     pub fn compile(&mut self) -> Result<(), String> {
@@ -240,28 +244,29 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn vector_constructor(&mut self) -> Result<(), String> {
-        
         self.consume(Token::Less)?;
         let elem_type = self.parse_type()?;
         self.consume(Token::Greater)?;
 
         self.consume(Token::LeftBrace)?;
         if self.scanner.match_token(Token::RightBrace)? {
-
             self.chunk.write_byte(opcode::CREATE_VEC);
             self.chunk.write_byte(0);
             self.type_stack.push(Variable {
                 value_type: ValueType::Vector(Rc::new(elem_type)),
                 read_only: false,
             });
-            return Ok(())
+            return Ok(());
         }
 
         self.expression()?;
         {
             let tp = &self.type_stack.pop().unwrap().value_type;
             if elem_type != *tp {
-                return Err(format!("Vector argument type mismatch. Expected {}, got {}", elem_type, tp));
+                return Err(format!(
+                    "Vector argument type mismatch. Expected {}, got {}",
+                    elem_type, tp
+                ));
             }
         }
 
@@ -271,7 +276,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.expression()?;
             let tp = &self.type_stack.pop().unwrap().value_type;
             if elem_type != *tp {
-                return Err(format!("Vector argument type mismatch. Expected {}, got {}", elem_type, tp));
+                return Err(format!(
+                    "Vector argument type mismatch. Expected {}, got {}",
+                    elem_type, tp
+                ));
             }
 
             arg_count += 1;
@@ -286,18 +294,28 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn hash_map_constructor_arg(&mut self, key_type: &ValueType, value_type: &ValueType) -> Result<(), String> {
+    fn hash_map_constructor_arg(
+        &mut self,
+        key_type: &ValueType,
+        value_type: &ValueType,
+    ) -> Result<(), String> {
         self.expression()?;
         let expr_key_type = &self.type_stack.pop().unwrap().value_type;
         if key_type != expr_key_type {
-            return Err(format!("Hash map key argument type mismatch. Expected {}, got {}", key_type, expr_key_type));
+            return Err(format!(
+                "Hash map key argument type mismatch. Expected {}, got {}",
+                key_type, expr_key_type
+            ));
         }
 
         self.consume(Token::Colon)?;
         self.expression()?;
         let expr_value_type = &self.type_stack.pop().unwrap().value_type;
         if value_type != expr_value_type {
-            return Err(format!("Hash map key argument type mismatch. Expected {}, got {}", key_type, expr_value_type));
+            return Err(format!(
+                "Hash map key argument type mismatch. Expected {}, got {}",
+                key_type, expr_value_type
+            ));
         }
 
         Ok(())
@@ -312,14 +330,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.consume(Token::LeftBrace)?;
         if self.scanner.match_token(Token::RightBrace)? {
-
             self.chunk.write_byte(opcode::CREATE_HASH_MAP);
             self.chunk.write_byte(0);
             self.type_stack.push(Variable {
                 value_type: ValueType::HashMap(Rc::new((key_type, value_type))),
                 read_only: false,
             });
-            return Ok(())
+            return Ok(());
         }
 
         self.hash_map_constructor_arg(&key_type, &value_type)?;
@@ -348,8 +365,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             if self.scanner.match_token(Token::Colon)? {
                 let t1 = self.parse_type()?;
                 Ok(ValueType::HashMap(Rc::new((t0, t1))))
-            }
-            else {
+            } else {
                 Ok(ValueType::Vector(Rc::new(t0)))
             }
         };
@@ -580,7 +596,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             };
 
             if else_type != if_type {
-                return Err(format!("if & else arms return different types. if: {:?}, else: {:?}", if_type, else_type));
+                return Err(format!(
+                    "if & else arms return different types. if: {:?}, else: {:?}",
+                    if_type, else_type
+                ));
             }
 
             if else_is_read_only != if_is_read_only {
@@ -591,11 +610,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
 
             self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
-        }
-        else {
+        } else {
             // If there is no else, this cannot always return a value.
             assert!(self.type_stack.len() >= stack_top);
-            unsafe { self.type_stack.set_len(stack_top); }
+            unsafe {
+                self.type_stack.set_len(stack_top);
+            }
             self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
         }
 
@@ -607,8 +627,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             if idx > start_idx {
                 self.chunk.code[idx] = (jmp_idx - idx) as u8;
                 false
-            }
-            else {
+            } else {
                 true
             }
         });
@@ -643,8 +662,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn scoped_block<F>(&mut self, block: F) -> Result<(), String> 
-        where F: FnOnce(&mut Self) -> Result<(), String>
+    fn scoped_block<F>(&mut self, block: F) -> Result<(), String>
+    where
+        F: FnOnce(&mut Self) -> Result<(), String>,
     {
         let push_local = {
             if let Some(top) = self.stack_frames.last_mut() {
@@ -687,7 +707,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })
     }
 
-    fn for_statement(&mut self) ->Result<(), String> {
+    fn for_statement(&mut self) -> Result<(), String> {
         let prev_in_loop = self.is_in_loop;
         self.is_in_loop = false; // disable break (maybe enable later)
 
@@ -695,7 +715,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let identifier_name = {
                 match c.scanner.scan_token()? {
                     Token::Identifier(i) => i,
-                    _ => return Err("Expected identifier".to_owned())
+                    _ => return Err("Expected identifier".to_owned()),
                 }
             };
 
@@ -703,25 +723,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let start = {
                 match c.scanner.scan_token()? {
                     Token::Integer(i) => i,
-                    _ => return Err("Expected number".to_owned())
+                    _ => return Err("Expected number".to_owned()),
                 }
             };
 
-            let is_inclusive = 
-                if c.scanner.match_token(Token::DotDot)? {
-                    false
-                }
-                else if c.scanner.match_token(Token::DotDotEqual)? {
-                    true
-                }
-                else {
-                    return Err("Expected range delimiter '..' or '..='".to_owned());
-                };
+            let is_inclusive = if c.scanner.match_token(Token::DotDot)? {
+                false
+            } else if c.scanner.match_token(Token::DotDotEqual)? {
+                true
+            } else {
+                return Err("Expected range delimiter '..' or '..='".to_owned());
+            };
 
             let end = {
                 match c.scanner.scan_token()? {
                     Token::Integer(i) => i,
-                    _ => return Err("Expected number".to_owned())
+                    _ => return Err("Expected number".to_owned()),
                 }
             };
 
@@ -764,7 +781,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 c.chunk.write_byte(var_idx);
 
                 c.chunk.write_byte(opcode::LOOP);
-                c.chunk.write_byte((c.chunk.code.len() - loop_begin_idx) as u8);
+                c.chunk
+                    .write_byte((c.chunk.code.len() - loop_begin_idx) as u8);
                 c.chunk.code[cond_break_idx] = (c.chunk.code.len() - cond_break_idx) as u8;
 
                 Ok(())
@@ -812,7 +830,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ValueType::Integer => 0,
             ValueType::Float => 1,
             ValueType::Str => 2,
-            t => return Err(format!("Cannot read type {:?}", t))
+            t => return Err(format!("Cannot read type {:?}", t)),
         };
 
         self.type_stack.push(Variable {
@@ -851,7 +869,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
                 ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
-                ValueType::HashMap(_) => return Err("Cannot use comparison with hash map".to_owned()),
+                ValueType::HashMap(_) => {
+                    return Err("Cannot use comparison with hash map".to_owned())
+                }
             };
         }
 
@@ -887,7 +907,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool | ValueType::Vector(_) | ValueType::HashMap(_) => self.chunk.write_byte(op),
+                ValueType::Integer
+                | ValueType::Float
+                | ValueType::Str
+                | ValueType::Bool
+                | ValueType::Vector(_)
+                | ValueType::HashMap(_) => self.chunk.write_byte(op),
             };
         }
 
@@ -951,16 +976,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while self.scanner.match_token(Token::LeftBracket)? {
             let vector = self.type_stack.pop().unwrap();
             let elem_type = match &vector.value_type {
-                ValueType::Vector(e) => {
-                    e.clone()
-                },
-                t => return Err(format!("Cannot index type {}", t))
+                ValueType::Vector(e) => e.clone(),
+                t => return Err(format!("Cannot index type {}", t)),
             };
 
             self.expression()?;
             let index_type = self.type_stack.pop().unwrap();
             if index_type.value_type != ValueType::Integer {
-                return Err(format!("Can only index using Integer. Got {}", index_type.value_type));
+                return Err(format!(
+                    "Can only index using Integer. Got {}",
+                    index_type.value_type
+                ));
             }
 
             self.consume(Token::RightBracket)?;
@@ -969,18 +995,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.expression()?;
                 let new_value_type = self.type_stack.pop().unwrap().value_type;
                 if new_value_type != *elem_type {
-                    return Err(format!("Type mismatch for setting vector. Expected {}, got {}", *elem_type, new_value_type));
+                    return Err(format!(
+                        "Type mismatch for setting vector. Expected {}, got {}",
+                        *elem_type, new_value_type
+                    ));
                 }
 
                 self.chunk.write_byte(opcode::SET_VEC);
-            }
-            else {
+            } else {
                 self.chunk.write_byte(opcode::INDEX_VEC);
             }
 
             self.type_stack.push(Variable {
                 value_type: (*elem_type).clone(),
-                read_only: vector.read_only
+                read_only: vector.read_only,
             });
         }
 
@@ -1305,17 +1333,13 @@ mod test {
     fn test_break_error() {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
-        assert!(compiler
-            .compile(&mut table, "break;")
-            .is_err());
+        assert!(compiler.compile(&mut table, "break;").is_err());
     }
 
     #[test]
     fn test_continue_error() {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
-        assert!(compiler
-            .compile(&mut table, "continue;")
-            .is_err());
+        assert!(compiler.compile(&mut table, "continue;").is_err());
     }
 }
