@@ -970,46 +970,91 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn index_vec(&mut self, read_only: bool, elem_type: &ValueType) -> Result<(), String> {
+        self.expression()?;
+        let index_type = self.type_stack.pop().unwrap();
+        if index_type.value_type != ValueType::Integer {
+            return Err(format!(
+                "Can only index using Integer. Got {}",
+                index_type.value_type
+            ));
+        }
+
+        self.consume(Token::RightBracket)?;
+
+        if self.scanner.match_token(Token::Equal)? {
+            self.expression()?;
+            let new_value_type = self.type_stack.pop().unwrap().value_type;
+            if new_value_type != *elem_type {
+                return Err(format!(
+                    "Type mismatch for setting vector. Expected {}, got {}",
+                    *elem_type, new_value_type
+                ));
+            }
+
+            self.chunk.write_byte(opcode::SET_VEC);
+        } else {
+            self.chunk.write_byte(opcode::INDEX_VEC);
+        }
+
+        self.type_stack.push(Variable {
+            value_type: (*elem_type).clone(),
+            read_only,
+        });
+
+        Ok(())
+    }
+
+    fn index_hash_map(
+        &mut self,
+        read_only: bool,
+        key_type: &ValueType,
+        value_type: &ValueType,
+    ) -> Result<(), String> {
+        self.expression()?;
+        let index_type = self.type_stack.pop().unwrap();
+        if index_type.value_type != *key_type {
+            return Err(format!(
+                "Can only index using {}. Got {}",
+                key_type, index_type.value_type
+            ));
+        }
+
+        self.consume(Token::RightBracket)?;
+
+        if self.scanner.match_token(Token::Equal)? {
+            self.expression()?;
+            let new_value_type = self.type_stack.pop().unwrap().value_type;
+            if new_value_type != *value_type {
+                return Err(format!(
+                    "Type mismatch for setting hash map. Expected {}, got {}",
+                    *value_type, new_value_type
+                ));
+            }
+
+            self.chunk.write_byte(opcode::SET_HASH_MAP);
+        } else {
+            self.chunk.write_byte(opcode::INDEX_HASH_MAP);
+        }
+
+        self.type_stack.push(Variable {
+            value_type: (*value_type).clone(),
+            read_only,
+        });
+
+        Ok(())
+    }
+
     fn index(&mut self) -> Result<(), String> {
         self.primary()?;
 
         while self.scanner.match_token(Token::LeftBracket)? {
-            let vector = self.type_stack.pop().unwrap();
-            let elem_type = match &vector.value_type {
-                ValueType::Vector(e) => e.clone(),
+            let indexable = self.type_stack.pop().unwrap();
+            match &indexable.value_type {
+                ValueType::Vector(e) => self.index_vec(indexable.read_only, e)?,
+                ValueType::HashMap(kv) => self.index_hash_map(indexable.read_only, &kv.0, &kv.1)?,
                 t => return Err(format!("Cannot index type {}", t)),
-            };
-
-            self.expression()?;
-            let index_type = self.type_stack.pop().unwrap();
-            if index_type.value_type != ValueType::Integer {
-                return Err(format!(
-                    "Can only index using Integer. Got {}",
-                    index_type.value_type
-                ));
             }
-
-            self.consume(Token::RightBracket)?;
-
-            if self.scanner.match_token(Token::Equal)? {
-                self.expression()?;
-                let new_value_type = self.type_stack.pop().unwrap().value_type;
-                if new_value_type != *elem_type {
-                    return Err(format!(
-                        "Type mismatch for setting vector. Expected {}, got {}",
-                        *elem_type, new_value_type
-                    ));
-                }
-
-                self.chunk.write_byte(opcode::SET_VEC);
-            } else {
-                self.chunk.write_byte(opcode::INDEX_VEC);
-            }
-
-            self.type_stack.push(Variable {
-                value_type: (*elem_type).clone(),
-                read_only: vector.read_only,
-            });
         }
 
         Ok(())

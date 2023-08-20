@@ -35,7 +35,7 @@ pub enum Value {
 impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Value::Float(f) => unimplemented!("Cannot use float as hash!"),
+            Value::Float(f) => f.hash(state),
             Value::Integer(i) => i.hash(state),
             Value::Str(s) => s.hash(state),
             Value::Bool(b) => b.hash(state),

@@ -158,6 +158,8 @@ impl<'printer> VM<'printer> {
                 opcode::INDEX_VEC => self.index_vec(),
                 opcode::SET_VEC => self.set_vec(),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(code),
+                opcode::INDEX_HASH_MAP => self.index_hash_map(),
+                opcode::SET_HASH_MAP => self.set_hash_map(),
                 opcode::SET_GLOBAL => self.set_global(code),
                 opcode::SET_LOCAL => self.set_local(code),
                 opcode::PUSH_GLOBAL => self.push_global(code),
@@ -346,6 +348,31 @@ impl<'printer> VM<'printer> {
         self.objects.push(GcValue::HashMap(hash_map_val));
 
         self.stack.push(Value::HashMap(ptr));
+    }
+
+    fn index_hash_map(&mut self) {
+        assert!(self.stack.len() > 1);
+        let index = self.stack.pop().unwrap();
+
+        let hash_map = match self.stack.pop().unwrap() {
+            Value::HashMap(h) => unsafe { h.as_ref() },
+            _ => panic!("Not a hash map"),
+        };
+
+        self.stack.push(hash_map[&index]);
+    }
+
+    fn set_hash_map(&mut self) {
+        assert!(self.stack.len() > 2);
+        let new_value = self.stack.pop().unwrap();
+        let index = self.stack.pop().unwrap();
+        let hash_map = match self.stack.pop().unwrap() {
+            Value::HashMap(mut h) => unsafe { h.as_mut() },
+            _ => panic!("Not a vector"),
+        };
+
+        hash_map.insert(index, new_value);
+        self.stack.push(new_value);
     }
 
     fn set_global(&mut self, code: &[u8]) {
@@ -1258,6 +1285,7 @@ mod test {
         assert_eq!(printer.strings[10], "800");
         assert_eq!(printer.strings[11], "900");
     }
+
     #[test]
     fn vector_set() {
         let mut printer = TestPrinter::new();
@@ -1288,15 +1316,59 @@ mod test {
         let mut vm = VM::new(&mut printer);
 
         let src = "
-            let v: [int: string] = hash_map<int, string>{
+            let h: [int: string] = hash_map<int, string>{
                 10: \"Hello\",
                 20: \"World\",
                 30: \"Kyx\"
             };
-            print v;
+            print h;
         ";
         assert_eq!(vm.interpret(src), Ok(()));
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "hash_map{10: Hello,20: World,30: Kyx}");
+    }
+
+    #[test]
+    fn index_hash_map() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let h: [int: string] = hash_map<int, string>{
+                10: \"Hello\",
+                20: \"World\",
+                30: \"Kyx\"
+            };
+            print h[20];
+            print h[10];
+            print h[30];
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "World");
+        assert_eq!(printer.strings[1], "Hello");
+        assert_eq!(printer.strings[2], "Kyx");
+    }
+
+    #[test]
+    fn hash_map_set() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let h: [string: string] = hash_map<string, string>{\"hello\": \"world\", \"kyx\": \"lang\"};
+            print h[\"kyx\"];
+            print h[\"hello\"];
+
+            h[\"kyx\"] = \"awesome\";
+            print h[\"kyx\"];
+            print h[\"hello\"];
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "lang");
+        assert_eq!(printer.strings[1], "world");
+        assert_eq!(printer.strings[2], "awesome");
+        assert_eq!(printer.strings[3], "world");
     }
 }
