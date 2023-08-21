@@ -22,6 +22,7 @@ use std::vec::Vec;
                       while_stmt |
                       for_stmt |
                       break |
+                      function_definition |
                       print_stmt |
 
            let_decl -> "let" ("mut")? ":" identifier type = expression ";"
@@ -29,6 +30,8 @@ use std::vec::Vec;
            while_stmt -> "while" expression block_expression
            break_stmt -> "break" ";"
            for_stmt "for" identifier ":" NUMBER (".." | "..=") NUMBER block_expression
+           function_definition -> "fn" identifier "(" parameter_list ")" block
+                parameter_list -> parameter? ("," parameter)*
 
    EXPRESSIONS:
        expression -> assignment |
@@ -174,22 +177,25 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn rule(&mut self, chunk: &mut Chunk) -> Result<(), String> {
-        let is_declaration = self.try_declaration(chunk)?;
+        if !self.try_statement(chunk)? {
+            if self.scanner.match_token(Token::Fn)? {
+                self.function_definition(chunk)?;
+            }
+            else {
+                let is_block = self.expression(chunk)?;
 
-        if !is_declaration {
-            let is_block = self.expression(chunk)?;
-
-            // only times an expression doesn't have to be followed by a ';'
-            // is when it is the last expression of a block or if it is a block itself
-            let peeked_token = self.scanner.peek_token()?;
-            if peeked_token != Token::RightBrace && peeked_token != Token::Eof {
-                if is_block {
-                    if self.scanner.match_token(Token::SemiColon)? {
+                // only times an expression doesn't have to be followed by a ';'
+                // is when it is the last expression of a block or if it is a block itself
+                let peeked_token = self.scanner.peek_token()?;
+                if peeked_token != Token::RightBrace && peeked_token != Token::Eof {
+                    if is_block {
+                        if self.scanner.match_token(Token::SemiColon)? {
+                            self.clear_stack(chunk);
+                        }
+                    } else {
+                        self.consume(Token::SemiColon)?;
                         self.clear_stack(chunk);
                     }
-                } else {
-                    self.consume(Token::SemiColon)?;
-                    self.clear_stack(chunk);
                 }
             }
         }
@@ -197,23 +203,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn try_declaration(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
+    fn try_statement(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
         if self.scanner.match_token(Token::Let)? {
             self.let_statement(chunk)?;
         } else if self.scanner.match_token(Token::Print)? {
             self.print(chunk)?;
         } else if self.scanner.match_token(Token::While)? {
             self.while_statement(chunk)?;
-            return Ok(true);
         } else if self.scanner.match_token(Token::For)? {
             self.for_statement(chunk)?;
-            return Ok(true);
         } else if self.scanner.match_token(Token::Break)? {
             self.break_statement(chunk)?;
-            return Ok(true);
         } else if self.scanner.match_token(Token::Continue)? {
             self.continue_statement(chunk)?;
-            return Ok(true);
         } else {
             return Ok(false);
         }
@@ -384,6 +386,31 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         };
 
         Ok(var_type)
+    }
+
+    fn named_function(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
+        self.consume(Token::LeftParen)?;
+        while !self.scanner.match_token(Token::RightParen)? {
+        }
+
+        self.consume(Token::LeftBrace)?;
+
+        while !self.scanner.match_token(Token::RightBrace)? {
+            self.rule(chunk)?;
+        }
+
+        Ok(())
+    }
+
+    fn function_definition(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        match self.scanner.scan_token()? {
+            Token::Identifier(ident) => {
+                self.named_function(chunk, ident)?
+            },
+            _ => return Err("Expected identifier after 'fn'".to_owned()),
+        };
+
+        Ok(())
     }
 
     fn let_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {

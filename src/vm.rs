@@ -469,6 +469,7 @@ impl<'printer> VM<'printer> {
             Value::Bool(b) => format!("{}", b),
             Value::Vector(v) => Self::format_vec(unsafe { v.as_ref() }),
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
+            Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
         }
     }
 

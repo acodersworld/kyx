@@ -10,6 +10,11 @@ pub struct StringValue {
     pub hash: usize,
 }
 
+#[derive(Debug)]
+pub struct FunctionValue {
+    
+}
+
 pub type VectorValue = Vec<Value>;
 pub type HashMapValue = HashMap<Value, Value>;
 
@@ -20,6 +25,7 @@ pub enum GcValue {
     Str(Box<StringValue>),
     Vector(Box<VectorValue>),
     HashMap(Box<HashMapValue>),
+    Function(Box<FunctionValue>),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
@@ -30,6 +36,7 @@ pub enum Value {
     Bool(bool),
     Vector(NonNull<VectorValue>),
     HashMap(NonNull<HashMapValue>),
+    Function(NonNull<FunctionValue>),
 }
 
 impl Hash for Value {
@@ -41,6 +48,7 @@ impl Hash for Value {
             Value::Bool(b) => b.hash(state),
             Value::Vector(v) => v.hash(state),
             Value::HashMap(h) => h.hash(state),
+            Value::Function(f) => f.hash(state),
         }
     }
 }
