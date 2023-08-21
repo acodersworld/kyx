@@ -109,7 +109,6 @@ pub struct SrcCompiler<'a, T> {
     globals: &'a mut HashMap<String, Variable>,
     stack_frames: Vec<StackFrame>,
     scanner: Scanner<'a>,
-    chunk: Chunk,
     type_stack: Vec<Variable>,
     data_section: &'a mut T,
     unpatched_break_offsets: Vec<usize>,
@@ -133,24 +132,24 @@ impl Compiler {
             stack_frames: Vec::new(),
             data_section,
             scanner: Scanner::new(src),
-            chunk: Chunk::new(),
             type_stack: Vec::new(),
             unpatched_break_offsets: Vec::new(),
             is_in_loop: false,
         };
 
-        compiler.compile()?;
-        Ok(compiler.chunk)
+        let mut chunk = Chunk::new();
+        compiler.compile(&mut chunk)?;
+        Ok(chunk)
     }
 }
 
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
-    fn clear_stack(&mut self) {
+    fn clear_stack(&mut self, chunk: &mut Chunk) {
         let pop_count = self.type_stack.len();
         self.type_stack.clear();
 
         for _ in 0..pop_count {
-            self.chunk.code.push(opcode::POP)
+            chunk.code.push(opcode::POP)
         }
     }
 
@@ -166,19 +165,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         ))
     }
 
-    pub fn compile(&mut self) -> Result<(), String> {
+    pub fn compile(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         while self.scanner.peek_token()? != Token::Eof {
-            self.rule()?;
+            self.rule(chunk)?;
         }
 
         Ok(())
     }
 
-    fn rule(&mut self) -> Result<(), String> {
-        let is_declaration = self.try_declaration()?;
+    fn rule(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        let is_declaration = self.try_declaration(chunk)?;
 
         if !is_declaration {
-            let is_block = self.expression()?;
+            let is_block = self.expression(chunk)?;
 
             // only times an expression doesn't have to be followed by a ';'
             // is when it is the last expression of a block or if it is a block itself
@@ -186,11 +185,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             if peeked_token != Token::RightBrace && peeked_token != Token::Eof {
                 if is_block {
                     if self.scanner.match_token(Token::SemiColon)? {
-                        self.clear_stack();
+                        self.clear_stack(chunk);
                     }
                 } else {
                     self.consume(Token::SemiColon)?;
-                    self.clear_stack();
+                    self.clear_stack(chunk);
                 }
             }
         }
@@ -198,22 +197,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn try_declaration(&mut self) -> Result<bool, String> {
+    fn try_declaration(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
         if self.scanner.match_token(Token::Let)? {
-            self.let_statement()?;
+            self.let_statement(chunk)?;
         } else if self.scanner.match_token(Token::Print)? {
-            self.print()?;
+            self.print(chunk)?;
         } else if self.scanner.match_token(Token::While)? {
-            self.while_statement()?;
+            self.while_statement(chunk)?;
             return Ok(true);
         } else if self.scanner.match_token(Token::For)? {
-            self.for_statement()?;
+            self.for_statement(chunk)?;
             return Ok(true);
         } else if self.scanner.match_token(Token::Break)? {
-            self.break_statement()?;
+            self.break_statement(chunk)?;
             return Ok(true);
         } else if self.scanner.match_token(Token::Continue)? {
-            self.continue_statement()?;
+            self.continue_statement(chunk)?;
             return Ok(true);
         } else {
             return Ok(false);
@@ -222,36 +221,36 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(true)
     }
 
-    fn expression(&mut self) -> Result<bool, String> {
+    fn expression(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
         let mut is_block = false;
         if self.scanner.match_token(Token::LeftBrace)? {
-            self.block_expression()?;
+            self.block_expression(chunk)?;
             is_block = true;
         } else if self.scanner.match_token(Token::If)? {
-            self.if_expression()?;
+            self.if_expression(chunk)?;
             is_block = true;
         } else if self.scanner.match_token(Token::ReadInput)? {
-            self.read_expression()?;
+            self.read_expression(chunk)?;
         } else if self.scanner.match_token(Token::Vector)? {
-            self.vector_constructor()?;
+            self.vector_constructor(chunk)?;
         } else if self.scanner.match_token(Token::HashMap)? {
-            self.hash_map_constructor()?;
+            self.hash_map_constructor(chunk)?;
         } else {
-            self.equality()?;
+            self.equality(chunk)?;
         }
 
         Ok(is_block)
     }
 
-    fn vector_constructor(&mut self) -> Result<(), String> {
+    fn vector_constructor(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         self.consume(Token::Less)?;
         let elem_type = self.parse_type()?;
         self.consume(Token::Greater)?;
 
         self.consume(Token::LeftBrace)?;
         if self.scanner.match_token(Token::RightBrace)? {
-            self.chunk.write_byte(opcode::CREATE_VEC);
-            self.chunk.write_byte(0);
+            chunk.write_byte(opcode::CREATE_VEC);
+            chunk.write_byte(0);
             self.type_stack.push(Variable {
                 value_type: ValueType::Vector(Rc::new(elem_type)),
                 read_only: false,
@@ -259,7 +258,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Ok(());
         }
 
-        self.expression()?;
+        self.expression(chunk)?;
         {
             let tp = &self.type_stack.pop().unwrap().value_type;
             if elem_type != *tp {
@@ -273,7 +272,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let mut arg_count = 1;
         while !self.scanner.match_token(Token::RightBrace)? {
             self.consume(Token::Comma)?;
-            self.expression()?;
+            self.expression(chunk)?;
             let tp = &self.type_stack.pop().unwrap().value_type;
             if elem_type != *tp {
                 return Err(format!(
@@ -285,8 +284,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             arg_count += 1;
         }
 
-        self.chunk.write_byte(opcode::CREATE_VEC);
-        self.chunk.write_byte(arg_count);
+        chunk.write_byte(opcode::CREATE_VEC);
+        chunk.write_byte(arg_count);
         self.type_stack.push(Variable {
             value_type: ValueType::Vector(Rc::new(elem_type)),
             read_only: false,
@@ -296,10 +295,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn hash_map_constructor_arg(
         &mut self,
+        chunk: &mut Chunk,
         key_type: &ValueType,
         value_type: &ValueType,
     ) -> Result<(), String> {
-        self.expression()?;
+        self.expression(chunk)?;
         let expr_key_type = &self.type_stack.pop().unwrap().value_type;
         if key_type != expr_key_type {
             return Err(format!(
@@ -309,7 +309,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         self.consume(Token::Colon)?;
-        self.expression()?;
+        self.expression(chunk)?;
         let expr_value_type = &self.type_stack.pop().unwrap().value_type;
         if value_type != expr_value_type {
             return Err(format!(
@@ -321,7 +321,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn hash_map_constructor(&mut self) -> Result<(), String> {
+    fn hash_map_constructor(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         self.consume(Token::Less)?;
         let key_type = self.parse_type()?;
         self.consume(Token::Comma)?;
@@ -330,8 +330,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.consume(Token::LeftBrace)?;
         if self.scanner.match_token(Token::RightBrace)? {
-            self.chunk.write_byte(opcode::CREATE_HASH_MAP);
-            self.chunk.write_byte(0);
+            chunk.write_byte(opcode::CREATE_HASH_MAP);
+            chunk.write_byte(0);
             self.type_stack.push(Variable {
                 value_type: ValueType::HashMap(Rc::new((key_type, value_type))),
                 read_only: false,
@@ -339,18 +339,18 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Ok(());
         }
 
-        self.hash_map_constructor_arg(&key_type, &value_type)?;
+        self.hash_map_constructor_arg(chunk, &key_type, &value_type)?;
 
         let mut arg_count = 1;
         while !self.scanner.match_token(Token::RightBrace)? {
             self.consume(Token::Comma)?;
-            self.hash_map_constructor_arg(&key_type, &value_type)?;
+            self.hash_map_constructor_arg(chunk, &key_type, &value_type)?;
 
             arg_count += 1;
         }
 
-        self.chunk.write_byte(opcode::CREATE_HASH_MAP);
-        self.chunk.write_byte(arg_count);
+        chunk.write_byte(opcode::CREATE_HASH_MAP);
+        chunk.write_byte(arg_count);
         self.type_stack.push(Variable {
             value_type: ValueType::HashMap(Rc::new((key_type, value_type))),
             read_only: false,
@@ -386,7 +386,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(var_type)
     }
 
-    fn let_statement(&mut self) -> Result<(), String> {
+    fn let_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let mutable = self.scanner.match_token(Token::Mut)?;
         let identifier_name = match self.scanner.scan_token()? {
             Token::Identifier(ident) => ident,
@@ -398,7 +398,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let var_type = self.parse_type()?;
 
         self.consume(Token::Equal)?;
-        self.expression()?;
+        self.expression(chunk)?;
 
         if self.type_stack.is_empty() {
             return Err("Expected value on right hand side of '=', got None".to_owned());
@@ -424,9 +424,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 return Err(format!("Global {} is already defined", identifier_name));
             }
 
-            self.chunk.write_byte(opcode::DEFINE_GLOBAL);
-            self.chunk
-                .write_byte(self.data_section.create_constant_str(identifier_name));
+            chunk.write_byte(opcode::DEFINE_GLOBAL);
+            chunk.write_byte(self.data_section.create_constant_str(identifier_name));
         } else {
             let frame = self.stack_frames.last_mut().unwrap();
             let found = frame
@@ -443,7 +442,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     },
                     scope: frame.current_scope,
                 });
-                self.chunk.write_byte(opcode::DEFINE_LOCAL);
+                chunk.write_byte(opcode::DEFINE_LOCAL);
             } else {
                 return Err(format!(
                     "Local {} is already defined in current scope",
@@ -480,7 +479,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
     }
 
-    fn identifier(&mut self, name: &str) -> Result<(), String> {
+    fn identifier(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
         enum Identifier {
             Global,
             Local(u8),
@@ -495,7 +494,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         };
 
         if self.scanner.match_token(Token::Equal)? {
-            self.expression()?;
+            self.expression(chunk)?;
 
             if self.type_stack.is_empty() {
                 return Err("Expected right hand side value, got None".to_owned());
@@ -515,13 +514,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             match symbol {
                 Identifier::Global => {
-                    self.chunk.write_byte(opcode::SET_GLOBAL);
-                    self.chunk
+                    chunk.write_byte(opcode::SET_GLOBAL);
+                    chunk
                         .write_byte(self.data_section.create_constant_str(name));
                 }
                 Identifier::Local(idx) => {
-                    self.chunk.write_byte(opcode::SET_LOCAL);
-                    self.chunk.write_byte(idx);
+                    chunk.write_byte(opcode::SET_LOCAL);
+                    chunk.write_byte(idx);
                 }
             }
 
@@ -530,13 +529,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         } else {
             match symbol {
                 Identifier::Global => {
-                    self.chunk.write_byte(opcode::PUSH_GLOBAL);
-                    self.chunk
-                        .write_byte(self.data_section.create_constant_str(name));
+                    chunk.write_byte(opcode::PUSH_GLOBAL);
+                    chunk.write_byte(self.data_section.create_constant_str(name));
                 }
                 Identifier::Local(idx) => {
-                    self.chunk.write_byte(opcode::PUSH_LOCAL);
-                    self.chunk.write_byte(idx);
+                    chunk.write_byte(opcode::PUSH_LOCAL);
+                    chunk.write_byte(idx);
                 }
             }
 
@@ -549,24 +547,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn print(&mut self) -> Result<(), String> {
-        self.expression()?;
-        self.chunk.write_byte(opcode::PRINT);
+    fn print(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.expression(chunk)?;
+        chunk.write_byte(opcode::PRINT);
         self.type_stack.pop();
         self.consume(Token::SemiColon)?;
         Ok(())
     }
 
-    fn if_expression(&mut self) -> Result<(), String> {
-        self.expression()?;
+    fn if_expression(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.expression(chunk)?;
         self.consume(Token::LeftBrace)?;
-        self.chunk.write_byte(opcode::JMP_IF_FALSE);
+        chunk.write_byte(opcode::JMP_IF_FALSE);
         self.type_stack.pop();
 
-        let if_jmp_idx = self.chunk.write_byte(0);
+        let if_jmp_idx = chunk.write_byte(0);
 
         let stack_top = self.type_stack.len();
-        self.block_expression()?;
+        self.block_expression(chunk)?;
 
         if self.scanner.match_token(Token::Else)? {
             let (if_type, if_is_read_only) = {
@@ -578,13 +576,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
             };
 
-            self.chunk.write_byte(opcode::JMP);
-            let jmp_skip_else_idx = self.chunk.write_byte(0);
+            chunk.write_byte(opcode::JMP);
+            let jmp_skip_else_idx = chunk.write_byte(0);
 
-            self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
+            chunk.code[if_jmp_idx] = (chunk.code.len() - if_jmp_idx) as u8;
 
             self.consume(Token::LeftBrace)?;
-            self.block_expression()?;
+            self.block_expression(chunk)?;
 
             let (else_type, else_is_read_only) = {
                 if self.type_stack.len() == stack_top {
@@ -609,23 +607,23 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
             }
 
-            self.chunk.code[jmp_skip_else_idx] = (self.chunk.code.len() - jmp_skip_else_idx) as u8;
+            chunk.code[jmp_skip_else_idx] = (chunk.code.len() - jmp_skip_else_idx) as u8;
         } else {
             // If there is no else, this cannot always return a value.
             assert!(self.type_stack.len() >= stack_top);
             unsafe {
                 self.type_stack.set_len(stack_top);
             }
-            self.chunk.code[if_jmp_idx] = (self.chunk.code.len() - if_jmp_idx) as u8;
+            chunk.code[if_jmp_idx] = (chunk.code.len() - if_jmp_idx) as u8;
         }
 
         Ok(())
     }
 
-    fn patch_break(&mut self, start_idx: usize, jmp_idx: usize) {
+    fn patch_break(&mut self, chunk: &mut Chunk, start_idx: usize, jmp_idx: usize) {
         self.unpatched_break_offsets.retain(|&idx| {
             if idx > start_idx {
-                self.chunk.code[idx] = (jmp_idx - idx) as u8;
+                chunk.code[idx] = (jmp_idx - idx) as u8;
                 false
             } else {
                 true
@@ -633,38 +631,37 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn while_statement(&mut self) -> Result<(), String> {
+    fn while_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let prev_in_loop = self.is_in_loop;
         self.is_in_loop = true;
 
-        let loop_begin_idx = self.chunk.code.len() + 1;
-        self.equality()?;
+        let loop_begin_idx = chunk.code.len() + 1;
+        self.equality(chunk)?;
         self.consume(Token::LeftBrace)?;
-        self.chunk.write_byte(opcode::JMP_IF_FALSE);
+        chunk.write_byte(opcode::JMP_IF_FALSE);
         self.type_stack.pop();
-        let cond_break_idx = self.chunk.write_byte(0);
+        let cond_break_idx = chunk.write_byte(0);
 
-        self.scoped_block(|c| {
-            while !c.scanner.match_token(Token::RightBrace)? {
-                c.rule()?;
+        self.scoped_block(chunk, |cm, ch| {
+            while !cm.scanner.match_token(Token::RightBrace)? {
+                cm.rule(ch)?;
             }
 
-            c.patch_break(loop_begin_idx, c.chunk.code.len());
+            cm.patch_break(ch, loop_begin_idx, ch.code.len());
             Ok(())
         })?;
 
-        self.chunk.write_byte(opcode::LOOP);
-        self.chunk
-            .write_byte((self.chunk.code.len() - loop_begin_idx + 1) as u8);
-        self.chunk.code[cond_break_idx] = (self.chunk.code.len() - cond_break_idx) as u8;
+        chunk.write_byte(opcode::LOOP);
+        chunk.write_byte((chunk.code.len() - loop_begin_idx + 1) as u8);
+        chunk.code[cond_break_idx] = (chunk.code.len() - cond_break_idx) as u8;
 
         self.is_in_loop = prev_in_loop;
         Ok(())
     }
 
-    fn scoped_block<F>(&mut self, block: F) -> Result<(), String>
+    fn scoped_block<F>(&mut self, chunk: &mut Chunk, block: F) -> Result<(), String>
     where
-        F: FnOnce(&mut Self) -> Result<(), String>,
+        F: FnOnce(&mut Self, &mut Chunk) -> Result<(), String>,
     {
         let push_local = {
             if let Some(top) = self.stack_frames.last_mut() {
@@ -675,22 +672,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     current_scope: 0,
                     locals: Vec::new(),
                 });
-                self.chunk.code.push(opcode::PUSH_FRAME);
+                chunk.code.push(opcode::PUSH_FRAME);
                 true
             }
         };
 
         let locals_top = self.stack_frames.last().unwrap().locals.len();
-        block(self)?;
+        block(self, chunk)?;
 
         assert!(!self.stack_frames.is_empty());
         if push_local {
             self.stack_frames.pop();
-            self.chunk.code.push(opcode::POP_FRAME);
+            chunk.code.push(opcode::POP_FRAME);
         } else {
             let frame = self.stack_frames.last_mut().unwrap();
             while frame.locals.len() > locals_top {
-                self.chunk.code.push(opcode::LOCAL_POP);
+                chunk.code.push(opcode::LOCAL_POP);
                 frame.locals.pop();
             }
         }
@@ -698,51 +695,51 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn for_block(&mut self) -> Result<(), String> {
-        self.scoped_block(|c| {
-            while !c.scanner.match_token(Token::RightBrace)? {
-                c.rule()?;
+    fn for_block(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.scoped_block(chunk, |cm, ch| {
+            while !cm.scanner.match_token(Token::RightBrace)? {
+                cm.rule(ch)?;
             }
             Ok(())
         })
     }
 
-    fn for_statement(&mut self) -> Result<(), String> {
+    fn for_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let prev_in_loop = self.is_in_loop;
         self.is_in_loop = false; // disable break (maybe enable later)
 
-        self.scoped_block(|c| {
+        self.scoped_block(chunk, |cm, ch| {
             let identifier_name = {
-                match c.scanner.scan_token()? {
+                match cm.scanner.scan_token()? {
                     Token::Identifier(i) => i,
                     _ => return Err("Expected identifier".to_owned()),
                 }
             };
 
-            c.consume(Token::Colon)?;
+            cm.consume(Token::Colon)?;
             let start = {
-                match c.scanner.scan_token()? {
+                match cm.scanner.scan_token()? {
                     Token::Integer(i) => i,
                     _ => return Err("Expected number".to_owned()),
                 }
             };
 
-            let is_inclusive = if c.scanner.match_token(Token::DotDot)? {
+            let is_inclusive = if cm.scanner.match_token(Token::DotDot)? {
                 false
-            } else if c.scanner.match_token(Token::DotDotEqual)? {
+            } else if cm.scanner.match_token(Token::DotDotEqual)? {
                 true
             } else {
                 return Err("Expected range delimiter '..' or '..='".to_owned());
             };
 
             let end = {
-                match c.scanner.scan_token()? {
+                match cm.scanner.scan_token()? {
                     Token::Integer(i) => i,
                     _ => return Err("Expected number".to_owned()),
                 }
             };
 
-            let frame = c.stack_frames.last_mut().unwrap();
+            let frame = cm.stack_frames.last_mut().unwrap();
             let var_idx = frame.locals.len() as u8;
             frame.locals.push(LocalVariable {
                 name: identifier_name.to_string(),
@@ -752,38 +749,37 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 },
                 scope: frame.current_scope,
             });
-            c.integer(start);
-            c.chunk.write_byte(opcode::DEFINE_LOCAL);
-            c.type_stack.pop();
+            cm.integer(ch, start);
+            ch.write_byte(opcode::DEFINE_LOCAL);
+            cm.type_stack.pop();
 
-            c.consume(Token::LeftBrace)?;
-            c.scoped_block(|c| {
-                let loop_begin_idx = c.chunk.write_byte(opcode::PUSH_LOCAL);
-                c.chunk.write_byte(var_idx);
-                c.integer(end);
+            cm.consume(Token::LeftBrace)?;
+            cm.scoped_block(ch, |cm, ch| {
+                let loop_begin_idx = ch.write_byte(opcode::PUSH_LOCAL);
+                ch.write_byte(var_idx);
+                cm.integer(ch, end);
                 if is_inclusive {
-                    c.chunk.write_byte(opcode::LESS_EQUAL);
+                    ch.write_byte(opcode::LESS_EQUAL);
                 } else {
-                    c.chunk.write_byte(opcode::LESS);
+                    ch.write_byte(opcode::LESS);
                 }
 
-                c.chunk.write_byte(opcode::JMP_IF_FALSE);
-                let cond_break_idx = c.chunk.write_byte(0);
+                ch.write_byte(opcode::JMP_IF_FALSE);
+                let cond_break_idx = ch.write_byte(0);
 
-                c.for_block()?;
+                cm.for_block(ch)?;
 
                 // This will need to be shifted to the top of the loop if breaks are to be enabled.
-                c.chunk.write_byte(opcode::PUSH_LOCAL);
-                c.chunk.write_byte(var_idx);
-                c.integer(1);
-                c.chunk.write_byte(opcode::ADD);
-                c.chunk.write_byte(opcode::SET_LOCAL);
-                c.chunk.write_byte(var_idx);
+                ch.write_byte(opcode::PUSH_LOCAL);
+                ch.write_byte(var_idx);
+                cm.integer(ch, 1);
+                ch.write_byte(opcode::ADD);
+                ch.write_byte(opcode::SET_LOCAL);
+                ch.write_byte(var_idx);
 
-                c.chunk.write_byte(opcode::LOOP);
-                c.chunk
-                    .write_byte((c.chunk.code.len() - loop_begin_idx) as u8);
-                c.chunk.code[cond_break_idx] = (c.chunk.code.len() - cond_break_idx) as u8;
+                ch.write_byte(opcode::LOOP);
+                ch.write_byte((ch.code.len() - loop_begin_idx) as u8);
+                ch.code[cond_break_idx] = (ch.code.len() - cond_break_idx) as u8;
 
                 Ok(())
             })?;
@@ -794,36 +790,36 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn break_statement(&mut self) -> Result<(), String> {
+    fn break_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         if !self.is_in_loop {
             return Err("break can only be used in a loop".to_owned());
         }
 
         self.consume(Token::SemiColon)?;
 
-        self.chunk.write_byte(opcode::BREAK);
-        let idx = self.chunk.write_byte(0);
+        chunk.write_byte(opcode::BREAK);
+        let idx = chunk.write_byte(0);
         self.unpatched_break_offsets.push(idx);
 
         Ok(())
     }
 
-    fn continue_statement(&mut self) -> Result<(), String> {
+    fn continue_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         if !self.is_in_loop {
             return Err("continue can only be used in a loop".to_owned());
         }
 
         self.consume(Token::SemiColon)?;
 
-        self.chunk.write_byte(opcode::JMP);
-        let idx = self.chunk.write_byte(0);
+        chunk.write_byte(opcode::JMP);
+        let idx = chunk.write_byte(0);
         self.unpatched_break_offsets.push(idx);
 
         Ok(())
     }
 
-    fn read_expression(&mut self) -> Result<(), String> {
-        self.chunk.write_byte(opcode::READ_INPUT);
+    fn read_expression(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        chunk.write_byte(opcode::READ_INPUT);
 
         let value_type = self.parse_type()?;
         let type_code = match value_type {
@@ -837,15 +833,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             value_type,
             read_only: true,
         });
-        self.chunk.write_byte(type_code);
+        chunk.write_byte(type_code);
 
         Ok(())
     }
 
-    fn block_expression(&mut self) -> Result<(), String> {
-        self.scoped_block(|c| {
-            while !c.scanner.match_token(Token::RightBrace)? {
-                c.rule()?;
+    fn block_expression(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.scoped_block(chunk, |cm, ch| {
+            while !cm.scanner.match_token(Token::RightBrace)? {
+                cm.rule(ch)?;
             }
 
             Ok(())
@@ -854,8 +850,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn comparison_right(&mut self, op: u8) -> Result<(), String> {
-        self.term()?;
+    fn comparison_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
+        self.term(chunk)?;
 
         let len = self.type_stack.len();
         let left_type = &self.type_stack[len - 2].value_type;
@@ -865,7 +861,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
+                ValueType::Integer | ValueType::Float => chunk.write_byte(op),
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
                 ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
@@ -880,24 +876,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn comparison(&mut self) -> Result<(), String> {
-        self.term()?;
+    fn comparison(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.term(chunk)?;
 
         if self.scanner.match_token(Token::Less)? {
-            self.comparison_right(opcode::LESS)?;
+            self.comparison_right(chunk, opcode::LESS)?;
         } else if self.scanner.match_token(Token::LessEqual)? {
-            self.comparison_right(opcode::LESS_EQUAL)?;
+            self.comparison_right(chunk, opcode::LESS_EQUAL)?;
         } else if self.scanner.match_token(Token::Greater)? {
-            self.comparison_right(opcode::GREATER)?;
+            self.comparison_right(chunk, opcode::GREATER)?;
         } else if self.scanner.match_token(Token::GreaterEqual)? {
-            self.comparison_right(opcode::GREATER_EQUAL)?;
+            self.comparison_right(chunk, opcode::GREATER_EQUAL)?;
         }
 
         Ok(())
     }
 
-    fn equality_right(&mut self, op: u8) -> Result<(), String> {
-        self.comparison()?;
+    fn equality_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
+        self.comparison(chunk)?;
 
         let len = self.type_stack.len();
         let left_type = &self.type_stack[len - 2].value_type;
@@ -912,7 +908,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 | ValueType::Str
                 | ValueType::Bool
                 | ValueType::Vector(_)
-                | ValueType::HashMap(_) => self.chunk.write_byte(op),
+                | ValueType::HashMap(_) => chunk.write_byte(op),
             };
         }
 
@@ -921,20 +917,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn equality(&mut self) -> Result<(), String> {
-        self.comparison()?;
+    fn equality(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.comparison(chunk)?;
 
         if self.scanner.match_token(Token::EqualEqual)? {
-            self.equality_right(opcode::EQ)?;
+            self.equality_right(chunk, opcode::EQ)?;
         } else if self.scanner.match_token(Token::BangEqual)? {
-            self.equality_right(opcode::NEQ)?;
+            self.equality_right(chunk, opcode::NEQ)?;
         }
 
         Ok(())
     }
 
-    fn factor_right(&mut self, op: u8) -> Result<(), String> {
-        self.index()?;
+    fn factor_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
+        self.index(chunk)?;
 
         let len = self.type_stack.len();
         let left_type = &self.type_stack[len - 2].value_type;
@@ -944,7 +940,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
+                ValueType::Integer | ValueType::Float => chunk.write_byte(op),
                 _ => return Err("Type error".to_owned()),
             };
         }
@@ -954,14 +950,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn factor(&mut self) -> Result<(), String> {
-        self.index()?;
+    fn factor(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.index(chunk)?;
 
         loop {
             if self.scanner.match_token(Token::Star)? {
-                self.factor_right(opcode::MUL)?;
+                self.factor_right(chunk, opcode::MUL)?;
             } else if self.scanner.match_token(Token::Slash)? {
-                self.factor_right(opcode::DIV)?;
+                self.factor_right(chunk, opcode::DIV)?;
             } else {
                 break;
             }
@@ -970,8 +966,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn index_vec(&mut self, read_only: bool, elem_type: &ValueType) -> Result<(), String> {
-        self.expression()?;
+    fn index_vec(&mut self, chunk: &mut Chunk, read_only: bool, elem_type: &ValueType) -> Result<(), String> {
+        self.expression(chunk)?;
         let index_type = self.type_stack.pop().unwrap();
         if index_type.value_type != ValueType::Integer {
             return Err(format!(
@@ -983,7 +979,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::RightBracket)?;
 
         if self.scanner.match_token(Token::Equal)? {
-            self.expression()?;
+            self.expression(chunk)?;
             let new_value_type = self.type_stack.pop().unwrap().value_type;
             if new_value_type != *elem_type {
                 return Err(format!(
@@ -992,9 +988,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ));
             }
 
-            self.chunk.write_byte(opcode::SET_VEC);
+            chunk.write_byte(opcode::SET_VEC);
         } else {
-            self.chunk.write_byte(opcode::INDEX_VEC);
+            chunk.write_byte(opcode::INDEX_VEC);
         }
 
         self.type_stack.push(Variable {
@@ -1007,11 +1003,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn index_hash_map(
         &mut self,
+        chunk: &mut Chunk,
         read_only: bool,
         key_type: &ValueType,
         value_type: &ValueType,
     ) -> Result<(), String> {
-        self.expression()?;
+        self.expression(chunk)?;
         let index_type = self.type_stack.pop().unwrap();
         if index_type.value_type != *key_type {
             return Err(format!(
@@ -1023,7 +1020,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::RightBracket)?;
 
         if self.scanner.match_token(Token::Equal)? {
-            self.expression()?;
+            self.expression(chunk)?;
             let new_value_type = self.type_stack.pop().unwrap().value_type;
             if new_value_type != *value_type {
                 return Err(format!(
@@ -1032,9 +1029,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ));
             }
 
-            self.chunk.write_byte(opcode::SET_HASH_MAP);
+            chunk.write_byte(opcode::SET_HASH_MAP);
         } else {
-            self.chunk.write_byte(opcode::INDEX_HASH_MAP);
+            chunk.write_byte(opcode::INDEX_HASH_MAP);
         }
 
         self.type_stack.push(Variable {
@@ -1045,14 +1042,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn index(&mut self) -> Result<(), String> {
-        self.primary()?;
+    fn index(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.primary(chunk)?;
 
         while self.scanner.match_token(Token::LeftBracket)? {
             let indexable = self.type_stack.pop().unwrap();
             match &indexable.value_type {
-                ValueType::Vector(e) => self.index_vec(indexable.read_only, e)?,
-                ValueType::HashMap(kv) => self.index_hash_map(indexable.read_only, &kv.0, &kv.1)?,
+                ValueType::Vector(e) => self.index_vec(chunk, indexable.read_only, e)?,
+                ValueType::HashMap(kv) => self.index_hash_map(chunk, indexable.read_only, &kv.0, &kv.1)?,
                 t => return Err(format!("Cannot index type {}", t)),
             }
         }
@@ -1060,8 +1057,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn term_right(&mut self, op: u8) -> Result<(), String> {
-        self.factor()?;
+    fn term_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
+        self.factor(chunk)?;
 
         let len = self.type_stack.len();
         let left_type = &self.type_stack[len - 2].value_type;
@@ -1071,7 +1068,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Integer | ValueType::Float => self.chunk.write_byte(op),
+                ValueType::Integer | ValueType::Float => chunk.write_byte(op),
                 _ => return Err("Type error".to_owned()),
             };
         }
@@ -1081,14 +1078,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn term(&mut self) -> Result<(), String> {
-        self.factor()?;
+    fn term(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.factor(chunk)?;
 
         loop {
             if self.scanner.match_token(Token::Plus)? {
-                self.term_right(opcode::ADD)?;
+                self.term_right(chunk, opcode::ADD)?;
             } else if self.scanner.match_token(Token::Minus)? {
-                self.term_right(opcode::SUB)?;
+                self.term_right(chunk, opcode::SUB)?;
             } else {
                 break;
             }
@@ -1097,12 +1094,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn integer(&mut self, i: i32) {
-        self.chunk.write_byte(opcode::CONSTANT_INTEGER);
+    fn integer(&mut self, chunk: &mut Chunk, i: i32) {
+        chunk.write_byte(opcode::CONSTANT_INTEGER);
         let mut encoder = var_len_int::Encoder::new(i);
         loop {
             let (byte, complete) = encoder.step_encode();
-            self.chunk.write_byte(byte);
+            chunk.write_byte(byte);
 
             if complete {
                 break;
@@ -1114,10 +1111,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn float(&mut self, f: f32) {
-        self.chunk.write_byte(opcode::CONSTANT_FLOAT);
+    fn float(&mut self, chunk: &mut Chunk, f: f32) {
+        chunk.write_byte(opcode::CONSTANT_FLOAT);
         for byte in float::encode(f) {
-            self.chunk.write_byte(byte);
+            chunk.write_byte(byte);
         }
         self.type_stack.push(Variable {
             value_type: ValueType::Float,
@@ -1125,9 +1122,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn string(&mut self, s: &str) {
-        self.chunk.write_byte(opcode::CONSTANT_STRING);
-        self.chunk
+    fn string(&mut self, chunk: &mut Chunk, s: &str) {
+        chunk.write_byte(opcode::CONSTANT_STRING);
+        chunk
             .write_byte(self.data_section.create_constant_str(s));
         self.type_stack.push(Variable {
             value_type: ValueType::Str,
@@ -1135,11 +1132,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn boolean(&mut self, b: bool) {
+    fn boolean(&mut self, chunk: &mut Chunk, b: bool) {
         let value = if b { 1 } else { 0 };
 
-        self.chunk.write_byte(opcode::CONSTANT_BOOL);
-        self.chunk.write_byte(value);
+        chunk.write_byte(opcode::CONSTANT_BOOL);
+        chunk.write_byte(value);
 
         self.type_stack.push(Variable {
             value_type: ValueType::Bool,
@@ -1147,42 +1144,42 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn primary(&mut self) -> Result<(), String> {
+    fn primary(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let t = self.scanner.scan_token();
         match t {
             Ok(Token::Identifier(name)) => {
-                self.identifier(name)?;
+                self.identifier(chunk, name)?;
             }
             Ok(Token::LeftParen) => {
-                self.expression()?;
+                self.expression(chunk)?;
                 self.consume(Token::RightParen)?;
             }
             Ok(Token::Minus) => {
                 let next = self.scanner.scan_token();
                 match next {
                     Ok(Token::Integer(i)) => {
-                        self.integer(-i);
+                        self.integer(chunk, -i);
                     }
                     Ok(Token::Float(f)) => {
-                        self.float(-f);
+                        self.float(chunk, -f);
                     }
                     _ => return Err("Expected number after '-'".to_owned()),
                 }
             }
             Ok(Token::Integer(i)) => {
-                self.integer(i);
+                self.integer(chunk, i);
             }
             Ok(Token::Float(f)) => {
-                self.float(f);
+                self.float(chunk, f);
             }
             Ok(Token::Str(s)) => {
-                self.string(s);
+                self.string(chunk, s);
             }
             Ok(Token::True) => {
-                self.boolean(true);
+                self.boolean(chunk, true);
             }
             Ok(Token::False) => {
-                self.boolean(false);
+                self.boolean(chunk, false);
             }
             Err(msg) => return Err(msg),
             _ => {
