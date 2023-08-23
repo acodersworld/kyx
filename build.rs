@@ -45,6 +45,9 @@ const OPCODES: &[&str] = &[
     "JMP_IF_FALSE",
     //
     "READ_INPUT",
+    //
+    "CALL",
+    "RETURN"
 ];
 
 fn main() -> std::io::Result<()> {

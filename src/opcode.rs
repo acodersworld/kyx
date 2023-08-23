@@ -35,6 +35,8 @@ pub const BREAK: u8 = 32;
 pub const JMP: u8 = 33;
 pub const JMP_IF_FALSE: u8 = 34;
 pub const READ_INPUT: u8 = 35;
+pub const CALL: u8 = 36;
+pub const RETURN: u8 = 37;
 // OP CODE END
 
 #[allow(dead_code)]
@@ -76,6 +78,8 @@ pub fn to_string(code: u8) -> String {
         33 => "JMP".to_owned(),
         34 => "JMP_IF_FALSE".to_owned(),
         35 => "READ_INPUT".to_owned(),
+        36 => "CALL".to_owned(),
+        37 => "RETURN".to_owned(),
         _ => "UNKNOWN".to_owned(),
     }
 }

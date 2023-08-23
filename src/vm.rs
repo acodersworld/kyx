@@ -9,20 +9,26 @@ use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
 use crate::opcode;
-use crate::value::{GcValue, StringValue, Value};
+use crate::value::{GcValue, StringValue, FunctionValue, Value};
 use crate::var_len_int;
+use crate::chunk::Chunk;
 
 pub trait Printer {
     fn print(&mut self, s: &str);
 }
 
+struct StackFrame {
+    function: NonNull<FunctionValue>,
+    locals: Vec<Value>,
+    pc: usize
+}
+
 pub struct VM<'printer> {
-    stack: Vec<Value>,
+    value_stack: Vec<Value>,
     objects: Vec<GcValue>,
     constant_strs: Vec<NonNull<StringValue>>,
     globals: HashMap<NonNull<StringValue>, Value>,
-    locals: Vec<Vec<Value>>,
-    offset: usize,
+    frame_stack: Vec<StackFrame>,
     break_loop_flag: bool,
 
     compiler: Compiler,
@@ -64,13 +70,14 @@ fn is_truthy(value: &Value) -> bool {
         Value::Bool(b) => *b,
         Value::Vector(v) => unsafe { v.as_ref().len() > 0 },
         Value::HashMap(h) => unsafe { h.as_ref().len() > 0 },
+        Value::Function(_) => true,
     }
 }
 
 macro_rules! bin_op {
     ($self:ident, $op:tt) => {
         {
-            let st = &mut $self.stack;
+            let st = &mut $self.value_stack;
 
             let right = &st.pop().unwrap();
             let left = st.last().unwrap();
@@ -89,7 +96,7 @@ macro_rules! bin_op {
 macro_rules! bin_op_equality {
     ($self:ident, $op:tt) => {
         {
-            let st = &mut $self.stack;
+            let st = &mut $self.value_stack;
 
             let right = &st.pop().unwrap();
             let left = st.last().unwrap();
@@ -109,7 +116,7 @@ macro_rules! bin_op_equality {
 macro_rules! bin_op_comparison {
     ($self:ident, $op:tt) => {
         {
-            let st = &mut $self.stack;
+            let st = &mut $self.value_stack;
 
             let right = &st.pop().unwrap();
             let left = st.last().unwrap();
@@ -128,43 +135,55 @@ macro_rules! bin_op_comparison {
 impl<'printer> VM<'printer> {
     pub fn new(printer: &'printer mut dyn Printer) -> VM<'printer> {
         VM {
-            stack: Vec::new(),
+            value_stack: Vec::new(),
             objects: Vec::new(),
             constant_strs: Vec::new(),
             globals: HashMap::new(),
-            locals: Vec::new(),
-            offset: 0,
+            frame_stack: Vec::new(),
             break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
         }
     }
 
-    fn run(&mut self, code: &[u8]) {
-        self.offset = 0;
-        let len = code.len();
+    fn top_frame(&mut self) -> &mut StackFrame {
+        self.frame_stack.last_mut().unwrap()
+    }
 
-        while self.offset < len {
-            let op = code[self.offset];
-            //println!("{}", opcode::to_string(op));
-            //println!("{:?}", self.stack);
-            self.offset += 1;
+    fn next_code(&mut self) -> Option<u8> {
+        let frame = self.top_frame();
+        let code = unsafe { &frame.function.as_ref().chunk.code };
+        //println!("{}", opcode::to_string(op));
+        //println!("{:?}", self.value_stack);
+        //
+        let pc = frame.pc;
+        if pc < code.len() {
+            frame.pc += 1;
+            Some(code[pc])
+        }
+        else {
+            None
+        }
+    }
+
+    fn run(&mut self) {
+        while let Some(op) = self.next_code() {
             match op {
-                opcode::CONSTANT_INTEGER => self.push_integer(code),
-                opcode::CONSTANT_FLOAT => self.push_float(code),
-                opcode::CONSTANT_STRING => self.push_constant_string(code),
-                opcode::CONSTANT_BOOL => self.push_constant_bool(code),
-                opcode::CREATE_VEC => self.create_vec(code),
+                opcode::CONSTANT_INTEGER => self.push_integer(),
+                opcode::CONSTANT_FLOAT => self.push_float(),
+                opcode::CONSTANT_STRING => self.push_constant_string(),
+                opcode::CONSTANT_BOOL => self.push_constant_bool(),
+                opcode::CREATE_VEC => self.create_vec(),
                 opcode::INDEX_VEC => self.index_vec(),
                 opcode::SET_VEC => self.set_vec(),
-                opcode::CREATE_HASH_MAP => self.create_hash_map(code),
+                opcode::CREATE_HASH_MAP => self.create_hash_map(),
                 opcode::INDEX_HASH_MAP => self.index_hash_map(),
                 opcode::SET_HASH_MAP => self.set_hash_map(),
-                opcode::SET_GLOBAL => self.set_global(code),
-                opcode::SET_LOCAL => self.set_local(code),
-                opcode::PUSH_GLOBAL => self.push_global(code),
-                opcode::PUSH_LOCAL => self.push_local(code),
-                opcode::DEFINE_GLOBAL => self.define_global(code),
+                opcode::SET_GLOBAL => self.set_global(),
+                opcode::SET_LOCAL => self.set_local(),
+                opcode::PUSH_GLOBAL => self.push_global(),
+                opcode::PUSH_LOCAL => self.push_local(),
+                opcode::DEFINE_GLOBAL => self.define_global(),
                 opcode::DEFINE_LOCAL => self.define_local(),
                 opcode::ADD => self.add(),
                 opcode::SUB => self.sub(),
@@ -181,20 +200,31 @@ impl<'printer> VM<'printer> {
                 opcode::LOCAL_POP => self.local_pop(),
                 opcode::PUSH_FRAME => self.push_frame(),
                 opcode::POP_FRAME => self.pop_frame(),
-                opcode::LOOP => self.jmp_loop(code),
-                opcode::BREAK => self.break_loop(code),
-                opcode::JMP => self.jmp(code),
-                opcode::JMP_IF_FALSE => self.jmp_if_false(code),
-                opcode::READ_INPUT => self.read_input(code),
+                opcode::LOOP => self.jmp_loop(),
+                opcode::BREAK => self.break_loop(),
+                opcode::JMP => self.jmp(),
+                opcode::JMP_IF_FALSE => self.jmp_if_false(),
+                opcode::READ_INPUT => self.read_input(),
+                opcode::CALL => self.call(),
+                opcode::RETURN => self.do_return(),
                 _ => {
+                    let frame = self.top_frame();
                     panic!(
                         "Unknown instruction: {} @ {}",
-                        code[self.offset - 1],
-                        self.offset - 1
+                        op,
+                        frame.pc - 1
                     )
                 }
             }
         }
+    }
+
+    pub fn function(&mut self, chunk: Chunk) -> NonNull<FunctionValue> {
+        let mut function_val = Box::new(FunctionValue { chunk });
+        let ptr = unsafe { NonNull::new_unchecked(function_val.as_mut() as *mut _) };
+
+        self.objects.push(GcValue::Function(function_val));
+        ptr
     }
 
     pub fn interpret(&mut self, src: &str) -> Result<(), String> {
@@ -203,13 +233,32 @@ impl<'printer> VM<'printer> {
             constant_strs: &mut self.constant_strs,
         };
 
-        let chunk = self.compiler.compile(&mut data_section, src)?;
-        let code = &chunk.code;
+        let (chunk, functions) = self.compiler.compile(&mut data_section, src)?;
 
-        let mut ds = disassembler::Disassembler::new(code);
+        for (fname, fchunk) in functions {
+            let function_value = self.function(fchunk);
+            let mut data_section = VMDataSection {
+                objects: &mut self.objects,
+                constant_strs: &mut self.constant_strs,
+            };
+            let name_idx = data_section.create_constant_str(&fname) as usize;
+            self.globals.insert(self.constant_strs[name_idx], Value::Function(function_value));
+        }
+
+        let mut ds = disassembler::Disassembler::new(&chunk.code);
         ds.disassemble();
 
-        self.run(code);
+        let f = self.function(chunk);
+        self.frame_stack.push(StackFrame { 
+            function: f,
+            locals: Vec::new(),
+            pc: 0
+        });
+
+        self.run();
+        assert_eq!(self.frame_stack.len(), 1);
+        self.frame_stack.pop();
+
         Ok(())
     }
 
@@ -253,89 +302,86 @@ impl<'printer> VM<'printer> {
         bin_op_comparison!(self, >=);
     }
 
-    fn push_integer(&mut self, code: &[u8]) {
+    fn push_integer(&mut self) {
         let mut decoder = var_len_int::Decoder::new();
-        while !decoder.step_decode(code[self.offset]) {
-            self.offset += 1;
+        while !decoder.step_decode(self.next_code().unwrap()) {
         }
-        self.offset += 1;
 
-        self.stack.push(Value::Integer(decoder.val()));
+        self.value_stack.push(Value::Integer(decoder.val()));
     }
 
-    fn push_float(&mut self, code: &[u8]) {
-        let value = float::decode(&code[self.offset..self.offset + 4].try_into().unwrap());
-        self.offset += 4;
+    fn push_float(&mut self) {
+        let frame = self.top_frame();
+        let code = unsafe { &frame.function.as_ref().chunk.code };
 
-        self.stack.push(Value::Float(OrderedFloat(value)));
+        let value = float::decode(&code[frame.pc..frame.pc + 4].try_into().unwrap());
+        frame.pc += 4;
+
+        self.value_stack.push(Value::Float(OrderedFloat(value)));
     }
 
-    fn push_constant_string(&mut self, code: &[u8]) {
-        let idx = code[self.offset] as usize;
-        self.offset += 1;
+    fn push_constant_string(&mut self) {
+        let idx = self.next_code().unwrap() as usize;
 
-        self.stack.push(Value::Str(self.constant_strs[idx]));
+        self.value_stack.push(Value::Str(self.constant_strs[idx]));
     }
 
-    fn push_constant_bool(&mut self, code: &[u8]) {
-        let value = code[self.offset] != 0;
-        self.offset += 1;
+    fn push_constant_bool(&mut self) {
+        let value = self.next_code().unwrap() != 0;
 
-        self.stack.push(Value::Bool(value));
+        self.value_stack.push(Value::Bool(value));
     }
 
-    fn create_vec(&mut self, code: &[u8]) {
-        let arg_count = code[self.offset] as usize;
-        self.offset += 1;
+    fn create_vec(&mut self) {
+        let arg_count = self.next_code().unwrap() as usize;
 
-        assert!(self.stack.len() >= arg_count);
-        let vector: Vec<Value> = self.stack.drain((self.stack.len() - arg_count)..).collect();
+        assert!(self.value_stack.len() >= arg_count);
+        let vector: Vec<Value> = self.value_stack.drain((self.value_stack.len() - arg_count)..).collect();
 
         let mut vec_val = Box::new(vector);
         let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
         self.objects.push(GcValue::Vector(vec_val));
 
-        self.stack.push(Value::Vector(ptr));
+        self.value_stack.push(Value::Vector(ptr));
     }
 
     fn index_vec(&mut self) {
-        assert!(self.stack.len() > 1);
-        let index = match self.stack.pop().unwrap() {
+        assert!(self.value_stack.len() > 1);
+        let index = match self.value_stack.pop().unwrap() {
             Value::Integer(i) => i as usize,
             _ => panic!("Bad index value"),
         };
 
-        let vector = match self.stack.pop().unwrap() {
+        let vector = match self.value_stack.pop().unwrap() {
             Value::Vector(v) => unsafe { v.as_ref() },
             _ => panic!("Not a vector"),
         };
 
-        self.stack.push(vector[index]);
+        self.value_stack.push(vector[index]);
     }
 
     fn set_vec(&mut self) {
-        assert!(self.stack.len() > 2);
-        let new_value = self.stack.pop().unwrap();
-        let index = match self.stack.pop().unwrap() {
+        assert!(self.value_stack.len() > 2);
+        let new_value = self.value_stack.pop().unwrap();
+        let index = match self.value_stack.pop().unwrap() {
             Value::Integer(i) => i as usize,
             _ => panic!("Bad index value"),
         };
 
-        let vector = match self.stack.pop().unwrap() {
+        let vector = match self.value_stack.pop().unwrap() {
             Value::Vector(mut v) => unsafe { v.as_mut() },
             _ => panic!("Not a vector"),
         };
 
         vector[index] = new_value;
-        self.stack.push(new_value);
+        self.value_stack.push(new_value);
     }
 
-    fn create_hash_map(&mut self, code: &[u8]) {
-        let arg_count = code[self.offset] as usize * 2;
-        self.offset += 1;
+    fn create_hash_map(&mut self) {
+        let arg_count = self.next_code().unwrap() as usize * 2;
 
-        assert!(self.stack.len() >= arg_count);
-        let args: Vec<Value> = self.stack.drain((self.stack.len() - arg_count)..).collect();
+        assert!(self.value_stack.len() >= arg_count);
+        let args: Vec<Value> = self.value_stack.drain((self.value_stack.len() - arg_count)..).collect();
 
         let mut hash_map = HashMap::<Value, Value>::new();
 
@@ -347,78 +393,73 @@ impl<'printer> VM<'printer> {
         let ptr = unsafe { NonNull::new_unchecked(hash_map_val.as_mut() as *mut _) };
         self.objects.push(GcValue::HashMap(hash_map_val));
 
-        self.stack.push(Value::HashMap(ptr));
+        self.value_stack.push(Value::HashMap(ptr));
     }
 
     fn index_hash_map(&mut self) {
-        assert!(self.stack.len() > 1);
-        let index = self.stack.pop().unwrap();
+        assert!(self.value_stack.len() > 1);
+        let index = self.value_stack.pop().unwrap();
 
-        let hash_map = match self.stack.pop().unwrap() {
+        let hash_map = match self.value_stack.pop().unwrap() {
             Value::HashMap(h) => unsafe { h.as_ref() },
             _ => panic!("Not a hash map"),
         };
 
-        self.stack.push(hash_map[&index]);
+        self.value_stack.push(hash_map[&index]);
     }
 
     fn set_hash_map(&mut self) {
-        assert!(self.stack.len() > 2);
-        let new_value = self.stack.pop().unwrap();
-        let index = self.stack.pop().unwrap();
-        let hash_map = match self.stack.pop().unwrap() {
+        assert!(self.value_stack.len() > 2);
+        let new_value = self.value_stack.pop().unwrap();
+        let index = self.value_stack.pop().unwrap();
+        let hash_map = match self.value_stack.pop().unwrap() {
             Value::HashMap(mut h) => unsafe { h.as_mut() },
             _ => panic!("Not a vector"),
         };
 
         hash_map.insert(index, new_value);
-        self.stack.push(new_value);
+        self.value_stack.push(new_value);
     }
 
-    fn set_global(&mut self, code: &[u8]) {
-        let idx = code[self.offset] as usize;
-        self.offset += 1;
+    fn set_global(&mut self) {
+        let idx = self.next_code().unwrap() as usize;
 
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
-        self.globals.insert(name, *self.stack.last().unwrap());
+        self.globals.insert(name, *self.value_stack.last().unwrap());
     }
 
-    fn set_local(&mut self, code: &[u8]) {
-        let idx = code[self.offset] as usize;
-        self.offset += 1;
+    fn set_local(&mut self) {
+        let idx = self.next_code().unwrap() as usize;
 
-        assert!(!self.locals.is_empty());
-        assert!(!self.stack.is_empty());
-        let local = &mut self.locals.last_mut().unwrap()[idx];
-        *local = self.stack.pop().unwrap();
+        assert!(!self.frame_stack.is_empty());
+        assert!(!self.value_stack.is_empty());
+        let local = &mut self.frame_stack.last_mut().unwrap().locals[idx];
+        *local = self.value_stack.pop().unwrap();
     }
 
-    fn push_global(&mut self, code: &[u8]) {
-        let idx = code[self.offset] as usize;
-        self.offset += 1;
+    fn push_global(&mut self) {
+        let idx = self.next_code().unwrap() as usize;
 
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
-        self.stack.push(self.globals[&name]);
+        self.value_stack.push(self.globals[&name]);
     }
 
-    fn push_local(&mut self, code: &[u8]) {
-        let idx = code[self.offset] as usize;
-        self.offset += 1;
+    fn push_local(&mut self) {
+        let idx = self.next_code().unwrap() as usize;
 
-        assert!(!self.locals.is_empty());
-        let locals = self.locals.last().unwrap();
+        assert!(!self.frame_stack.is_empty());
+        let locals = &self.frame_stack.last().unwrap().locals;
         assert!(!locals.is_empty());
-        self.stack.push(locals[idx]);
+        self.value_stack.push(locals[idx]);
     }
 
-    fn define_global(&mut self, code: &[u8]) {
-        let idx = code[self.offset] as usize;
-        self.offset += 1;
+    fn define_global(&mut self) {
+        let idx = self.next_code().unwrap() as usize;
 
         let name = self.constant_strs[idx];
-        let st = &mut self.stack;
+        let st = &mut self.value_stack;
         assert!(!self.globals.contains_key(&name));
         assert!(!st.is_empty());
 
@@ -427,11 +468,11 @@ impl<'printer> VM<'printer> {
     }
 
     fn define_local(&mut self) {
-        let st = &mut self.stack;
-        assert!(!self.locals.is_empty());
+        let st = &mut self.value_stack;
+        assert!(!self.frame_stack.is_empty());
         assert!(!st.is_empty());
 
-        let locals = self.locals.last_mut().unwrap();
+        let locals = &mut self.frame_stack.last_mut().unwrap().locals;
         let value = st.pop().unwrap();
         locals.push(value);
     }
@@ -474,77 +515,102 @@ impl<'printer> VM<'printer> {
     }
 
     fn print(&mut self) {
-        let value = self.stack.pop().unwrap();
+        let value = self.value_stack.pop().unwrap();
         let s = Self::format_value(&value);
         self.printer.print(&s);
     }
 
     fn pop(&mut self) {
-        assert!(!self.stack.is_empty());
-        self.stack.pop();
+        assert!(!self.value_stack.is_empty());
+        self.value_stack.pop();
     }
 
     fn local_pop(&mut self) {
-        assert!(!self.locals.is_empty());
-        self.locals.last_mut().unwrap().pop();
+        assert!(!self.frame_stack.is_empty());
+        self.frame_stack.last_mut().unwrap().locals.pop();
     }
 
     fn push_frame(&mut self) {
-        self.locals.push(Vec::new());
+        assert!(!self.frame_stack.is_empty());
+        self.frame_stack.last_mut().unwrap().locals.clear();
+ 
+//        assert!(!self.frame_stack.is_empty());
+//        let (function, pc) = {
+//            let frame = self.frame_stack.last().unwrap();
+//            (frame.function, frame.pc)
+//        };
+//
+//        self.frame_stack.push(StackFrame {
+//            function,
+//            locals: Vec::new(),
+//            pc
+//        });
     }
 
     fn pop_frame(&mut self) {
-        assert!(!self.locals.is_empty());
-        self.locals.pop();
+//        assert!(!self.frame_stack.is_empty());
+//        self.frame_stack.pop();
     }
 
-    fn jmp_loop(&mut self, code: &[u8]) {
-        let offset = code[self.offset] as usize;
+    fn jmp_loop(&mut self) {
 
         let do_loop = !self.break_loop_flag;
         self.break_loop_flag = false;
         if do_loop {
-            self.offset -= offset;
+            let frame = self.top_frame();
+            let code = unsafe { &frame.function.as_ref().chunk.code };
+            let offset = code[frame.pc] as usize;
+            frame.pc -= offset;
         } else {
-            self.offset += 1;
+            let frame = self.top_frame();
+            frame.pc += 1;
         }
     }
 
-    fn break_loop(&mut self, code: &[u8]) {
-        let offset = code[self.offset] as usize;
-        self.offset += offset;
+    fn break_loop(&mut self) {
+        let frame = self.top_frame();
+        let code = unsafe { &frame.function.as_ref().chunk.code };
+        let offset = code[frame.pc] as usize;
+
+        frame.pc += offset;
         self.break_loop_flag = true;
     }
 
-    fn jmp(&mut self, code: &[u8]) {
-        let offset = code[self.offset] as usize;
-        self.offset += offset;
+    fn jmp(&mut self) {
+        let frame = self.top_frame();
+        let code = unsafe { &frame.function.as_ref().chunk.code };
+        let offset = code[frame.pc] as usize;
+
+        frame.pc += offset;
     }
 
-    fn jmp_if_false(&mut self, code: &[u8]) {
-        assert!(!self.stack.is_empty());
-        let cond = self.stack.pop().unwrap();
+    fn jmp_if_false(&mut self) {
+        assert!(!self.value_stack.is_empty());
+        let cond = self.value_stack.pop().unwrap();
+
+        let frame = self.top_frame();
+        let code = unsafe { &frame.function.as_ref().chunk.code };
+        let offset = code[frame.pc] as usize;
 
         if !is_truthy(&cond) {
-            self.offset += code[self.offset] as usize;
+            frame.pc += offset as usize;
         } else {
-            self.offset += 1;
+            frame.pc += 1;
         }
     }
 
-    fn read_input(&mut self, code: &[u8]) {
-        let read_type = code[self.offset];
-        self.offset += 1;
+    fn read_input(&mut self) {
+        let read_type = self.next_code().unwrap();
 
         let mut line = String::new();
         std::io::stdin().read_line(&mut line).unwrap();
 
         if read_type == 0 {
             let val = line.trim().parse::<i32>().unwrap_or(0);
-            self.stack.push(Value::Integer(val));
+            self.value_stack.push(Value::Integer(val));
         } else if read_type == 1 {
             let val = line.trim().parse::<f32>().unwrap_or(0.0);
-            self.stack.push(Value::Float(OrderedFloat(val)));
+            self.value_stack.push(Value::Float(OrderedFloat(val)));
         } else {
             let mut data_section = VMDataSection {
                 objects: &mut self.objects,
@@ -552,8 +618,24 @@ impl<'printer> VM<'printer> {
             };
 
             let idx = data_section.create_constant_str(line.trim()) as usize;
-            self.stack.push(Value::Str(self.constant_strs[idx]));
+            self.value_stack.push(Value::Str(self.constant_strs[idx]));
         }
+    }
+
+    fn call(&mut self) {
+        let idx = self.next_code().unwrap() as usize;
+
+        let name = self.constant_strs[idx];
+        assert!(self.globals.contains_key(&name));
+        self.value_stack.push(self.globals[&name]);
+    }
+
+    fn do_return(&mut self) {
+        let idx = self.next_code().unwrap() as usize;
+
+        let name = self.constant_strs[idx];
+        assert!(self.globals.contains_key(&name));
+        self.value_stack.push(self.globals[&name]);
     }
 }
 
@@ -1131,6 +1213,7 @@ mod test {
         ";
 
         assert_eq!(vm.interpret(src), Ok(()));
+        println!("{:?}", printer.strings);
         assert_eq!(printer.strings.len(), 15);
         assert_eq!(printer.strings[0], "0");
         assert_eq!(printer.strings[1], "0");

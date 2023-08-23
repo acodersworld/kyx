@@ -57,6 +57,8 @@ pub enum Token<'a> {
     DotDot,
     DotDotEqual,
 
+    MinusGreater,
+
     ReadInput,
 
     Break,
@@ -122,6 +124,7 @@ impl Token<'_> {
             Self::Comma => ",",
             Self::DotDot => "..",
             Self::DotDotEqual => "..=",
+            Self::MinusGreater => "->",
 
             Self::ReadInput => "read",
 
@@ -343,7 +346,12 @@ impl<'a> Scanner<'a> {
 
         match c {
             '+' => Ok(Token::Plus),
-            '-' => Ok(Token::Minus),
+            '-' => {
+                if self.match_char('>') {
+                    return Ok(Token::MinusGreater)
+                }
+                Ok(Token::Minus)
+            },
             '*' => Ok(Token::Star),
 
             '{' => Ok(Token::LeftBrace),
@@ -588,6 +596,13 @@ mod tests {
         assert_eq!(scanner.scan_token(), Ok(Token::Comma));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Eof));
+    }
+
+    #[test]
+    fn test_array() {
+        let src = "->".to_owned();
+        let mut scanner = Scanner::new(&src);
+        assert_eq!(scanner.scan_token(), Ok(Token::MinusGreater));
     }
 
     #[test]

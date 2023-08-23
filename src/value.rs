@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 use std::vec::Vec;
+use std::fmt;
+
+use crate::chunk::Chunk;
 
 #[derive(Debug)]
 pub struct StringValue {
@@ -10,9 +13,17 @@ pub struct StringValue {
     pub hash: usize,
 }
 
-#[derive(Debug)]
 pub struct FunctionValue {
-    
+    pub chunk: Chunk 
+}
+
+impl fmt::Debug for FunctionValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ptr = self.chunk.code.as_ptr();
+        f.debug_struct("FunctionValue")
+         .field("chunk", &ptr)
+         .finish()
+    }
 }
 
 pub type VectorValue = Vec<Value>;

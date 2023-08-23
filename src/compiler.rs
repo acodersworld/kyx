@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::vec::Vec;
+use itertools::Itertools;
 
 /*
    PROGRAM:
@@ -30,7 +31,7 @@ use std::vec::Vec;
            while_stmt -> "while" expression block_expression
            break_stmt -> "break" ";"
            for_stmt "for" identifier ":" NUMBER (".." | "..=") NUMBER block_expression
-           function_definition -> "fn" identifier "(" parameter_list ")" block
+           function_definition -> "fn" identifier "(" parameter_list ")" -> type block
                 parameter_list -> parameter? ("," parameter)*
 
    EXPRESSIONS:
@@ -38,14 +39,17 @@ use std::vec::Vec;
                      block_expression |
                      if_expr |
                      vector_constructor |
-                     hash_map_constructor
+                     hash_map_constructor |
+                     function_call |
                      read_expr
 
             block_expression -> "{" declaration* expression? "}"
             if_expr -> "if" expression block_expression ("else" block_expression)?
             vector_constructor -> vec<type>{ expression? ("," expression)* }
             hash_map_constructor -> hash_map<type, type>{ hash_map_argument? ("," hash_map_argument)* }
-                 hash_map_argument -> expression ":" expression
+                hash_map_argument -> expression ":" expression
+            function_call -> identifier "(" argument_list ")"
+                argument_list -> identifier? ("," identifier)*
             read_expr -> "read" type
 
             assignment -> identifier = expression | equality
@@ -58,24 +62,37 @@ use std::vec::Vec;
 */
 
 #[derive(Debug, PartialEq, Clone)]
+struct FunctionType {
+    return_type: ValueType,
+    parameters: Vec<ValueType>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 enum ValueType {
+    Unit,
     Integer,
     Float,
     Str,
     Bool,
     Vector(Rc<ValueType>),
     HashMap(Rc<(ValueType, ValueType)>),
+    Function(Rc<FunctionType>),
 }
 
 impl fmt::Display for ValueType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Self::Unit => "()".to_owned(),
             Self::Integer => "int".to_owned(),
             Self::Float => "float".to_owned(),
             Self::Str => "string".to_owned(),
             Self::Bool => "bool".to_owned(),
             Self::Vector(tp) => format!("[{}]", tp),
             Self::HashMap(tp) => format!("[{}: {}]", tp.0, tp.1),
+            Self::Function(f) => {
+                let parameters = f.parameters.iter().join(", ");
+                format!("fn({}) -> {}", parameters, f.return_type)
+            },
         };
 
         write!(f, "{}", s)
@@ -116,6 +133,7 @@ pub struct SrcCompiler<'a, T> {
     data_section: &'a mut T,
     unpatched_break_offsets: Vec<usize>,
     is_in_loop: bool,
+    function_chunks: HashMap<String, Chunk>
 }
 
 impl Compiler {
@@ -129,7 +147,7 @@ impl Compiler {
         &mut self,
         data_section: &'a mut T,
         src: &'a str,
-    ) -> Result<Chunk, String> {
+    ) -> Result<(Chunk, HashMap<String, Chunk>), String> {
         let mut compiler = SrcCompiler::<'_, T> {
             globals: &mut self.globals,
             stack_frames: Vec::new(),
@@ -138,11 +156,12 @@ impl Compiler {
             type_stack: Vec::new(),
             unpatched_break_offsets: Vec::new(),
             is_in_loop: false,
+            function_chunks: HashMap::new(),
         };
 
         let mut chunk = Chunk::new();
         compiler.compile(&mut chunk)?;
-        Ok(chunk)
+        Ok((chunk, compiler.function_chunks))
     }
 }
 
@@ -179,7 +198,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn rule(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         if !self.try_statement(chunk)? {
             if self.scanner.match_token(Token::Fn)? {
-                self.function_definition(chunk)?;
+                self.function_definition()?;
             }
             else {
                 let is_block = self.expression(chunk)?;
@@ -388,24 +407,50 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(var_type)
     }
 
-    fn named_function(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
+    fn function(&mut self) -> Result<(FunctionType, Chunk), String> {
+        let mut chunk = Chunk::new();
         self.consume(Token::LeftParen)?;
         while !self.scanner.match_token(Token::RightParen)? {
         }
 
+        let return_type = {
+            if self.scanner.match_token(Token::MinusGreater)? {
+                self.parse_type()?
+            }
+            else {
+                ValueType::Unit
+            }
+        };
+
         self.consume(Token::LeftBrace)?;
 
         while !self.scanner.match_token(Token::RightBrace)? {
-            self.rule(chunk)?;
+            self.rule(&mut chunk)?;
         }
+        chunk.write_byte(opcode::RETURN);
 
-        Ok(())
+        let function_type = FunctionType{
+            return_type,
+            parameters: Vec::new()
+        };
+
+        Ok((function_type, chunk))
     }
 
-    fn function_definition(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+    fn function_definition(&mut self) -> Result<(), String> {
         match self.scanner.scan_token()? {
             Token::Identifier(ident) => {
-                self.named_function(chunk, ident)?
+                if self.globals.contains_key(ident) {
+                    return Err(format!("Global {} is already defined", ident));
+                }
+
+                let (function_type, chunk) = self.function()?;
+
+                self.function_chunks.insert(ident.to_string(), chunk);
+                self.globals.insert(ident.to_string(), Variable {
+                    value_type: ValueType::Function(Rc::new(function_type)),
+                    read_only: true
+                });
             },
             _ => return Err("Expected identifier after 'fn'".to_owned()),
         };
@@ -437,19 +482,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         if self.stack_frames.is_empty() {
-            if self
-                .globals
-                .insert(
-                    identifier_name.to_string(),
-                    Variable {
-                        read_only: !mutable,
-                        value_type: var_type,
-                    },
-                )
-                .is_some()
-            {
+            if self.globals.contains_key(identifier_name) {
                 return Err(format!("Global {} is already defined", identifier_name));
             }
+
+            self.globals.insert(
+                identifier_name.to_string(),
+                Variable {
+                    read_only: !mutable,
+                    value_type: var_type,
+                },
+            );
 
             chunk.write_byte(opcode::DEFINE_GLOBAL);
             chunk.write_byte(self.data_section.create_constant_str(identifier_name));
@@ -553,6 +596,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             assert!(!self.type_stack.is_empty());
             self.type_stack.pop();
+        } else if self.scanner.match_token(Token::LeftParen)? {
+            self.consume(Token::RightParen)?;
+            chunk.write_byte(opcode::CALL);
+            chunk.write_byte(self.data_section.create_constant_str(name));
         } else {
             match symbol {
                 Identifier::Global => {
@@ -888,13 +935,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
+                ValueType::Unit => return Err("Cannot use comparison with unit type".to_owned()),
                 ValueType::Integer | ValueType::Float => chunk.write_byte(op),
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
                 ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
-                ValueType::HashMap(_) => {
-                    return Err("Cannot use comparison with hash map".to_owned())
-                }
+                ValueType::HashMap(_) => return Err("Cannot use comparison with hash map".to_owned()),
+                ValueType::Function(_) => return Err("Cannot use comparison with function".to_owned())
             };
         }
 
@@ -936,6 +983,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 | ValueType::Bool
                 | ValueType::Vector(_)
                 | ValueType::HashMap(_) => chunk.write_byte(op),
+                _ => return Err("Cannot compare functions".to_owned())
             };
         }
 
@@ -1084,6 +1132,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    /*
+    fn call(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.primary(chunk)?;
+
+        if self.scanner.match_token(Token::LeftParen)? {
+            self.consume(Token::RightParen)?;
+            chunk.write_byte(opcode::CALL);
+            chunk.write_byte(self.data_section.create_constant_str(name));
+        }
+
+        Ok(())
+    }*/
+
     fn term_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
         self.factor(chunk)?;
 
@@ -1210,7 +1271,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
             Err(msg) => return Err(msg),
             _ => {
-                panic!("primary Unknown token: {:?}", t);
+                return Err(format!("Unexpected token: {:?}", t));
             }
         }
 
