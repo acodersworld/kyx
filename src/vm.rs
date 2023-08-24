@@ -1478,4 +1478,22 @@ mod test {
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "test function");
     }
+
+    #[test]
+    fn function_call_return_value() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            fn test() -> int {
+                return 10;
+            }
+
+            print test();
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "10");
+    }
 }

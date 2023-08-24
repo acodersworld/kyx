@@ -25,6 +25,7 @@ use itertools::Itertools;
                       break |
                       function_definition |
                       print_stmt |
+                      return_stmt
 
            let_decl -> "let" ("mut")? ":" identifier type = expression ";"
            print_stmt -> print expression ";"
@@ -33,6 +34,7 @@ use itertools::Itertools;
            for_stmt "for" identifier ":" NUMBER (".." | "..=") NUMBER block_expression
            function_definition -> "fn" identifier "(" parameter_list ")" -> type block
                 parameter_list -> parameter? ("," parameter)*
+           return_stmt -> "return" expression?
 
    EXPRESSIONS:
        expression -> assignment |
@@ -424,10 +426,30 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.consume(Token::LeftBrace)?;
 
+
         while !self.scanner.match_token(Token::RightBrace)? {
-            self.rule(&mut chunk)?;
+            if self.scanner.match_token(Token::Return)? {
+                if !self.scanner.match_token(Token::SemiColon)? {
+                    self.expression(&mut chunk)?;
+
+                    let expr_type = self.type_stack.pop().unwrap().value_type;
+                    if expr_type != return_type {
+                        return Err(format!("return type does not match return expression. Expected {}, got {}", return_type, expr_type));
+                    }
+
+                    self.consume(Token::SemiColon)?;
+                }
+
+                chunk.write_byte(opcode::RETURN);
+            }
+            else {
+                self.rule(&mut chunk)?;
+            }
         }
-        chunk.write_byte(opcode::RETURN);
+
+        if chunk.code.is_empty() || *chunk.code.last().unwrap() != opcode::RETURN {
+            chunk.write_byte(opcode::RETURN);
+        }
 
         let function_type = FunctionType{
             return_type,
@@ -1472,4 +1494,15 @@ mod test {
         let mut compiler = Compiler::new();
         assert!(compiler.compile(&mut table, "continue;").is_err());
     }
+
+    #[test]
+    fn empty_function() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "fn test() {}").unwrap();
+            true
+        });
+    }
+
 }
