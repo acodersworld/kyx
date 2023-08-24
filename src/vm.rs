@@ -17,10 +17,50 @@ pub trait Printer {
     fn print(&mut self, s: &str);
 }
 
-struct StackFrame {
+struct Frame {
     function: NonNull<FunctionValue>,
     locals: Vec<Value>,
     pc: usize
+}
+
+impl Frame {
+    fn next_code(&mut self) -> Option<u8> {
+        let code = unsafe { &self.function.as_ref().chunk.code };
+        //println!("{}", opcode::to_string(op));
+        //println!("{:?}", self.value_stack);
+        //
+        let pc = self.pc;
+        if pc < code.len() {
+            self.pc += 1;
+            Some(code[pc])
+        }
+        else {
+            None
+        }
+    }
+}
+
+struct FrameStack {
+    stack: Vec<Frame>,
+    top: Frame
+}
+
+impl FrameStack {
+    fn push(&mut self, function: NonNull<FunctionValue>) {
+        self.stack.push(Frame {
+            function: self.top.function,
+            locals: std::mem::replace(&mut self.top.locals, Vec::new()),
+            pc: self.top.pc
+        });
+
+        self.top.function = function;
+        self.top.pc = 0;
+    }
+
+    fn pop(&mut self) {
+        assert!(self.stack.len() > 0);
+        self.top = self.stack.pop().unwrap();
+    }
 }
 
 pub struct VM<'printer> {
@@ -28,7 +68,6 @@ pub struct VM<'printer> {
     objects: Vec<GcValue>,
     constant_strs: Vec<NonNull<StringValue>>,
     globals: HashMap<NonNull<StringValue>, Value>,
-    frame_stack: Vec<StackFrame>,
     break_loop_flag: bool,
 
     compiler: Compiler,
@@ -139,52 +178,41 @@ impl<'printer> VM<'printer> {
             objects: Vec::new(),
             constant_strs: Vec::new(),
             globals: HashMap::new(),
-            frame_stack: Vec::new(),
             break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
         }
     }
 
-    fn top_frame(&mut self) -> &mut StackFrame {
-        self.frame_stack.last_mut().unwrap()
-    }
+    fn run(&mut self, chunk: Chunk) {
 
-    fn next_code(&mut self) -> Option<u8> {
-        let frame = self.top_frame();
-        let code = unsafe { &frame.function.as_ref().chunk.code };
-        //println!("{}", opcode::to_string(op));
-        //println!("{:?}", self.value_stack);
-        //
-        let pc = frame.pc;
-        if pc < code.len() {
-            frame.pc += 1;
-            Some(code[pc])
-        }
-        else {
-            None
-        }
-    }
+        let mut frame_stack = FrameStack {
+            stack: Vec::new(),
+            top: Frame {
+                function: self.function(chunk),
+                locals: Vec::new(),
+                pc: 0
+            }
+        };
 
-    fn run(&mut self) {
-        while let Some(op) = self.next_code() {
+        while let Some(op) = frame_stack.top.next_code() {
             match op {
-                opcode::CONSTANT_INTEGER => self.push_integer(),
-                opcode::CONSTANT_FLOAT => self.push_float(),
-                opcode::CONSTANT_STRING => self.push_constant_string(),
-                opcode::CONSTANT_BOOL => self.push_constant_bool(),
-                opcode::CREATE_VEC => self.create_vec(),
+                opcode::CONSTANT_INTEGER => self.push_integer(&mut frame_stack.top),
+                opcode::CONSTANT_FLOAT => self.push_float(&mut frame_stack.top),
+                opcode::CONSTANT_STRING => self.push_constant_string(&mut frame_stack.top),
+                opcode::CONSTANT_BOOL => self.push_constant_bool(&mut frame_stack.top),
+                opcode::CREATE_VEC => self.create_vec(&mut frame_stack.top),
                 opcode::INDEX_VEC => self.index_vec(),
                 opcode::SET_VEC => self.set_vec(),
-                opcode::CREATE_HASH_MAP => self.create_hash_map(),
+                opcode::CREATE_HASH_MAP => self.create_hash_map(&mut frame_stack.top),
                 opcode::INDEX_HASH_MAP => self.index_hash_map(),
                 opcode::SET_HASH_MAP => self.set_hash_map(),
-                opcode::SET_GLOBAL => self.set_global(),
-                opcode::SET_LOCAL => self.set_local(),
-                opcode::PUSH_GLOBAL => self.push_global(),
-                opcode::PUSH_LOCAL => self.push_local(),
-                opcode::DEFINE_GLOBAL => self.define_global(),
-                opcode::DEFINE_LOCAL => self.define_local(),
+                opcode::SET_GLOBAL => self.set_global(&mut frame_stack.top),
+                opcode::SET_LOCAL => self.set_local(&mut frame_stack.top),
+                opcode::PUSH_GLOBAL => self.push_global(&mut frame_stack.top),
+                opcode::PUSH_LOCAL => self.push_local(&mut frame_stack.top),
+                opcode::DEFINE_GLOBAL => self.define_global(&mut frame_stack.top),
+                opcode::DEFINE_LOCAL => self.define_local(&mut frame_stack.top),
                 opcode::ADD => self.add(),
                 opcode::SUB => self.sub(),
                 opcode::MUL => self.mul(),
@@ -197,22 +225,21 @@ impl<'printer> VM<'printer> {
                 opcode::GREATER_EQUAL => self.greater_equal(),
                 opcode::PRINT => self.print(),
                 opcode::POP => self.pop(),
-                opcode::LOCAL_POP => self.local_pop(),
-                opcode::PUSH_FRAME => self.push_frame(),
+                opcode::LOCAL_POP => self.local_pop(&mut frame_stack.top),
+                opcode::PUSH_FRAME => self.push_frame(&mut frame_stack.top),
                 opcode::POP_FRAME => self.pop_frame(),
-                opcode::LOOP => self.jmp_loop(),
-                opcode::BREAK => self.break_loop(),
-                opcode::JMP => self.jmp(),
-                opcode::JMP_IF_FALSE => self.jmp_if_false(),
-                opcode::READ_INPUT => self.read_input(),
-                opcode::CALL => self.call(),
-                opcode::RETURN => self.do_return(),
+                opcode::LOOP => self.jmp_loop(&mut frame_stack.top),
+                opcode::BREAK => self.break_loop(&mut frame_stack.top),
+                opcode::JMP => self.jmp(&mut frame_stack.top),
+                opcode::JMP_IF_FALSE => self.jmp_if_false(&mut frame_stack.top),
+                opcode::READ_INPUT => self.read_input(&mut frame_stack.top),
+                opcode::CALL => self.call(&mut frame_stack),
+                opcode::RETURN => self.do_return(&mut frame_stack),
                 _ => {
-                    let frame = self.top_frame();
                     panic!(
                         "Unknown instruction: {} @ {}",
                         op,
-                        frame.pc - 1
+                        frame_stack.top.pc - 1
                     )
                 }
             }
@@ -248,16 +275,7 @@ impl<'printer> VM<'printer> {
         let mut ds = disassembler::Disassembler::new(&chunk.code);
         ds.disassemble();
 
-        let f = self.function(chunk);
-        self.frame_stack.push(StackFrame { 
-            function: f,
-            locals: Vec::new(),
-            pc: 0
-        });
-
-        self.run();
-        assert_eq!(self.frame_stack.len(), 1);
-        self.frame_stack.pop();
+        self.run(chunk);
 
         Ok(())
     }
@@ -302,16 +320,15 @@ impl<'printer> VM<'printer> {
         bin_op_comparison!(self, >=);
     }
 
-    fn push_integer(&mut self) {
+    fn push_integer(&mut self, frame: &mut Frame) {
         let mut decoder = var_len_int::Decoder::new();
-        while !decoder.step_decode(self.next_code().unwrap()) {
+        while !decoder.step_decode(frame.next_code().unwrap()) {
         }
 
         self.value_stack.push(Value::Integer(decoder.val()));
     }
 
-    fn push_float(&mut self) {
-        let frame = self.top_frame();
+    fn push_float(&mut self, frame: &mut Frame) {
         let code = unsafe { &frame.function.as_ref().chunk.code };
 
         let value = float::decode(&code[frame.pc..frame.pc + 4].try_into().unwrap());
@@ -320,20 +337,20 @@ impl<'printer> VM<'printer> {
         self.value_stack.push(Value::Float(OrderedFloat(value)));
     }
 
-    fn push_constant_string(&mut self) {
-        let idx = self.next_code().unwrap() as usize;
+    fn push_constant_string(&mut self, frame: &mut Frame) {
+        let idx = frame.next_code().unwrap() as usize;
 
         self.value_stack.push(Value::Str(self.constant_strs[idx]));
     }
 
-    fn push_constant_bool(&mut self) {
-        let value = self.next_code().unwrap() != 0;
+    fn push_constant_bool(&mut self, frame: &mut Frame) {
+        let value = frame.next_code().unwrap() != 0;
 
         self.value_stack.push(Value::Bool(value));
     }
 
-    fn create_vec(&mut self) {
-        let arg_count = self.next_code().unwrap() as usize;
+    fn create_vec(&mut self, frame: &mut Frame) {
+        let arg_count = frame.next_code().unwrap() as usize;
 
         assert!(self.value_stack.len() >= arg_count);
         let vector: Vec<Value> = self.value_stack.drain((self.value_stack.len() - arg_count)..).collect();
@@ -377,8 +394,8 @@ impl<'printer> VM<'printer> {
         self.value_stack.push(new_value);
     }
 
-    fn create_hash_map(&mut self) {
-        let arg_count = self.next_code().unwrap() as usize * 2;
+    fn create_hash_map(&mut self, frame: &mut Frame) {
+        let arg_count = frame.next_code().unwrap() as usize * 2;
 
         assert!(self.value_stack.len() >= arg_count);
         let args: Vec<Value> = self.value_stack.drain((self.value_stack.len() - arg_count)..).collect();
@@ -421,42 +438,40 @@ impl<'printer> VM<'printer> {
         self.value_stack.push(new_value);
     }
 
-    fn set_global(&mut self) {
-        let idx = self.next_code().unwrap() as usize;
+    fn set_global(&mut self, frame: &mut Frame) {
+        let idx = frame.next_code().unwrap() as usize;
 
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
         self.globals.insert(name, *self.value_stack.last().unwrap());
     }
 
-    fn set_local(&mut self) {
-        let idx = self.next_code().unwrap() as usize;
+    fn set_local(&mut self, frame: &mut Frame) {
+        let idx = frame.next_code().unwrap() as usize;
 
-        assert!(!self.frame_stack.is_empty());
         assert!(!self.value_stack.is_empty());
-        let local = &mut self.frame_stack.last_mut().unwrap().locals[idx];
+        let local = &mut frame.locals[idx];
         *local = self.value_stack.pop().unwrap();
     }
 
-    fn push_global(&mut self) {
-        let idx = self.next_code().unwrap() as usize;
+    fn push_global(&mut self, frame: &mut Frame) {
+        let idx = frame.next_code().unwrap() as usize;
 
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
         self.value_stack.push(self.globals[&name]);
     }
 
-    fn push_local(&mut self) {
-        let idx = self.next_code().unwrap() as usize;
+    fn push_local(&mut self, frame: &mut Frame) {
+        let idx = frame.next_code().unwrap() as usize;
 
-        assert!(!self.frame_stack.is_empty());
-        let locals = &self.frame_stack.last().unwrap().locals;
+        let locals = &frame.locals;
         assert!(!locals.is_empty());
         self.value_stack.push(locals[idx]);
     }
 
-    fn define_global(&mut self) {
-        let idx = self.next_code().unwrap() as usize;
+    fn define_global(&mut self, frame: &mut Frame) {
+        let idx = frame.next_code().unwrap() as usize;
 
         let name = self.constant_strs[idx];
         let st = &mut self.value_stack;
@@ -467,12 +482,11 @@ impl<'printer> VM<'printer> {
         self.globals.insert(name, value);
     }
 
-    fn define_local(&mut self) {
+    fn define_local(&mut self, frame: &mut Frame) {
         let st = &mut self.value_stack;
-        assert!(!self.frame_stack.is_empty());
         assert!(!st.is_empty());
 
-        let locals = &mut self.frame_stack.last_mut().unwrap().locals;
+        let locals = &mut frame.locals;
         let value = st.pop().unwrap();
         locals.push(value);
     }
@@ -525,14 +539,12 @@ impl<'printer> VM<'printer> {
         self.value_stack.pop();
     }
 
-    fn local_pop(&mut self) {
-        assert!(!self.frame_stack.is_empty());
-        self.frame_stack.last_mut().unwrap().locals.pop();
+    fn local_pop(&mut self, frame: &mut Frame) {
+        frame.locals.pop();
     }
 
-    fn push_frame(&mut self) {
-        assert!(!self.frame_stack.is_empty());
-        self.frame_stack.last_mut().unwrap().locals.clear();
+    fn push_frame(&mut self, frame: &mut Frame) {
+        frame.locals.clear();
  
 //        assert!(!self.frame_stack.is_empty());
 //        let (function, pc) = {
@@ -552,23 +564,20 @@ impl<'printer> VM<'printer> {
 //        self.frame_stack.pop();
     }
 
-    fn jmp_loop(&mut self) {
+    fn jmp_loop(&mut self, frame: &mut Frame) {
 
         let do_loop = !self.break_loop_flag;
         self.break_loop_flag = false;
         if do_loop {
-            let frame = self.top_frame();
             let code = unsafe { &frame.function.as_ref().chunk.code };
             let offset = code[frame.pc] as usize;
             frame.pc -= offset;
         } else {
-            let frame = self.top_frame();
             frame.pc += 1;
         }
     }
 
-    fn break_loop(&mut self) {
-        let frame = self.top_frame();
+    fn break_loop(&mut self, frame: &mut Frame) {
         let code = unsafe { &frame.function.as_ref().chunk.code };
         let offset = code[frame.pc] as usize;
 
@@ -576,19 +585,17 @@ impl<'printer> VM<'printer> {
         self.break_loop_flag = true;
     }
 
-    fn jmp(&mut self) {
-        let frame = self.top_frame();
+    fn jmp(&mut self, frame: &mut Frame) {
         let code = unsafe { &frame.function.as_ref().chunk.code };
         let offset = code[frame.pc] as usize;
 
         frame.pc += offset;
     }
 
-    fn jmp_if_false(&mut self) {
+    fn jmp_if_false(&mut self, frame: &mut Frame) {
         assert!(!self.value_stack.is_empty());
         let cond = self.value_stack.pop().unwrap();
 
-        let frame = self.top_frame();
         let code = unsafe { &frame.function.as_ref().chunk.code };
         let offset = code[frame.pc] as usize;
 
@@ -599,8 +606,8 @@ impl<'printer> VM<'printer> {
         }
     }
 
-    fn read_input(&mut self) {
-        let read_type = self.next_code().unwrap();
+    fn read_input(&mut self, frame: &mut Frame) {
+        let read_type = frame.next_code().unwrap();
 
         let mut line = String::new();
         std::io::stdin().read_line(&mut line).unwrap();
@@ -622,20 +629,19 @@ impl<'printer> VM<'printer> {
         }
     }
 
-    fn call(&mut self) {
-        let idx = self.next_code().unwrap() as usize;
+    fn call(&mut self, frame_stack: &mut FrameStack) {
+        let idx = frame_stack.top.next_code().unwrap() as usize;
 
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
-        self.value_stack.push(self.globals[&name]);
+        match self.globals[&name] {
+            Value::Function(f) => frame_stack.push(f),
+            _ => {}
+        }
     }
 
-    fn do_return(&mut self) {
-        let idx = self.next_code().unwrap() as usize;
-
-        let name = self.constant_strs[idx];
-        assert!(self.globals.contains_key(&name));
-        self.value_stack.push(self.globals[&name]);
+    fn do_return(&mut self, frame_stack: &mut FrameStack) {
+        frame_stack.pop();
     }
 }
 
@@ -1454,5 +1460,22 @@ mod test {
         assert_eq!(printer.strings[1], "world");
         assert_eq!(printer.strings[2], "awesome");
         assert_eq!(printer.strings[3], "world");
+    }
+
+    #[test]
+    fn function_call() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            fn test() {
+                print \"test function\";
+            }
+
+            test();
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "test function");
     }
 }
