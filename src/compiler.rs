@@ -409,7 +409,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(var_type)
     }
 
-    fn function(&mut self) -> Result<(FunctionType, Chunk), String> {
+    fn function(&mut self, function_name: &str) -> Result<Chunk, String> {
         let mut chunk = Chunk::new();
         self.consume(Token::LeftParen)?;
 
@@ -478,6 +478,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         };
 
+        let function_type = FunctionType{
+            return_type: return_type.clone(),
+            parameters: Vec::new()
+        };
+
+        self.globals.insert(function_name.to_string(), Variable {
+            value_type: ValueType::Function(Rc::new(function_type)),
+            read_only: true
+        });
         self.consume(Token::LeftBrace)?;
 
         self.stack_frames.last_mut().unwrap().current_scope = 1;
@@ -505,13 +514,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             chunk.write_byte(opcode::RETURN);
         }
 
-        let function_type = FunctionType{
-            return_type,
-            parameters: Vec::new()
-        };
-
         self.stack_frames.pop();
-        Ok((function_type, chunk))
+        Ok(chunk)
     }
 
     fn function_definition(&mut self) -> Result<(), String> {
@@ -521,13 +525,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     return Err(format!("Global {} is already defined", ident));
                 }
 
-                let (function_type, chunk) = self.function()?;
+                let chunk = self.function(ident)?;
 
                 self.function_chunks.insert(ident.to_string(), chunk);
-                self.globals.insert(ident.to_string(), Variable {
-                    value_type: ValueType::Function(Rc::new(function_type)),
-                    read_only: true
-                });
             },
             _ => return Err("Expected identifier after 'fn'".to_owned()),
         };
@@ -1597,6 +1597,16 @@ mod test {
         let mut compiler = Compiler::new();
         assert!({
             compiler.compile(&mut table, "fn test(a: int, b: float, c: string) {} test(1, 1.2, \"hello\");").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn function_recursion() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "fn test() { test(); }").unwrap();
             true
         });
     }

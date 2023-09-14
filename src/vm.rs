@@ -1546,4 +1546,28 @@ mod test {
         assert_eq!(printer.strings[2], "hello");
         assert_eq!(printer.strings[3], "1");
     }
+
+    #[test]
+    fn function_recursion() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            fn test(i: int) {
+                if i > 0 {
+                    test(i-1);
+                }
+                print i;
+            }
+
+            test(3);
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "0");
+        assert_eq!(printer.strings[1], "1");
+        assert_eq!(printer.strings[2], "2");
+        assert_eq!(printer.strings[3], "3");
+    }
 }
