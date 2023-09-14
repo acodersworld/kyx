@@ -28,6 +28,8 @@ impl<'a> Disassembler<'a> {
                 opcode::INDEX_VEC => self.simple_instruction("index vec"),
                 opcode::SET_VEC => self.simple_instruction("set vec"),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(),
+                opcode::INDEX_HASH_MAP => self.simple_instruction("index hash map"),
+                opcode::SET_HASH_MAP => self.simple_instruction("set hash map"),
                 opcode::SET_GLOBAL => self.set_global(),
                 opcode::SET_LOCAL => self.set_local(),
                 opcode::PUSH_GLOBAL => self.push_global(),
