@@ -17,6 +17,7 @@ use itertools::Itertools;
        rule -> declaration | expression ";"?
 
        type -> "int" | "float" | "string" | "[" type "]" | "[" type ":" type "]"
+       literal -> NUMBER | FLOAT | STRING
 
    DECLARATIONS:
        declaration -> let_decl |
@@ -25,7 +26,8 @@ use itertools::Itertools;
                       break |
                       function_definition |
                       print_stmt |
-                      return_stmt
+                      return_stmt |
+                      enum_definition
 
            let_decl -> "let" ("mut")? ":" identifier type = expression ";"
            print_stmt -> print expression ";"
@@ -35,6 +37,8 @@ use itertools::Itertools;
            function_definition -> "fn" identifier "(" parameter_list ")" -> type block
                 parameter_list -> parameter? ("," parameter)*
            return_stmt -> "return" expression?
+           enum_definition -> "enum" identifier ":" type "{" enum_value* "}"
+                enum_value = STRING ("=" literal)? ","?
 
    EXPRESSIONS:
        expression -> assignment |
@@ -53,6 +57,7 @@ use itertools::Itertools;
             function_call -> identifier "(" argument_list ")"
                 argument_list -> identifier? ("," identifier)*
             read_expr -> "read" type
+            enum_value -> identifier "." identifier
 
             assignment -> identifier = expression | equality
             equality -> comparison (("!=" | "==") comparison)?
@@ -60,13 +65,26 @@ use itertools::Itertools;
             term -> factor ( "-" | "+" factor )*
             factor -> index ( "*" | "/" index )*
             index -> primary ("[" expression "]")* |
-            primary -> NUMBER | FLOAT | STRING | identifier | "(" expression ")"
+            primary -> literal | identifier | "(" expression ")" | enum_value
 */
 
 #[derive(Debug, PartialEq, Clone)]
 struct FunctionType {
     return_type: ValueType,
     parameters: Vec<ValueType>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+enum EnumValue {
+    Str(String),
+    Integer(i32),
+    Float(f32)
+}
+
+#[derive(Debug, PartialEq, Clone)]
+struct EnumType {
+    base_type: ValueType,
+    values: HashMap<String, EnumValue>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -79,6 +97,7 @@ enum ValueType {
     Vector(Rc<ValueType>),
     HashMap(Rc<(ValueType, ValueType)>),
     Function(Rc<FunctionType>),
+    Enum(Rc<EnumType>),
 }
 
 impl fmt::Display for ValueType {
@@ -95,6 +114,9 @@ impl fmt::Display for ValueType {
                 let parameters = f.parameters.iter().join(", ");
                 format!("fn({}) -> {}", parameters, f.return_type)
             },
+            Self::Enum(e) => {
+                format!("enum {:?}", e.values)
+            }
         };
 
         write!(f, "{}", s)
@@ -135,7 +157,8 @@ pub struct SrcCompiler<'a, T> {
     data_section: &'a mut T,
     unpatched_break_offsets: Vec<usize>,
     is_in_loop: bool,
-    function_chunks: HashMap<String, Chunk>
+    function_chunks: HashMap<String, Chunk>,
+    enum_types: HashMap<String, Rc<EnumType>>
 }
 
 impl Compiler {
@@ -159,6 +182,7 @@ impl Compiler {
             unpatched_break_offsets: Vec::new(),
             is_in_loop: false,
             function_chunks: HashMap::new(),
+            enum_types: HashMap::new()
         };
 
         let mut chunk = Chunk::new();
@@ -191,7 +215,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     pub fn compile(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         while self.scanner.peek_token()? != Token::Eof {
-            self.rule(chunk)?;
+            if self.scanner.match_token(Token::Fn)? {
+                self.function_definition()?;
+            }
+            else if self.scanner.match_token(Token::Enum)? {
+                self.enum_definition()?;
+            }
+            else {
+                self.rule(chunk)?;
+            }
         }
 
         Ok(())
@@ -199,10 +231,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn rule(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         if !self.try_statement(chunk)? {
-            if self.scanner.match_token(Token::Fn)? {
-                self.function_definition()?;
-            }
-            else if self.scanner.match_token(Token::Return)? {
+            if self.scanner.match_token(Token::Return)? {
                 self.return_statement(chunk)?;
             }
             else {
@@ -225,6 +254,66 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         Ok(())
+    }
+
+    fn enum_definition(&mut self) -> Result<ValueType, String> {
+          // enum_definition -> "enum" STRING ":" type "{" enum_value* "}"
+          //      enum_value = STRING "=" literal ","?
+
+        let enum_name = match self.scanner.scan_token()? {
+            Token::Identifier(s) => s,
+            x => return Err(format!("Expected name for enum. Got {:?}", x))
+        };
+
+        self.consume(Token::Colon)?;
+        let enum_base_type = self.parse_type()?;
+        self.consume(Token::LeftBrace)?;
+
+        let mut enum_type = EnumType {
+            base_type: enum_base_type.clone(),
+            values: HashMap::new()
+        };
+
+        while !self.scanner.match_token(Token::RightBrace)? {
+            let value_name = match self.scanner.scan_token()? {
+                Token::Identifier(s) => s,
+                x => return Err(format!("Expected name for enum value. Got {:?}", x))
+            };
+
+            self.consume(Token::Equal)?;
+
+            let enum_value = match self.scanner.scan_token()? {
+                Token::Str(s) => {
+                    if enum_base_type != ValueType::Str {
+                        return Err(format!("Enum type is string but enum value is {}", enum_base_type));
+                    }
+                    EnumValue::Str(s.to_string())
+                },
+                Token::Integer(i) => {
+                    if enum_base_type != ValueType::Integer {
+                        return Err(format!("Enum type is int but enum value is {}", enum_base_type));
+                    }
+                    EnumValue::Integer(i)
+                },
+                Token::Float(f) => {
+                    if enum_base_type != ValueType::Float {
+                        return Err(format!("Enum type is float but enum value is {}", enum_base_type));
+                    }
+                    EnumValue::Float(f)
+                },
+                _ => return Err(format!("Expected name for enum"))
+            };
+
+            if enum_type.values.insert(value_name.to_string(), enum_value).is_some() {
+                return Err(format!("{} already defined in enum {}", value_name, enum_name));
+            }
+
+            self.consume(Token::Comma)?;
+        }
+
+        let enum_type = Rc::new(enum_type);
+        self.enum_types.insert(enum_name.to_string(), enum_type.clone());
+        Ok(ValueType::Enum(enum_type))
     }
 
     fn try_statement(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
@@ -406,6 +495,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::TypeFloat => ValueType::Float,
             Token::TypeString => ValueType::Str,
             Token::LeftBracket => self.parse_type_vec_or_map()?,
+            Token::Identifier(i) => {
+                if let Some(e) = self.enum_types.get(i) {
+                    return Ok(ValueType::Enum(e.clone()));
+                }
+
+                return Err(format!("Expected type but got {}", i));
+            },
             token => return Err(format!("Expected type but got {}", token)),
         };
 
@@ -574,7 +670,16 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let expr_type = self.type_stack.pop().unwrap().value_type;
         if var_type != expr_type {
-            return Err(format!("Expected type {}, got {}", var_type, expr_type));
+            let can_enum_coerce = if let ValueType::Enum(e) = &expr_type {
+                    var_type == e.base_type
+                }
+                else {
+                    false
+                };
+
+            if !can_enum_coerce {
+                return Err(format!("Expected type {}, got {}", var_type, expr_type));
+            }
         }
 
         if self.stack_frames.is_empty() {
@@ -1043,7 +1148,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
                 ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
                 ValueType::HashMap(_) => return Err("Cannot use comparison with hash map".to_owned()),
-                ValueType::Function(_) => return Err("Cannot use comparison with function".to_owned())
+                ValueType::Function(_) => return Err("Cannot use comparison with function".to_owned()),
+                ValueType::Enum(_) => return Err("Cannot use comparison with enum".to_owned()) // FIXME
             };
         }
 
@@ -1084,7 +1190,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 | ValueType::Str
                 | ValueType::Bool
                 | ValueType::Vector(_)
-                | ValueType::HashMap(_) => chunk.write_byte(op),
+                | ValueType::HashMap(_)
+                | ValueType::Enum(_) => chunk.write_byte(op),
                 _ => return Err("Cannot compare functions".to_owned())
             };
         }
@@ -1361,11 +1468,39 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
+    fn enum_value(&mut self, chunk: &mut Chunk, enum_name: &str, enum_type: Rc<EnumType>) -> Result<(), String> {
+        self.consume(Token::Dot)?;
+        let enum_value_name = match self.scanner.scan_token()? {
+            Token::Identifier(v) => v,
+            x => return Err(format!("Expected enum value name. Got {:?}", x))
+        };
+
+        let enum_value = match enum_type.values.get(enum_value_name) {
+            Some(v) => v,
+            None => return Err(format!("Enum value {} does not exist in {}", enum_value_name, enum_name))
+        };
+
+        match enum_value {
+            EnumValue::Str(s) => self.string(chunk, s),
+            EnumValue::Integer(i) => self.integer(chunk, *i),
+            EnumValue::Float(f) => self.float(chunk, *f),
+        }
+
+        self.type_stack.last_mut().unwrap().value_type = ValueType::Enum(enum_type.clone());
+
+        Ok(())
+    }
+
     fn primary(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let t = self.scanner.scan_token();
         match t {
             Ok(Token::Identifier(name)) => {
-                self.identifier(chunk, name)?;
+                if let Some(e) = self.enum_types.get(name) {
+                    self.enum_value(chunk, name, e.clone())?;
+                }
+                else {
+                    self.identifier(chunk, name)?;
+                }
             }
             Ok(Token::LeftParen) => {
                 self.expression(chunk)?;
@@ -1664,6 +1799,144 @@ mod test {
                     }
                     return fib(i - 1) + fib(i - 2);
                 }").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_empty_enum() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "
+                enum Enum : int {}").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_enum() {
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+            assert!({
+                compiler.compile(&mut table, "
+                    enum Enum : int {
+                        a = 1,
+                        b = 2,
+                    }").unwrap();
+                true
+            });
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+            assert!({
+                compiler.compile(&mut table, "
+                    enum Enum : float {
+                        a = 1.0,
+                        b = 2.2,
+                    }").unwrap();
+                true
+            });
+        }
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+            assert!({
+                compiler.compile(&mut table, "
+                    enum Enum : string {
+                        a = \"hello\",
+                        b = \"world\",
+                    }").unwrap();
+                true
+            });
+        }
+    }
+
+    #[test]
+    fn test_mismatch_type_enum() {
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+            assert!(
+                compiler.compile(&mut table, "
+                    enum Enum : int {
+                        a = \"hello\",
+                    }").is_err()
+            );
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+            assert!(
+                compiler.compile(&mut table, "
+                    enum Enum : float {
+                        a = \"hello\",
+                    }").is_err()
+            );
+        }
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+            assert!(
+                compiler.compile(&mut table, "
+                    enum Enum : string {
+                        a = 1.23,
+                    }").is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn test_use_enum() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "
+                enum Enum : int {
+                    a = 1,
+                    b = 2,
+                }
+
+                let mut e: Enum = Enum.a;
+                e = Enum.b;
+                ").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_enum_type_mismatch() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!(
+            compiler.compile(&mut table, "
+                enum Enum : int {
+                    a = 1,
+                    b = 2,
+                }
+
+                let e: Enum = 1;
+                ").is_err()
+        );
+    }
+
+    #[test]
+    fn test_coerce_to_base_type() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "
+                enum Enum : int {
+                    a = 1,
+                    b = 2,
+                }
+
+                let e: int = Enum.a;
+                ").unwrap();
             true
         });
     }

@@ -3,6 +3,7 @@ use std::fmt;
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Token<'a> {
     Struct,
+    Enum,
     Interface,
     If,
     Else,
@@ -71,6 +72,7 @@ impl Token<'_> {
     fn as_string(&self) -> String {
         let s = match self {
             Self::Struct => "struct",
+            Self::Enum => "enum",
             Self::Interface => "interface",
             Self::If => "if",
             Self::Else => "else",
@@ -233,6 +235,7 @@ impl<'a> Scanner<'a> {
             "vec" => Token::Vector,
             "hash_map" => Token::HashMap,
             "struct" => Token::Struct,
+            "enum" => Token::Enum,
             "interface" => Token::Interface,
             "fn" => Token::Fn,
             "let" => Token::Let,
@@ -471,7 +474,7 @@ mod tests {
     #[test]
     fn test_keywords() {
         let src =
-            "int float string vec hash_map struct interface while for return fn let mut true false";
+            "int float string vec hash_map struct enum interface while for return fn let mut true false";
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::TypeInt));
         assert_eq!(scanner.scan_token(), Ok(Token::TypeFloat));
@@ -481,6 +484,7 @@ mod tests {
         assert_eq!(scanner.scan_token(), Ok(Token::HashMap));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Struct));
+        assert_eq!(scanner.scan_token(), Ok(Token::Enum));
         assert_eq!(scanner.scan_token(), Ok(Token::Interface));
         assert_eq!(scanner.scan_token(), Ok(Token::While));
         assert_eq!(scanner.scan_token(), Ok(Token::For));

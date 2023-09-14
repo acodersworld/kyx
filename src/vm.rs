@@ -1601,4 +1601,70 @@ mod test {
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "55");
     }
+
+    #[test]
+    fn test_use_enum() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                enum Enum : int {
+                    a = 1,
+                    b = 2,
+                }
+
+                let mut e: Enum = Enum.a;
+                print e;
+                e = Enum.b;
+                print e;";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "1");
+            assert_eq!(printer.strings[1], "2");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                enum Enum : float {
+                    a = 1.1,
+                    b = 2.2,
+                }
+
+                let mut e: Enum = Enum.a;
+                print e;
+                e = Enum.b;
+                print e;";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "1.1");
+            assert_eq!(printer.strings[1], "2.2");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                enum Enum : string {
+                    a = \"hello\",
+                    b = \"world\",
+                }
+
+                let mut e: Enum = Enum.a;
+                print e;
+                e = Enum.b;
+                print e;";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "hello");
+            assert_eq!(printer.strings[1], "world");
+        }
+    }
 }
