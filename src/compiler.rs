@@ -412,7 +412,61 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn function(&mut self) -> Result<(FunctionType, Chunk), String> {
         let mut chunk = Chunk::new();
         self.consume(Token::LeftParen)?;
-        while !self.scanner.match_token(Token::RightParen)? {
+
+        self.stack_frames.push(StackFrame {
+            current_scope: 0,
+            locals: Vec::new(),
+        });
+
+        let mut parameters: Vec<ValueType> = Vec::new();
+        if !self.scanner.match_token(Token::RightParen)? {
+            {
+                let name = match self.scanner.scan_token()? {
+                    Token::Identifier(i) => i,
+                    _ => return Err("Expected identifier".to_string())
+                };
+
+                self.consume(Token::Colon)?;
+
+                let mutable = self.scanner.match_token(Token::Mut)?;
+                let param_type = self.parse_type()?;
+
+                parameters.push(param_type.clone());
+
+                self.stack_frames.last_mut().unwrap().locals.push(LocalVariable {
+                    name: name.to_string(),
+                    v: Variable {
+                        value_type: param_type,
+                        read_only: !mutable
+                    },
+                    scope: 0,
+                });
+            }
+
+            while !self.scanner.match_token(Token::RightParen)? {
+                self.consume(Token::Comma)?;
+
+                let name = match self.scanner.scan_token()? {
+                    Token::Identifier(i) => i,
+                    _ => return Err("Expected identifier".to_string())
+                };
+
+                self.consume(Token::Colon)?;
+
+                let mutable = self.scanner.match_token(Token::Mut)?;
+                let param_type = self.parse_type()?;
+
+                parameters.push(param_type.clone());
+
+                self.stack_frames.last_mut().unwrap().locals.push(LocalVariable {
+                    name: name.to_string(),
+                    v: Variable {
+                        value_type: param_type,
+                        read_only: !mutable
+                    },
+                    scope: 0,
+                });
+            }
         }
 
         let return_type = {
@@ -426,7 +480,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.consume(Token::LeftBrace)?;
 
-
+        self.stack_frames.last_mut().unwrap().current_scope = 1;
         while !self.scanner.match_token(Token::RightBrace)? {
             if self.scanner.match_token(Token::Return)? {
                 if !self.scanner.match_token(Token::SemiColon)? {
@@ -456,6 +510,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             parameters: Vec::new()
         };
 
+        self.stack_frames.pop();
         Ok((function_type, chunk))
     }
 
@@ -619,9 +674,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             assert!(!self.type_stack.is_empty());
             self.type_stack.pop();
         } else if self.scanner.match_token(Token::LeftParen)? {
-            self.consume(Token::RightParen)?;
-            chunk.write_byte(opcode::CALL);
-            chunk.write_byte(self.data_section.create_constant_str(name));
+            self.call(chunk, name)?;
         } else {
             match symbol {
                 Identifier::Global => {
@@ -755,6 +808,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn push_stack_frame(&mut self, chunk: &mut Chunk) {
+        self.stack_frames.push(StackFrame {
+            current_scope: 0,
+            locals: Vec::new(),
+        });
+        chunk.code.push(opcode::PUSH_FRAME);
+    }
+
+    fn pop_stack_frame(&mut self, chunk: &mut Chunk) {
+        self.stack_frames.pop();
+        chunk.code.push(opcode::POP_FRAME);
+    }
+
     fn scoped_block<F>(&mut self, chunk: &mut Chunk, block: F) -> Result<(), String>
     where
         F: FnOnce(&mut Self, &mut Chunk) -> Result<(), String>,
@@ -764,11 +830,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 top.current_scope += 1;
                 false
             } else {
-                self.stack_frames.push(StackFrame {
-                    current_scope: 0,
-                    locals: Vec::new(),
-                });
-                chunk.code.push(opcode::PUSH_FRAME);
+                self.push_stack_frame(chunk);
                 true
             }
         };
@@ -778,8 +840,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         assert!(!self.stack_frames.is_empty());
         if push_local {
-            self.stack_frames.pop();
-            chunk.code.push(opcode::POP_FRAME);
+            self.pop_stack_frame(chunk);
         } else {
             let frame = self.stack_frames.last_mut().unwrap();
             while frame.locals.len() > locals_top {
@@ -1154,18 +1215,23 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    /*
-    fn call(&mut self, chunk: &mut Chunk) -> Result<(), String> {
-        self.primary(chunk)?;
+    fn call(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
+        if !self.scanner.match_token(Token::RightParen)? {
+            self.expression(chunk)?;
 
-        if self.scanner.match_token(Token::LeftParen)? {
-            self.consume(Token::RightParen)?;
-            chunk.write_byte(opcode::CALL);
-            chunk.write_byte(self.data_section.create_constant_str(name));
+            while !self.scanner.match_token(Token::RightParen)? {
+                self.consume(Token::Comma)?;
+                self.expression(chunk)?;
+            }
         }
 
+        chunk.write_byte(opcode::CALL);
+        chunk.write_byte(self.data_section.create_constant_str(name));
+
+        // the arguments get moved to frame locals
+        self.type_stack.clear();
         Ok(())
-    }*/
+    }
 
     fn term_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
         self.factor(chunk)?;
@@ -1505,4 +1571,33 @@ mod test {
         });
     }
 
+    #[test]
+    fn function_with_single_parameter() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "fn test(a: int) {}").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn function_with_parameters() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "fn test(a: int, b: float, c: string, d: mut int, e: mut float, f: mut string) {}").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn function_call_with_parameters() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "fn test(a: int, b: float, c: string) {} test(1, 1.2, \"hello\");").unwrap();
+            true
+        });
+    }
 }

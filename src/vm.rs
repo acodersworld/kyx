@@ -635,7 +635,10 @@ impl<'printer> VM<'printer> {
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
         match self.globals[&name] {
-            Value::Function(f) => frame_stack.push(f),
+            Value::Function(f) => {
+                frame_stack.push(f);
+                std::mem::swap(&mut frame_stack.top.locals, &mut self.value_stack);
+            }
             _ => {}
         }
     }
@@ -1495,5 +1498,52 @@ mod test {
         assert_eq!(vm.interpret(src), Ok(()));
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "10");
+    }
+
+    #[test]
+    fn function_call_parameters() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            fn test(i: int, f: float, s: string) {
+                print i;
+                print f;
+                print s;
+            }
+
+            test(20, 1.23, \"hello\");
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "20");
+        assert_eq!(printer.strings[1], "1.23");
+        assert_eq!(printer.strings[2], "hello");
+    }
+
+    #[test]
+    fn function_call_parameters_with_return_value() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            fn test(i: int, f: float, s: string) -> int {
+                print i;
+                print f;
+                print s;
+
+                return 1;
+            }
+
+            print test(20, 1.23, \"hello\");
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "20");
+        assert_eq!(printer.strings[1], "1.23");
+        assert_eq!(printer.strings[2], "hello");
+        assert_eq!(printer.strings[3], "1");
     }
 }

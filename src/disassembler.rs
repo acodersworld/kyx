@@ -54,9 +54,10 @@ impl<'a> Disassembler<'a> {
                 opcode::JMP => self.jmp_instruction("jump", 1),
                 opcode::JMP_IF_FALSE => self.jmp_instruction("jump if false", 1),
                 opcode::READ_INPUT => self.read_instruction(),
+                opcode::CALL => self.call(),
+                opcode::RETURN => self.simple_instruction("return"),
                 code => {
-                    println!("Unknown instruction {}", code);
-                    return;
+                    panic!("Unknown instruction {}", code);
                 }
             }
         }
@@ -174,4 +175,12 @@ impl<'a> Disassembler<'a> {
     fn define_local(&mut self) {
         println!("DEFINE LOCAL");
     }
+
+    fn call(&mut self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CALL: idx({})", idx);
+    }
+
 }
