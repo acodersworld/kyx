@@ -263,6 +263,10 @@ impl<'printer> VM<'printer> {
         let (chunk, functions) = self.compiler.compile(&mut data_section, src)?;
 
         for (fname, fchunk) in functions {
+            let mut ds = disassembler::Disassembler::new(&fchunk.code);
+            println!("-- Function: {} --", fname);
+            ds.disassemble();
+
             let function_value = self.function(fchunk);
             let mut data_section = VMDataSection {
                 objects: &mut self.objects,
@@ -270,8 +274,10 @@ impl<'printer> VM<'printer> {
             };
             let name_idx = data_section.create_constant_str(&fname) as usize;
             self.globals.insert(self.constant_strs[name_idx], Value::Function(function_value));
+
         }
 
+        println!("-- Main --");
         let mut ds = disassembler::Disassembler::new(&chunk.code);
         ds.disassemble();
 
@@ -631,13 +637,18 @@ impl<'printer> VM<'printer> {
 
     fn call(&mut self, frame_stack: &mut FrameStack) {
         let idx = frame_stack.top.next_code().unwrap() as usize;
+        let arity = frame_stack.top.next_code().unwrap() as usize;
 
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
         match self.globals[&name] {
             Value::Function(f) => {
                 frame_stack.push(f);
-                std::mem::swap(&mut frame_stack.top.locals, &mut self.value_stack);
+
+                assert!(self.value_stack.len() >= arity);
+
+                let len = self.value_stack.len();
+                frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
             }
             _ => {}
         }
@@ -1569,5 +1580,25 @@ mod test {
         assert_eq!(printer.strings[1], "1");
         assert_eq!(printer.strings[2], "2");
         assert_eq!(printer.strings[3], "3");
+    }
+
+    #[test]
+    fn fib() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            fn fib(i: int) -> int {
+                if i <= 1 {
+                    return i;
+                }
+                return fib(i - 1) + fib(i - 2);
+            }
+
+            print fib(10);";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "55");
     }
 }

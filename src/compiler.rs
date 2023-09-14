@@ -202,6 +202,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             if self.scanner.match_token(Token::Fn)? {
                 self.function_definition()?;
             }
+            else if self.scanner.match_token(Token::Return)? {
+                self.return_statement(chunk)?;
+            }
             else {
                 let is_block = self.expression(chunk)?;
 
@@ -407,6 +410,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         };
 
         Ok(var_type)
+    }
+
+    fn return_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        if !self.scanner.match_token(Token::SemiColon)? {
+            self.expression(chunk)?;
+
+            //let expr_type = self.type_stack.pop().unwrap().value_type;
+            //if expr_type != return_type {
+            //    return Err(format!("return type does not match return expression. Expected {}, got {}", return_type, expr_type));
+            //}
+
+            self.consume(Token::SemiColon)?;
+        }
+
+        chunk.write_byte(opcode::RETURN);
+        return Ok(())
     }
 
     fn function(&mut self, function_name: &str) -> Result<Chunk, String> {
@@ -1216,20 +1235,42 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn call(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
+        let stack_len = self.type_stack.len();
+
+        let mut arity = 0;
         if !self.scanner.match_token(Token::RightParen)? {
             self.expression(chunk)?;
 
+            arity = 1;
             while !self.scanner.match_token(Token::RightParen)? {
                 self.consume(Token::Comma)?;
                 self.expression(chunk)?;
+                arity += 1;
             }
         }
 
         chunk.write_byte(opcode::CALL);
         chunk.write_byte(self.data_section.create_constant_str(name));
+        chunk.write_byte(arity);
 
         // the arguments get moved to frame locals
-        self.type_stack.clear();
+        while self.type_stack.len() > stack_len {
+            self.type_stack.pop();
+        }
+
+        let global = self.find_global(name)?;
+        match global.value_type {
+            ValueType::Function(f) => {
+                if f.return_type != ValueType::Unit {
+                    self.type_stack.push(Variable {
+                        value_type: f.return_type.clone(),
+                        read_only: true
+                    });
+                }
+            },
+            _ => return Err(format!("\"{}\" is not a function", name))
+        }
+        
         Ok(())
     }
 
@@ -1607,6 +1648,22 @@ mod test {
         let mut compiler = Compiler::new();
         assert!({
             compiler.compile(&mut table, "fn test() { test(); }").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn fib() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "
+                fn fib(i: int) -> int {
+                    if i <= 1 {
+                        return i;
+                    }
+                    return fib(i - 1) + fib(i - 2);
+                }").unwrap();
             true
         });
     }

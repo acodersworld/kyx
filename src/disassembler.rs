@@ -182,7 +182,9 @@ impl<'a> Disassembler<'a> {
         let idx = self.code[self.offset];
         self.offset += 1;
 
-        println!("CALL: idx({})", idx);
+        let arity = self.code[self.offset];
+        self.offset += 1;
+        println!("CALL: idx({}) arity({})", idx, arity);
     }
 
 }
