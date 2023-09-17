@@ -194,10 +194,20 @@ impl Compiler {
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn clear_stack(&mut self, chunk: &mut Chunk) {
         let pop_count = self.type_stack.len();
-        self.type_stack.clear();
+        if pop_count == 1 && self.type_stack.last().unwrap().value_type == ValueType::Unit {
+            // This will happen when a function returns no values. Since it does not return any values
+            // no pop instruction should be emitted.
+            //
+            // Unit is on the type stack so types can still be validated, eg. 
+            // let a = func(); 
+            // where func does not return a value.
+        }
+        else {
+            self.type_stack.clear();
 
-        for _ in 0..pop_count {
-            chunk.code.push(opcode::POP)
+            for _ in 0..pop_count {
+                chunk.code.push(opcode::POP)
+            }
         }
     }
 
@@ -595,7 +605,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let function_type = FunctionType{
             return_type: return_type.clone(),
-            parameters: Vec::new()
+            parameters
         };
 
         self.globals.insert(function_name.to_string(), Variable {
@@ -1344,21 +1354,23 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn call(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
         let stack_len = self.type_stack.len();
 
-        let mut arity = 0;
+        let mut argument_types: Vec<ValueType> = Vec::new();
         if !self.scanner.match_token(Token::RightParen)? {
             self.expression(chunk)?;
+            argument_types.push(self.type_stack.last().unwrap().value_type.clone());
 
-            arity = 1;
             while !self.scanner.match_token(Token::RightParen)? {
                 self.consume(Token::Comma)?;
                 self.expression(chunk)?;
-                arity += 1;
+                argument_types.push(self.type_stack.last().unwrap().value_type.clone());
             }
         }
 
+        let argument_count = argument_types.len();
+
         chunk.write_byte(opcode::CALL);
         chunk.write_byte(self.data_section.create_constant_str(name));
-        chunk.write_byte(arity);
+        chunk.write_byte(argument_count as u8);
 
         // the arguments get moved to frame locals
         while self.type_stack.len() > stack_len {
@@ -1368,12 +1380,21 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let global = self.find_global(name)?;
         match global.value_type {
             ValueType::Function(f) => {
-                if f.return_type != ValueType::Unit {
-                    self.type_stack.push(Variable {
-                        value_type: f.return_type.clone(),
-                        read_only: true
-                    });
+                let arity = f.parameters.len();
+                if argument_count as usize != arity {
+                    return Err(format!("Unexpected number of arguments to function call. Expected {}, got {}", arity, argument_count));
                 }
+
+                for (idx, pair) in std::iter::zip(&argument_types, &f.parameters).enumerate() {
+                    if pair.0 != pair.1 {
+                        return Err(format!("Function call has incorrect argument type. Argument {}, Expected {}, got {}", idx+1, pair.1, pair.0));
+                    }
+                }
+
+                self.type_stack.push(Variable {
+                    value_type: f.return_type.clone(),
+                    read_only: true
+                });
             },
             _ => return Err(format!("\"{}\" is not a function", name))
         }
@@ -1775,6 +1796,28 @@ mod test {
             compiler.compile(&mut table, "fn test(a: int, b: float, c: string) {} test(1, 1.2, \"hello\");").unwrap();
             true
         });
+    }
+
+    #[test]
+    fn function_wrong_argument_count() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!(compiler.compile(&mut table, 
+                "
+                fn test() {}
+                test(1);
+                ").is_err());
+    }
+
+    #[test]
+    fn function_wrong_argument_type() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!(compiler.compile(&mut table, 
+                "
+                fn test(a: string) {}
+                test(1);
+                ").is_err());
     }
 
     #[test]
