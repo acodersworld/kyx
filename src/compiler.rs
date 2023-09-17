@@ -38,7 +38,9 @@ use itertools::Itertools;
                 parameter_list -> parameter? ("," parameter)*
            return_stmt -> "return" expression?
            enum_definition -> "enum" identifier ":" type "{" enum_value* "}"
-                enum_value = STRING ("=" literal)? ","?
+                enum_value -> identifier ("=" literal)? ","?
+           struct_definition -> "struct" identifier "{" member* "}"
+                member -> identifier ":" type ","
 
    EXPRESSIONS:
        expression -> assignment |
@@ -84,7 +86,18 @@ enum EnumValue {
 #[derive(Debug, PartialEq, Clone)]
 struct EnumType {
     base_type: ValueType,
-    values: HashMap<String, EnumValue>,
+    members: HashMap<String, EnumValue>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+struct StructType {
+    members: Vec<ValueType>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+enum UserType {
+    Enum(Rc<EnumType>),
+    Struct(Rc<StructType>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -98,6 +111,7 @@ enum ValueType {
     HashMap(Rc<(ValueType, ValueType)>),
     Function(Rc<FunctionType>),
     Enum(Rc<EnumType>),
+    Struct(Rc<StructType>),
 }
 
 impl ValueType {
@@ -126,7 +140,10 @@ impl fmt::Display for ValueType {
                 format!("fn({}) -> {}", parameters, f.return_type)
             },
             Self::Enum(e) => {
-                format!("enum {:?}", e.values)
+                format!("enum {:?}", e.members)
+            },
+            Self::Struct(s) => {
+                format!("struct {:?}", s.members)
             }
         };
 
@@ -169,7 +186,7 @@ pub struct SrcCompiler<'a, T> {
     unpatched_break_offsets: Vec<usize>,
     is_in_loop: bool,
     function_chunks: HashMap<String, Chunk>,
-    enum_types: HashMap<String, Rc<EnumType>>
+    user_types: HashMap<String, UserType>
 }
 
 impl Compiler {
@@ -193,7 +210,7 @@ impl Compiler {
             unpatched_break_offsets: Vec::new(),
             is_in_loop: false,
             function_chunks: HashMap::new(),
-            enum_types: HashMap::new()
+            user_types: HashMap::new()
         };
 
         let mut chunk = Chunk::new();
@@ -241,6 +258,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
             else if self.scanner.match_token(Token::Enum)? {
                 self.enum_definition()?;
+            }
+            else if self.scanner.match_token(Token::Struct)? {
+                self.struct_definition()?;
             }
             else {
                 self.rule(chunk)?;
@@ -292,13 +312,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut enum_type = EnumType {
             base_type: enum_base_type.clone(),
-            values: HashMap::new()
+            members: HashMap::new()
         };
 
         while !self.scanner.match_token(Token::RightBrace)? {
-            let value_name = match self.scanner.scan_token()? {
+            let member_name = match self.scanner.scan_token()? {
                 Token::Identifier(s) => s,
-                x => return Err(format!("Expected name for enum value. Got {:?}", x))
+                x => return Err(format!("Expected name for enum member. Got {:?}", x))
             };
 
             self.consume(Token::Equal)?;
@@ -325,16 +345,37 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 _ => return Err(format!("Expected name for enum"))
             };
 
-            if enum_type.values.insert(value_name.to_string(), enum_value).is_some() {
-                return Err(format!("{} already defined in enum {}", value_name, enum_name));
+            if enum_type.members.insert(member_name.to_string(), enum_value).is_some() {
+                return Err(format!("{} already defined in enum {}", member_name, enum_name));
             }
 
             self.consume(Token::Comma)?;
         }
 
         let enum_type = Rc::new(enum_type);
-        self.enum_types.insert(enum_name.to_string(), enum_type.clone());
+        self.user_types.insert(enum_name.to_string(), UserType::Enum(enum_type.clone()));
         Ok(ValueType::Enum(enum_type))
+    }
+
+    fn struct_definition(&mut self) -> Result<(), String> {
+        let struct_name = match self.scanner.scan_token()? {
+            Token::Identifier(s) => s,
+            x => return Err(format!("Expected name for struct. Got {:?}", x))
+        };
+
+        self.consume(Token::LeftBrace)?;
+        while !self.scanner.match_token(Token::RightBrace)? {
+            let member_name = match self.scanner.scan_token()? {
+                Token::Identifier(s) => s,
+                x => return Err(format!("Expected name for struct member. Got {:?}", x))
+            };
+
+            self.consume(Token::Colon)?;
+            self.parse_type()?;
+            self.consume(Token::Comma)?;
+        }
+
+        Ok(())
     }
 
     fn try_statement(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
@@ -517,8 +558,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::TypeString => ValueType::Str,
             Token::LeftBracket => self.parse_type_vec_or_map()?,
             Token::Identifier(i) => {
-                if let Some(e) = self.enum_types.get(i) {
-                    return Ok(ValueType::Enum(e.clone()));
+                if let Some(ut) = self.user_types.get(i) {
+                    match ut {
+                        UserType::Enum(e) => return Ok(ValueType::Enum(e.clone())),
+                        UserType::Struct(s) => return Ok(ValueType::Struct(s.clone()))
+                    }
                 }
 
                 return Err(format!("Expected type but got {}", i));
@@ -1161,7 +1205,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
                 ValueType::HashMap(_) => return Err("Cannot use comparison with hash map".to_owned()),
                 ValueType::Function(_) => return Err("Cannot use comparison with function".to_owned()),
-                ValueType::Enum(_) => return Err("Cannot use comparison with enum".to_owned()) // FIXME
+                ValueType::Enum(_) => return Err("Cannot use comparison with enum".to_owned()), // FIXME
+                ValueType::Struct(_) => return Err("Cannot use comparison with struct".to_owned()) // FIXME
             };
         }
 
@@ -1498,7 +1543,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             x => return Err(format!("Expected enum value name. Got {:?}", x))
         };
 
-        let enum_value = match enum_type.values.get(enum_value_name) {
+        let enum_value = match enum_type.members.get(enum_value_name) {
             Some(v) => v,
             None => return Err(format!("Enum value {} does not exist in {}", enum_value_name, enum_name))
         };
@@ -1518,8 +1563,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let t = self.scanner.scan_token();
         match t {
             Ok(Token::Identifier(name)) => {
-                if let Some(e) = self.enum_types.get(name) {
-                    self.enum_value(chunk, name, e.clone())?;
+                if let Some(ut) = self.user_types.get(name) {
+                    match ut {
+                        UserType::Enum(e) => self.enum_value(chunk, name, e.clone())?,
+                        UserType::Struct(_) => return Err(format!("Cannot use struct as primary expression"))
+                    }
                 }
                 else {
                     self.identifier(chunk, name)?;
@@ -1984,6 +2032,33 @@ mod test {
 
                 fn test(i: int) {}
                 test(Enum.a);
+                ").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_empty_struct() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table, "struct Struct {}").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_struct_with_fields() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "struct Struct
+                {
+                    i: int,
+                    f: float,
+                    s: string,
+                }
                 ").unwrap();
             true
         });
