@@ -100,6 +100,17 @@ enum ValueType {
     Enum(Rc<EnumType>),
 }
 
+impl ValueType {
+    fn can_coerce_to(&self, to: &ValueType) -> bool {
+        if let ValueType::Enum(e) = self {
+            *to == e.base_type
+        }
+        else {
+            false
+        }
+    }
+}
+
 impl fmt::Display for ValueType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
@@ -679,17 +690,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         let expr_type = self.type_stack.pop().unwrap().value_type;
-        if var_type != expr_type {
-            let can_enum_coerce = if let ValueType::Enum(e) = &expr_type {
-                    var_type == e.base_type
-                }
-                else {
-                    false
-                };
-
-            if !can_enum_coerce {
-                return Err(format!("Expected type {}, got {}", var_type, expr_type));
-            }
+        if var_type != expr_type && !expr_type.can_coerce_to(&var_type) {
+            return Err(format!("Expected type {}, got {}", var_type, expr_type));
         }
 
         if self.stack_frames.is_empty() {
@@ -1386,7 +1388,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 for (idx, pair) in std::iter::zip(&argument_types, &f.parameters).enumerate() {
-                    if pair.0 != pair.1 {
+                    if pair.0 != pair.1 && !pair.0.can_coerce_to(pair.1) {
                         return Err(format!("Function call has incorrect argument type. Argument {}, Expected {}, got {}", idx+1, pair.1, pair.0));
                     }
                 }
@@ -1979,6 +1981,9 @@ mod test {
                 }
 
                 let e: int = Enum.a;
+
+                fn test(i: int) {}
+                test(Enum.a);
                 ").unwrap();
             true
         });
