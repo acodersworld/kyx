@@ -4,7 +4,7 @@ use crate::opcode;
 use crate::scanner::{Scanner, Token};
 use crate::var_len_int;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 use std::vec::Vec;
@@ -91,7 +91,19 @@ struct EnumType {
 
 #[derive(Debug, PartialEq, Clone)]
 struct StructType {
-    members: Vec<ValueType>,
+    members: Vec<(String, ValueType)>,
+}
+
+impl StructType {
+    fn get_member_idx(&self, name: &str) -> Option<usize> {
+        for (idx, member) in self.members.iter().enumerate() {
+            if member.0 == name {
+                return Some(idx);
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -363,6 +375,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             x => return Err(format!("Expected name for struct. Got {:?}", x))
         };
 
+        if self.user_types.contains_key(struct_name) {
+            return Err(format!("{} already defined", struct_name));
+        }
+
+        let mut members = HashMap::new();
+
         self.consume(Token::LeftBrace)?;
         while !self.scanner.match_token(Token::RightBrace)? {
             let member_name = match self.scanner.scan_token()? {
@@ -371,10 +389,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             };
 
             self.consume(Token::Colon)?;
-            self.parse_type()?;
+            let member_type = self.parse_type()?;
             self.consume(Token::Comma)?;
+
+            if members.insert(member_name.to_string(), member_type).is_some() {
+                return Err(format!("Member {} already defined in struct {}", member_name, struct_name));
+            }
         }
 
+        self.user_types.insert(struct_name.to_string(), 
+            UserType::Struct(
+                Rc::new(
+                    StructType
+                    {
+                        members: members.into_iter().map(|(name, value_type)| (name, value_type)).collect()
+                    }
+                )
+            )
+        );
         Ok(())
     }
 
@@ -1559,6 +1591,37 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn struct_construction(&mut self, chunk: &mut Chunk, struct_name: &str, struct_type: Rc<StructType>) -> Result<(), String> {
+        self.consume(Token::LeftBrace)?;
+
+        let mut members = HashSet::new();
+        while !self.scanner.match_token(Token::RightBrace)? {
+            let member_name = match self.scanner.scan_token()? {
+                Token::Identifier(v) => v,
+                x => return Err(format!("Expected struct member name. Got {:?}", x))
+            };
+
+            if !members.insert(member_name) {
+                return Err(format!("Struct {} member {} assigned more than once", struct_name, member_name));
+            }
+
+            let _idx = match struct_type.get_member_idx(member_name) {
+                Some(i) => i,
+                None => return Err(format!("{} is not a member of struct {}", member_name, struct_name))
+            };
+
+            self.consume(Token::Equal)?;
+            self.expression(chunk)?;
+            self.consume(Token::Comma)?;
+        }
+
+        self.type_stack.push(Variable {
+            value_type: ValueType::Struct(struct_type),
+            read_only: false
+        });
+        Ok(())
+    }
+
     fn primary(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let t = self.scanner.scan_token();
         match t {
@@ -1566,7 +1629,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 if let Some(ut) = self.user_types.get(name) {
                     match ut {
                         UserType::Enum(e) => self.enum_value(chunk, name, e.clone())?,
-                        UserType::Struct(_) => return Err(format!("Cannot use struct as primary expression"))
+                        UserType::Struct(s) => self.struct_construction(chunk, name, s.clone())?
                     }
                 }
                 else {
@@ -2059,6 +2122,30 @@ mod test {
                     f: float,
                     s: string,
                 }
+                ").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_struct_construct() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "struct Struct
+                {
+                    i: int,
+                    f: float,
+                    s: string,
+                }
+
+                let s: Struct = Struct {
+                    i = 0,
+                    f = 2.3,
+                    s = \"hello world\",
+                };
+
                 ").unwrap();
             true
         });
