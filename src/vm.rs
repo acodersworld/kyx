@@ -202,11 +202,9 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_STRING => self.push_constant_string(&mut frame_stack.top),
                 opcode::CONSTANT_BOOL => self.push_constant_bool(&mut frame_stack.top),
                 opcode::CREATE_VEC => self.create_vec(&mut frame_stack.top),
-                opcode::INDEX_VEC => self.index_vec(),
-                opcode::SET_VEC => self.set_vec(),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(&mut frame_stack.top),
-                opcode::INDEX_HASH_MAP => self.index_hash_map(),
-                opcode::SET_HASH_MAP => self.set_hash_map(),
+                opcode::GET_INDEX => self.get_index(),
+                opcode::SET_INDEX => self.set_index(),
                 opcode::SET_GLOBAL => self.set_global(&mut frame_stack.top),
                 opcode::SET_LOCAL => self.set_local(&mut frame_stack.top),
                 opcode::PUSH_GLOBAL => self.push_global(&mut frame_stack.top),
@@ -368,36 +366,49 @@ impl<'printer> VM<'printer> {
         self.value_stack.push(Value::Vector(ptr));
     }
 
-    fn index_vec(&mut self) {
+    fn get_index(&mut self) {
         assert!(self.value_stack.len() > 1);
-        let index = match self.value_stack.pop().unwrap() {
-            Value::Integer(i) => i as usize,
-            _ => panic!("Bad index value"),
-        };
+        let index = self.value_stack.pop().unwrap();
 
-        let vector = match self.value_stack.pop().unwrap() {
-            Value::Vector(v) => unsafe { v.as_ref() },
-            _ => panic!("Not a vector"),
+        match self.value_stack.pop().unwrap() {
+            Value::HashMap(h) => {
+                let hash_map = unsafe { h.as_ref() };
+                self.value_stack.push(hash_map[&index]);
+            },
+            Value::Vector(v) => {
+                let vector = unsafe { v.as_ref() };
+                let index = match index {
+                    Value::Integer(i) => i as usize,
+                    _ => panic!("Bad index value"),
+                };
+                self.value_stack.push(vector[index]);
+            },
+            _ => panic!("Not a hash map"),
         };
-
-        self.value_stack.push(vector[index]);
     }
 
-    fn set_vec(&mut self) {
+    fn set_index(&mut self) {
         assert!(self.value_stack.len() > 2);
         let new_value = self.value_stack.pop().unwrap();
-        let index = match self.value_stack.pop().unwrap() {
-            Value::Integer(i) => i as usize,
-            _ => panic!("Bad index value"),
-        };
-
-        let vector = match self.value_stack.pop().unwrap() {
-            Value::Vector(mut v) => unsafe { v.as_mut() },
+        let index = self.value_stack.pop().unwrap();
+        match self.value_stack.pop().unwrap() {
+            Value::HashMap(mut h) => {
+                let hash_map = unsafe { h.as_mut() };
+                hash_map.insert(index, new_value);
+                self.value_stack.push(new_value);
+            },
+            Value::Vector(mut v) => {
+                let vector = unsafe { v.as_mut() };
+                let index = match index {
+                    Value::Integer(i) => i as usize,
+                    _ => panic!("Bad index value"),
+                };
+                vector[index] = new_value;
+                self.value_stack.push(new_value);
+            }
             _ => panic!("Not a vector"),
         };
 
-        vector[index] = new_value;
-        self.value_stack.push(new_value);
     }
 
     fn create_hash_map(&mut self, frame: &mut Frame) {
@@ -417,31 +428,6 @@ impl<'printer> VM<'printer> {
         self.objects.push(GcValue::HashMap(hash_map_val));
 
         self.value_stack.push(Value::HashMap(ptr));
-    }
-
-    fn index_hash_map(&mut self) {
-        assert!(self.value_stack.len() > 1);
-        let index = self.value_stack.pop().unwrap();
-
-        let hash_map = match self.value_stack.pop().unwrap() {
-            Value::HashMap(h) => unsafe { h.as_ref() },
-            _ => panic!("Not a hash map"),
-        };
-
-        self.value_stack.push(hash_map[&index]);
-    }
-
-    fn set_hash_map(&mut self) {
-        assert!(self.value_stack.len() > 2);
-        let new_value = self.value_stack.pop().unwrap();
-        let index = self.value_stack.pop().unwrap();
-        let hash_map = match self.value_stack.pop().unwrap() {
-            Value::HashMap(mut h) => unsafe { h.as_mut() },
-            _ => panic!("Not a vector"),
-        };
-
-        hash_map.insert(index, new_value);
-        self.value_stack.push(new_value);
     }
 
     fn set_global(&mut self, frame: &mut Frame) {

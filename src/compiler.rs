@@ -1284,9 +1284,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ));
             }
 
-            chunk.write_byte(opcode::SET_VEC);
+            chunk.write_byte(opcode::SET_INDEX);
         } else {
-            chunk.write_byte(opcode::INDEX_VEC);
+            chunk.write_byte(opcode::GET_INDEX);
         }
 
         self.type_stack.push(Variable {
@@ -1325,9 +1325,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ));
             }
 
-            chunk.write_byte(opcode::SET_HASH_MAP);
+            chunk.write_byte(opcode::SET_INDEX);
         } else {
-            chunk.write_byte(opcode::INDEX_HASH_MAP);
+            chunk.write_byte(opcode::GET_INDEX);
         }
 
         self.type_stack.push(Variable {

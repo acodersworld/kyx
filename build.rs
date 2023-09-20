@@ -8,12 +8,10 @@ const OPCODES: &[&str] = &[
     "CONSTANT_BOOL",
     //
     "CREATE_VEC",
-    "INDEX_VEC",
-    "SET_VEC",
-    //
     "CREATE_HASH_MAP",
-    "INDEX_HASH_MAP",
-    "SET_HASH_MAP",
+    //
+    "GET_INDEX",
+    "SET_INDEX",
     //
     "ADD",
     "SUB",
