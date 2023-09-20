@@ -9,7 +9,7 @@ use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
 use crate::opcode;
-use crate::value::{GcValue, StringValue, FunctionValue, Value};
+use crate::value::{GcValue, StructValue, StringValue, FunctionValue, Value};
 use crate::var_len_int;
 use crate::chunk::Chunk;
 
@@ -110,6 +110,7 @@ fn is_truthy(value: &Value) -> bool {
         Value::Vector(v) => unsafe { v.as_ref().len() > 0 },
         Value::HashMap(h) => unsafe { h.as_ref().len() > 0 },
         Value::Function(_) => true,
+        Value::Struct(_) => true,
     }
 }
 
@@ -203,8 +204,11 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_BOOL => self.push_constant_bool(&mut frame_stack.top),
                 opcode::CREATE_VEC => self.create_vec(&mut frame_stack.top),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(&mut frame_stack.top),
+                opcode::CREATE_STRUCT => self.create_struct(&mut frame_stack.top),
                 opcode::GET_INDEX => self.get_index(),
                 opcode::SET_INDEX => self.set_index(),
+                opcode::GET_FIELD => self.get_field(&mut frame_stack.top),
+                opcode::SET_FIELD => self.set_field(&mut frame_stack.top),
                 opcode::SET_GLOBAL => self.set_global(&mut frame_stack.top),
                 opcode::SET_LOCAL => self.set_local(&mut frame_stack.top),
                 opcode::PUSH_GLOBAL => self.push_global(&mut frame_stack.top),
@@ -411,6 +415,34 @@ impl<'printer> VM<'printer> {
 
     }
 
+    fn get_field(&mut self, frame: &mut Frame) {
+        assert!(self.value_stack.len() > 0);
+        let index = frame.next_code().unwrap() as usize;
+
+        match self.value_stack.pop().unwrap() {
+            Value::Struct(s) => {
+                let struct_value = unsafe { s.as_ref() };
+                self.value_stack.push(struct_value.members[index]);
+            },
+            _ => panic!("Not a struct"),
+        };
+    }
+
+    fn set_field(&mut self, frame: &mut Frame) {
+        assert!(self.value_stack.len() > 1);
+        let index = frame.next_code().unwrap() as usize;
+
+        let value = self.value_stack.pop().unwrap();
+
+        match self.value_stack.pop().unwrap() {
+            Value::Struct(mut s) => {
+                let struct_value = unsafe { s.as_mut() };
+                struct_value.members[index] = value;
+            },
+            _ => panic!("Not a struct"),
+        };
+    }
+
     fn create_hash_map(&mut self, frame: &mut Frame) {
         let arg_count = frame.next_code().unwrap() as usize * 2;
 
@@ -428,6 +460,27 @@ impl<'printer> VM<'printer> {
         self.objects.push(GcValue::HashMap(hash_map_val));
 
         self.value_stack.push(Value::HashMap(ptr));
+    }
+
+    fn create_struct(&mut self, frame: &mut Frame) {
+        let member_count = frame.next_code().unwrap() as usize;
+
+        let mut members = vec![Value::Integer(0); member_count];
+
+        for _ in 0..member_count {
+            let member_idx = frame.next_code().unwrap() as usize;
+            let value = self.value_stack.pop().unwrap();
+
+            members[member_idx] = value;
+        }
+
+        let mut struct_val = Box::new(StructValue {
+            members
+        });
+        let ptr = unsafe { NonNull::new_unchecked(struct_val.as_mut() as *mut _) };
+        self.objects.push(GcValue::Struct(struct_val));
+
+        self.value_stack.push(Value::Struct(ptr));
     }
 
     fn set_global(&mut self, frame: &mut Frame) {
@@ -517,6 +570,7 @@ impl<'printer> VM<'printer> {
             Value::Vector(v) => Self::format_vec(unsafe { v.as_ref() }),
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
             Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
+            Value::Struct(s) => format!("struct<0x{:x}>", s.as_ptr() as usize),
         }
     }
 
@@ -1652,5 +1706,88 @@ mod test {
             assert_eq!(printer.strings[0], "hello");
             assert_eq!(printer.strings[1], "world");
         }
+    }
+
+    #[test]
+    fn test_struct_get_fields() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        {
+            let src = "
+                struct Struct
+                {
+                    i: int,
+                    f: float,
+                    s: string,
+                }
+
+                let s: Struct = Struct {
+                    f = 2.3,
+                    i = 1,
+                    s = \"hello world\",
+                };";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        {
+            let src = "
+                print s.s;
+                print s.f;
+                print s.i;
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "hello world");
+        assert_eq!(printer.strings[1], "2.3");
+        assert_eq!(printer.strings[2], "1");
+    }
+
+    #[test]
+    fn test_struct_set_fields() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        {
+            let src = "
+                struct Struct
+                {
+                    i: int,
+                    f: float,
+                    s: string,
+                }
+
+                let mut s: Struct = Struct {
+                    f = 2.3,
+                    i = 1,
+                    s = \"hello world\",
+                };";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        {
+            let src = "
+                s.s = \"new string\";
+                s.f = 3.142;
+                s.i = 5;
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        {
+            let src = "
+                print s.s;
+                print s.f;
+                print s.i;
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "new string");
+        assert_eq!(printer.strings[1], "3.142");
+        assert_eq!(printer.strings[2], "5");
     }
 }

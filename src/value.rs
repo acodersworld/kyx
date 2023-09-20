@@ -30,6 +30,11 @@ pub type VectorValue = Vec<Value>;
 pub type HashMapValue = HashMap<Value, Value>;
 
 #[derive(Debug)]
+pub struct StructValue {
+    pub members: Vec<Value>
+}
+
+#[derive(Debug)]
 pub enum GcValue {
     //    Float(f32),
     //    Integer(i32),
@@ -37,6 +42,7 @@ pub enum GcValue {
     Vector(Box<VectorValue>),
     HashMap(Box<HashMapValue>),
     Function(Box<FunctionValue>),
+    Struct(Box<StructValue>),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
@@ -48,6 +54,7 @@ pub enum Value {
     Vector(NonNull<VectorValue>),
     HashMap(NonNull<HashMapValue>),
     Function(NonNull<FunctionValue>),
+    Struct(NonNull<StructValue>),
 }
 
 impl Hash for Value {
@@ -60,6 +67,7 @@ impl Hash for Value {
             Value::Vector(v) => v.hash(state),
             Value::HashMap(h) => h.hash(state),
             Value::Function(f) => f.hash(state),
+            Value::Struct(f) => f.hash(state),
         }
     }
 }

@@ -48,6 +48,9 @@ use itertools::Itertools;
                      if_expr |
                      vector_constructor |
                      hash_map_constructor |
+                     struct_constructor |
+                     index |
+                     field_index |
                      function_call |
                      read_expr
 
@@ -56,10 +59,14 @@ use itertools::Itertools;
             vector_constructor -> vec<type>{ expression? ("," expression)* }
             hash_map_constructor -> hash_map<type, type>{ hash_map_argument? ("," hash_map_argument)* }
                 hash_map_argument -> expression ":" expression
+            hash_map_constructor -> identifier { struct_member_init }
+                struct_member_init -> identifier "=" expression ","
             function_call -> identifier "(" argument_list ")"
                 argument_list -> identifier? ("," identifier)*
             read_expr -> "read" type
             enum_value -> identifier "." identifier
+            index -> expression "[" expression "]"
+            field_index -> expression "." identifier
 
             assignment -> identifier = expression | equality
             equality -> comparison (("!=" | "==") comparison)?
@@ -430,6 +437,66 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(true)
     }
 
+    fn match_struct_type(&mut self) -> Result<Option<Rc<StructType>>, String> {
+        if let Token::Identifier(i) = self.scanner.peek_token()? {
+            let user_type = match self.user_types.get(i) {
+                Some(ut) => ut,
+                None => return Ok(None)
+            };
+
+            if let UserType::Struct(s) = user_type {
+                self.scanner.scan_token()?; // eat struct name
+                return Ok(Some(s.clone()));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn try_field(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
+        let mut is_field = false;
+        while self.scanner.match_token(Token::Dot)? {
+            is_field = true;
+            let variable = self.type_stack.last().unwrap();
+            let struct_type = match &variable.value_type {
+                    ValueType::Struct(s) => s,
+                    x => return Err(format!("Only structs have members, got {}", x))
+                };
+
+            let member_name = match self.scanner.scan_token()? {
+                Token::Identifier(i) => i,
+                x => return Err(format!("Expected member identifier after '.', got {}", x))
+            };
+
+            let member_index = match struct_type.get_member_idx(member_name) {
+                Some(i) => i,
+                None => return Err(format!("Struct does not have member named '{}'", member_name))
+            };
+
+            if self.scanner.match_token(Token::Equal)? {
+                if variable.read_only {
+                    return Err(format!("Cannot set read only field {}", member_name))
+                }
+
+                self.expression(chunk)?;
+                chunk.write_byte(opcode::SET_FIELD);
+                chunk.write_byte(member_index as u8);
+                self.type_stack.drain(self.type_stack.len() - 2..);
+                break;
+            }
+            else {
+                chunk.write_byte(opcode::GET_FIELD);
+                chunk.write_byte(member_index as u8);
+                self.type_stack.push(Variable {
+                    value_type: struct_type.members[member_index].1.clone(),
+                    read_only: variable.read_only
+                });
+            }
+        }
+
+        Ok(is_field)
+    }
+
     fn expression(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
         let mut is_block = false;
         if self.scanner.match_token(Token::LeftBrace)? {
@@ -444,8 +511,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.vector_constructor(chunk)?;
         } else if self.scanner.match_token(Token::HashMap)? {
             self.hash_map_constructor(chunk)?;
+        } else if let Ok(Some(struct_type)) = self.match_struct_type() {
+            self.struct_constructor(struct_type, chunk)?;
         } else {
             self.equality(chunk)?;
+        }
+
+        if self.try_field(chunk)? {
+            return Ok(false);
         }
 
         Ok(is_block)
@@ -498,6 +571,51 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.type_stack.push(Variable {
             value_type: ValueType::Vector(Rc::new(elem_type)),
             read_only: false,
+        });
+        Ok(())
+    }
+
+    fn struct_constructor(&mut self, struct_type: Rc<StructType>, chunk: &mut Chunk) -> Result<(), String> {
+        //    hash_map_constructor -> identifier { struct_member_init }
+        //        struct_member_init -> identifier "=" expression ","
+        self.consume(Token::LeftBrace)?;
+
+        let mut unset_members: HashSet<String> = struct_type.members.iter().map(|(member_name, _)| member_name.to_string()).collect();
+        let mut member_indices = Vec::new();
+
+        while !self.scanner.match_token(Token::RightBrace)? {
+            let member_name = match self.scanner.scan_token()? {
+                Token::Identifier(i) => i,
+                x => return Err(format!("Expected member name, got {}", x))
+            };
+
+            let member_index = match struct_type.get_member_idx(member_name) {
+                Some(i) => i,
+                None => return Err(format!("{} is not a member of struct", member_name))
+            };
+
+            self.consume(Token::Equal)?;
+            self.expression(chunk)?;
+            self.consume(Token::Comma)?;
+            member_indices.push(member_index as u8);
+
+            unset_members.remove(member_name);
+        }
+
+        if !unset_members.is_empty() {
+            return Err(format!("Members {:?} not initialised", unset_members));
+        }
+
+        chunk.write_byte(opcode::CREATE_STRUCT);
+        chunk.write_byte(struct_type.members.len() as u8);
+        for idx in member_indices.iter().rev() {
+            chunk.write_byte(*idx);
+        }
+
+        self.type_stack.drain(self.type_stack.len() - member_indices.len()..);
+        self.type_stack.push(Variable {
+            value_type: ValueType::Struct(struct_type),
+            read_only: false
         });
         Ok(())
     }
@@ -2146,6 +2264,69 @@ mod test {
                     s = \"hello world\",
                 };
 
+                ").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_struct_read_only_field() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "struct Struct
+                {
+                    i: int,
+                    f: float,
+                    s: string,
+                }
+
+                let s: Struct = Struct {
+                    i = 0,
+                    f = 2.3,
+                    s = \"hello world\",
+                };
+
+                ").unwrap();
+            true
+        });
+
+        assert!(
+            compiler.compile(&mut table,
+                "
+                    s.i = 10;
+                ").is_err()
+        );
+    }
+
+    #[test]
+    fn test_struct_mutable_field() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "struct Struct
+                {
+                    i: int,
+                    f: float,
+                    s: string,
+                }
+
+                let mut s: Struct = Struct {
+                    i = 0,
+                    f = 2.3,
+                    s = \"hello world\",
+                };
+
+                ").unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table,
+                "
+                    s.i = 10;
                 ").unwrap();
             true
         });

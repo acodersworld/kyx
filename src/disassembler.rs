@@ -26,8 +26,11 @@ impl<'a> Disassembler<'a> {
                 opcode::CONSTANT_BOOL => self.constant_bool_instruction(),
                 opcode::CREATE_VEC => self.create_vec(),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(),
+                opcode::CREATE_STRUCT => self.create_struct(),
                 opcode::GET_INDEX => self.simple_instruction("get index"),
                 opcode::SET_INDEX => self.simple_instruction("set vec"),
+                opcode::GET_FIELD => self.get_field(),
+                opcode::SET_FIELD => self.set_field(),
                 opcode::SET_GLOBAL => self.set_global(),
                 opcode::SET_LOCAL => self.set_local(),
                 opcode::PUSH_GLOBAL => self.push_global(),
@@ -144,11 +147,32 @@ impl<'a> Disassembler<'a> {
         println!("SET LOCAL: idx({})", idx);
     }
 
+    fn get_field(&mut self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("GET FIELD: idx({})", idx);
+    }
+
+    fn set_field(&mut self) {
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("SET FIELD: idx({})", idx);
+    }
+
     fn create_hash_map(&mut self) {
         let arg_count = self.code[self.offset];
         self.offset += 1;
 
         println!("CREATE HASH MAP: {}", arg_count);
+    }
+
+    fn create_struct(&mut self) {
+        let arg_count = self.code[self.offset];
+        self.offset += 1 + arg_count as usize;
+
+        println!("CREATE STRUCT: {}", arg_count);
     }
 
     fn push_global(&mut self) {
