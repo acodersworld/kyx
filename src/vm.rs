@@ -1790,4 +1790,65 @@ mod test {
         assert_eq!(printer.strings[1], "3.142");
         assert_eq!(printer.strings[2], "5");
     }
+
+    #[test]
+    fn test_struct_nested_fields() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        {
+            let src = "
+                struct Nested {
+                    inner: string,
+                }
+
+                struct Struct
+                {
+                    nested: Nested,
+                }
+
+                let mut s: Struct = Struct {
+                    nested = Nested {
+                        inner = \"Nested!\",
+                    },
+                };";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        {
+            let src = "
+                print s.nested.inner;
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        {
+            let src = "
+                s.nested.inner = \"new string\";
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        {
+            let src = "
+                print s.nested.inner;
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        {
+            let src = "
+                s.nested = Nested {
+                    inner = \"New instance\",
+                };
+                print s.nested.inner;
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+        }
+
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "Nested!");
+        assert_eq!(printer.strings[1], "new string");
+        assert_eq!(printer.strings[2], "New instance");
+    }
 }

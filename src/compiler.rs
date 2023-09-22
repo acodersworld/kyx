@@ -194,6 +194,7 @@ struct StackFrame {
 
 pub struct Compiler {
     globals: HashMap<String, Variable>,
+    user_types: HashMap<String, UserType>
 }
 
 pub struct SrcCompiler<'a, T> {
@@ -205,13 +206,14 @@ pub struct SrcCompiler<'a, T> {
     unpatched_break_offsets: Vec<usize>,
     is_in_loop: bool,
     function_chunks: HashMap<String, Chunk>,
-    user_types: HashMap<String, UserType>
+    user_types: &'a mut HashMap<String, UserType>
 }
 
 impl Compiler {
     pub fn new() -> Compiler {
         Compiler {
             globals: HashMap::new(),
+            user_types: HashMap::new()
         }
     }
 
@@ -229,7 +231,7 @@ impl Compiler {
             unpatched_break_offsets: Vec::new(),
             is_in_loop: false,
             function_chunks: HashMap::new(),
-            user_types: HashMap::new()
+            user_types: &mut self.user_types
         };
 
         let mut chunk = Chunk::new();
@@ -457,7 +459,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let mut is_field = false;
         while self.scanner.match_token(Token::Dot)? {
             is_field = true;
-            let variable = self.type_stack.last().unwrap();
+            let variable = self.type_stack.last().unwrap().clone();
             let struct_type = match &variable.value_type {
                     ValueType::Struct(s) => s,
                     x => return Err(format!("Only structs have members, got {}", x))
@@ -485,6 +487,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 break;
             }
             else {
+                self.type_stack.pop();
                 chunk.write_byte(opcode::GET_FIELD);
                 chunk.write_byte(member_index as u8);
                 self.type_stack.push(Variable {
