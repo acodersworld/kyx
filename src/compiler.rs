@@ -134,9 +134,17 @@ enum ValueType {
 }
 
 impl ValueType {
-    fn can_coerce_to(&self, to: &ValueType) -> bool {
+    fn can_assign(&self, src: &ValueType) -> bool {
+        if self == src {
+            return true;
+        }
+
+        return src.can_coerce_to(self);
+    }
+
+    fn can_coerce_to(&self, src: &ValueType) -> bool {
         if let ValueType::Enum(e) = self {
-            *to == e.base_type
+            *src == e.base_type
         }
         else {
             false
@@ -481,6 +489,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 self.expression(chunk)?;
+
+                let member_type = &struct_type.members[member_index].1;
+                let expr_type = &self.type_stack.last().unwrap().value_type;
+                if !member_type.can_assign(&expr_type) {
+                    return Err(format!("Expected type {}, got {}", member_type, expr_type));
+                }
+
                 chunk.write_byte(opcode::SET_FIELD);
                 chunk.write_byte(member_index as u8);
                 self.type_stack.drain(self.type_stack.len() - 2..);
@@ -887,7 +902,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         let expr_type = self.type_stack.pop().unwrap().value_type;
-        if var_type != expr_type && !expr_type.can_coerce_to(&var_type) {
+        if !var_type.can_assign(&expr_type) {
             return Err(format!("Expected type {}, got {}", var_type, expr_type));
         }
 
@@ -1586,7 +1601,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 for (idx, pair) in std::iter::zip(&argument_types, &f.parameters).enumerate() {
-                    if pair.0 != pair.1 && !pair.0.can_coerce_to(pair.1) {
+                    if !pair.1.can_assign(pair.0) {
                         return Err(format!("Function call has incorrect argument type. Argument {}, Expected {}, got {}", idx+1, pair.1, pair.0));
                     }
                 }
@@ -2333,5 +2348,31 @@ mod test {
                 ").unwrap();
             true
         });
+    }
+
+    #[test]
+    fn test_struct_set_field_wrong_type() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "struct Struct
+                {
+                    i: int,
+                }
+
+                let mut s: Struct = Struct {
+                    i = 0,
+                };
+                ").unwrap();
+            true
+        });
+
+        assert!(
+            compiler.compile(&mut table,
+                "
+                    s.i = 1.5;
+                ").is_err()
+        );
     }
 }
