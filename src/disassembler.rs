@@ -27,6 +27,7 @@ impl<'a> Disassembler<'a> {
                 opcode::CREATE_VEC => self.create_vec(),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(),
                 opcode::CREATE_STRUCT => self.create_struct(),
+                opcode::CREATE_UNION => self.create_union(),
                 opcode::GET_INDEX => self.simple_instruction("get index"),
                 opcode::SET_INDEX => self.simple_instruction("set vec"),
                 opcode::GET_FIELD => self.get_field(),
@@ -173,6 +174,16 @@ impl<'a> Disassembler<'a> {
         self.offset += 1 + arg_count as usize;
 
         println!("CREATE STRUCT: {}", arg_count);
+    }
+
+    fn create_union(&mut self) {
+        let member_count = self.code[self.offset];
+        self.offset += 1;
+
+        let idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CREATE UNION: {} {}", member_count, idx);
     }
 
     fn push_global(&mut self) {

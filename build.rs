@@ -10,6 +10,7 @@ const OPCODES: &[&str] = &[
     "CREATE_VEC",
     "CREATE_HASH_MAP",
     "CREATE_STRUCT",
+    "CREATE_UNION",
     //
     "GET_INDEX",
     "SET_INDEX",

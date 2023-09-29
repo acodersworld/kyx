@@ -9,7 +9,7 @@ use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
 use crate::opcode;
-use crate::value::{GcValue, StructValue, StringValue, FunctionValue, Value};
+use crate::value::{GcValue, StructValue, UnionValue, StringValue, FunctionValue, Value};
 use crate::var_len_int;
 use crate::chunk::Chunk;
 
@@ -111,6 +111,7 @@ fn is_truthy(value: &Value) -> bool {
         Value::HashMap(h) => unsafe { h.as_ref().len() > 0 },
         Value::Function(_) => true,
         Value::Struct(_) => true,
+        Value::Union(_) => true,
     }
 }
 
@@ -205,6 +206,7 @@ impl<'printer> VM<'printer> {
                 opcode::CREATE_VEC => self.create_vec(&mut frame_stack.top),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(&mut frame_stack.top),
                 opcode::CREATE_STRUCT => self.create_struct(&mut frame_stack.top),
+                opcode::CREATE_UNION => self.create_union(&mut frame_stack.top),
                 opcode::GET_INDEX => self.get_index(),
                 opcode::SET_INDEX => self.set_index(),
                 opcode::GET_FIELD => self.get_field(&mut frame_stack.top),
@@ -483,6 +485,27 @@ impl<'printer> VM<'printer> {
         self.value_stack.push(Value::Struct(ptr));
     }
 
+    fn create_union(&mut self, frame: &mut Frame) {
+        let member_count = frame.next_code().unwrap() as usize;
+        let member_idx = frame.next_code().unwrap() as usize;
+
+        let mut members = vec![Value::Integer(0); member_count];
+
+        for idx in (0..member_count).rev() {
+            let value = self.value_stack.pop().unwrap();
+            members[idx] = value;
+        }
+
+        let mut union_val = Box::new(UnionValue {
+            member_idx,
+            members
+        });
+        let ptr = unsafe { NonNull::new_unchecked(union_val.as_mut() as *mut _) };
+        self.objects.push(GcValue::Union(union_val));
+
+        self.value_stack.push(Value::Union(ptr));
+    }
+
     fn set_global(&mut self, frame: &mut Frame) {
         let idx = frame.next_code().unwrap() as usize;
 
@@ -571,6 +594,7 @@ impl<'printer> VM<'printer> {
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
             Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
             Value::Struct(s) => format!("struct<0x{:x}>", s.as_ptr() as usize),
+            Value::Union(u) => format!("union<0x{:x}>", u.as_ptr() as usize),
         }
     }
 
@@ -1851,4 +1875,29 @@ mod test {
         assert_eq!(printer.strings[1], "new string");
         assert_eq!(printer.strings[2], "New instance");
     }
+
+    #[test]
+    fn test_union_constructor() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+                union Union
+                {
+                    I(int), F(float), S(string),
+                }
+
+                let mut u: Union = Union.I(9,);
+                print(u);
+
+                u = Union.S(\"Hello world\",);
+                print(u);
+
+                u = Union.F(3.142,);
+                print(u);
+                ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+    }
+
 }

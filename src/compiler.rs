@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 use std::vec::Vec;
+use std::cell::RefCell;
 use itertools::Itertools;
 
 /*
@@ -27,7 +28,8 @@ use itertools::Itertools;
                       function_definition |
                       print_stmt |
                       return_stmt |
-                      enum_definition
+                      enum_definition |
+                      union_definition
 
            let_decl -> "let" ("mut")? ":" identifier type = expression ";"
            print_stmt -> print expression ";"
@@ -41,6 +43,10 @@ use itertools::Itertools;
                 enum_value -> identifier ("=" literal)? ","?
            struct_definition -> "struct" identifier "{" member* "}"
                 member -> identifier ":" type ","
+           union_definition -> "union" identifier ("<" template_type* ">")? "{" member* "}"
+                template_type -> identifier ","
+                member -> identifier ("(" type ")") ","
+                
 
    EXPRESSIONS:
        expression -> assignment |
@@ -49,6 +55,7 @@ use itertools::Itertools;
                      vector_constructor |
                      hash_map_constructor |
                      struct_constructor |
+                     union_constructor |
                      index |
                      field_index |
                      function_call |
@@ -59,8 +66,10 @@ use itertools::Itertools;
             vector_constructor -> vec<type>{ expression? ("," expression)* }
             hash_map_constructor -> hash_map<type, type>{ hash_map_argument? ("," hash_map_argument)* }
                 hash_map_argument -> expression ":" expression
-            hash_map_constructor -> identifier { struct_member_init }
+            struct_constructor -> identifier "{" struct_member_init* "}"
                 struct_member_init -> identifier "=" expression ","
+            union_constructor -> identifier "." identifier "(" union_member_init* ")"
+                union_member_init -> expresion ","
             function_call -> identifier "(" argument_list ")"
                 argument_list -> identifier? ("," identifier)*
             read_expr -> "read" type
@@ -114,9 +123,64 @@ impl StructType {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+struct UnionType {
+    members: Vec<(String, Vec<ValueType>)>
+}
+
+#[derive(Debug, PartialEq, Clone)]
+enum UnionMemberType {
+    Templated(usize),
+    Fixed(ValueType)
+}
+
+#[derive(Debug, PartialEq, Clone)]
+struct UnionTemplatedType {
+    template_parameter_count: usize,
+    members: Vec<(String, Vec<UnionMemberType>)>,
+    instanced_unions: RefCell<Vec<(Vec<ValueType>, Rc<UnionType>)>>
+}
+
+impl UnionTemplatedType {
+    fn instance_union(&self, template_parameters: &Vec<ValueType>) -> Result<Rc<UnionType>, String> {
+        if self.template_parameter_count != template_parameters.len() {
+            return Err(format!("Expected {} template parameters, got {}", self.template_parameter_count, template_parameters.len()));
+        }
+
+        for instance in self.instanced_unions.borrow().iter() {
+            if instance.0 == *template_parameters {
+                return Ok(instance.1.clone());
+            }
+        }
+
+        Ok(self.create_new_instance(template_parameters))
+    }
+
+    fn create_new_instance(&self, template_parameters: &Vec<ValueType>) -> Rc<UnionType> {
+        let new_members = self.members.iter().map(|(name, member_types)| {
+            let new_types = member_types.iter().map(|t| {
+                match t {
+                    UnionMemberType::Templated(idx) => template_parameters[*idx].clone(),
+                    UnionMemberType::Fixed(v) => v.clone()
+                }
+            }).collect();
+            
+            (name.clone(), new_types)
+        }).collect::<Vec<(String, Vec<ValueType>)>>();
+
+        let new_instance = Rc::new(UnionType { members: new_members });
+        self.instanced_unions.borrow_mut().push((template_parameters.clone(), new_instance.clone()));
+
+        new_instance
+    }
+
+}
+
+#[derive(Debug, PartialEq, Clone)]
 enum UserType {
     Enum(Rc<EnumType>),
-    Struct(Rc<StructType>)
+    Struct(Rc<StructType>),
+    TemplatedUnion(Rc<UnionTemplatedType>),
+    Union(Rc<UnionType>)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -131,6 +195,7 @@ enum ValueType {
     Function(Rc<FunctionType>),
     Enum(Rc<EnumType>),
     Struct(Rc<StructType>),
+    Union(Rc<UnionType>),
 }
 
 impl ValueType {
@@ -171,7 +236,10 @@ impl fmt::Display for ValueType {
             },
             Self::Struct(s) => {
                 format!("struct {:?}", s.members)
-            }
+            },
+            Self::Union(u) => {
+                format!("union {:?}", u.members)
+            },
         };
 
         write!(f, "{}", s)
@@ -290,6 +358,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
             else if self.scanner.match_token(Token::Struct)? {
                 self.struct_definition()?;
+            }
+            else if self.scanner.match_token(Token::Union)? {
+                self.union_definition()?;
             }
             else {
                 self.rule(chunk)?;
@@ -427,6 +498,108 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn union_member_type(&mut self, template_parameter_types: &Vec<String>) -> Result<UnionMemberType, String> {
+        if let Ok(type_name) = self.match_identifier() {
+            if let Some(idx) = template_parameter_types.iter().position(|x| *x == type_name) {
+                return Ok(UnionMemberType::Templated(idx));
+            }
+
+            if let Some(user_type) = self.user_types.get(&type_name) {
+                match user_type {
+                    UserType::Enum(e) => return Ok(UnionMemberType::Fixed(ValueType::Enum(e.clone()))),
+                    UserType::Struct(s) => return Ok(UnionMemberType::Fixed(ValueType::Struct(s.clone()))),
+                    UserType::TemplatedUnion(_u) => todo!(), //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
+                    UserType::Union(_u) => todo!() //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
+                }
+            }
+        }
+
+        return Ok(UnionMemberType::Fixed(self.parse_type()?));
+    }
+
+    fn union_definition(&mut self) -> Result<(), String> {
+        let union_name = match self.scanner.scan_token()? {
+            Token::Identifier(s) => s,
+            x => return Err(format!("Expected name for union. Got {:?}", x))
+        };
+
+        if self.user_types.contains_key(union_name) {
+            return Err(format!("{} already defined", union_name));
+        }
+
+        let mut template_parameter_types = vec![];
+        if self.scanner.match_token(Token::Less)? {
+
+            template_parameter_types.push(self.match_identifier()?);
+            while self.scanner.match_token(Token::Comma)? {
+                let template_parameter = self.match_identifier()?;
+                if template_parameter_types.contains(&template_parameter) {
+                    return Err(format!("{} previously defined in template type list", template_parameter));
+                }
+                template_parameter_types.push(template_parameter);
+            }
+
+            self.consume(Token::Greater)?;
+        }
+
+        self.consume(Token::LeftBrace)?;
+
+        let mut members = vec![];
+
+        while !self.scanner.match_token(Token::RightBrace)? {
+            let member_name = self.match_identifier()?;
+
+            let mut member_types = vec![];
+            if self.scanner.match_token(Token::LeftParen)? {
+                member_types.push(self.union_member_type(&mut template_parameter_types)?);
+
+                while self.scanner.match_token(Token::Comma)? {
+                    member_types.push(self.union_member_type(&mut template_parameter_types)?);
+                }
+
+                self.consume(Token::RightParen)?;
+            }
+
+            self.consume(Token::Comma)?;
+            members.push((member_name, member_types));
+        }
+
+        let template_parameter_count = template_parameter_types.len();
+        if template_parameter_count > 0 {
+            self.user_types.insert(union_name.to_string(), 
+                UserType::TemplatedUnion(
+                    Rc::new(
+                        UnionTemplatedType {
+                            template_parameter_count,
+                            members,
+                            instanced_unions: RefCell::new(vec![])
+                        })));
+        }
+        else {
+            let mut fixed_members = vec![];
+
+            for (name, member_types) in members.into_iter() {
+                let mut fixed_types = vec![];
+                for t in member_types {
+                    if let UnionMemberType::Fixed(f) = t {
+                        fixed_types.push(f);
+                    }
+                    else {
+                        panic!("Should not be fixed!");
+                    }
+                }
+
+                fixed_members.push((name, fixed_types));
+            }
+
+            self.user_types.insert(union_name.to_string(), 
+                UserType::Union(Rc::new(UnionType { members: fixed_members }))
+            );
+        }
+
+        Ok(())
+    }
+
     fn try_statement(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
         if self.scanner.match_token(Token::Let)? {
             self.let_statement(chunk)?;
@@ -461,6 +634,40 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         Ok(None)
+    }
+
+    fn match_union_type(&mut self) -> Result<Option<Rc<UnionType>>, String> {
+        if let Token::Identifier(i) = self.scanner.peek_token()? {
+            let user_type = match self.user_types.get(i) {
+                Some(ut) => ut,
+                None => return Ok(None)
+            }.clone();
+
+            if let UserType::TemplatedUnion(u) = user_type {
+                self.scanner.scan_token()?; // eat union name
+                self.consume(Token::Less)?;
+                let list = self.parse_template_type_arg_list()?;
+
+                return Ok(Some(u.instance_union(&list)?));
+            }
+
+            if let UserType::Union(s) = user_type {
+                self.scanner.scan_token()?; // eat struct name
+                return Ok(Some(s.clone()));
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub fn match_identifier(&mut self) -> Result<String, String> {
+        let t = self.scanner.peek_token()?;
+        if let Token::Identifier(i) = t {
+            self.scanner.scan_token()?; // eat identifier name
+            return Ok(i.to_string());
+        }
+
+        Err(format!("Expected identifier, got {:?}", t))
     }
 
     fn try_field(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
@@ -531,6 +738,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.hash_map_constructor(chunk)?;
         } else if let Ok(Some(struct_type)) = self.match_struct_type() {
             self.struct_constructor(struct_type, chunk)?;
+        } else if let Ok(Some(union_type)) = self.match_union_type() {
+            self.union_constructor(union_type, chunk)?;
         } else {
             self.equality(chunk)?;
         }
@@ -638,6 +847,51 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn union_constructor(&mut self, union_type: Rc<UnionType>, chunk: &mut Chunk) -> Result<(), String> {
+        //   union_constructor -> identifier "." identifier "(" union_member_init* ")"
+        //       union_member_init -> expresion ","
+
+        /*
+        MyUnion.Member( expr );
+         */
+        self.consume(Token::Dot)?;
+
+        let member_name = self.match_identifier()?;
+
+        let (member_idx, member) = match union_type.members.iter().enumerate().find(|(_, x)| x.0 == member_name) {
+            Some(x) => x,
+            None => return Err(format!("{} is not a member of union", member_name))
+        };
+
+        let member_count = union_type.members.len();
+        if member_count > 0 {
+            self.consume(Token::LeftParen)?;
+
+            for member_type in &member.1 {
+                self.expression(chunk)?;
+                
+                let expr_type = &self.type_stack.pop().unwrap().value_type;
+                if !member_type.can_assign(expr_type) {
+                    return Err(format!("Cannot assign type {} to {}", expr_type, member_type));
+                }
+
+                self.consume(Token::Comma)?;
+            }
+
+            self.consume(Token::RightParen)?;
+        }
+
+        chunk.write_byte(opcode::CREATE_UNION);
+        chunk.write_byte(member.1.len() as u8);
+        chunk.write_byte(member_idx as u8);
+
+        self.type_stack.push(Variable {
+            value_type: ValueType::Union(union_type),
+            read_only: false
+        });
+        Ok(())
+    }
+
     fn hash_map_constructor_arg(
         &mut self,
         chunk: &mut Chunk,
@@ -719,6 +973,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         result
     }
 
+    fn parse_template_type_arg_list(&mut self) -> Result<Vec<ValueType>, String> {
+        let mut list = vec![];
+
+        while !self.scanner.match_token(Token::Greater)? {
+            list.push(self.parse_type()?);
+            self.consume(Token::Comma)?;
+        }
+
+        Ok(list)
+    }
+
     fn parse_type(&mut self) -> Result<ValueType, String> {
         let var_type = match self.scanner.scan_token()? {
             Token::TypeInt => ValueType::Integer,
@@ -727,9 +992,16 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::LeftBracket => self.parse_type_vec_or_map()?,
             Token::Identifier(i) => {
                 if let Some(ut) = self.user_types.get(i) {
+                    let ut = ut.clone();
                     match ut {
                         UserType::Enum(e) => return Ok(ValueType::Enum(e.clone())),
-                        UserType::Struct(s) => return Ok(ValueType::Struct(s.clone()))
+                        UserType::Struct(s) => return Ok(ValueType::Struct(s.clone())),
+                        UserType::TemplatedUnion(u) => {
+                            self.consume(Token::Less)?;
+                            let list = self.parse_template_type_arg_list()?;
+                            return Ok(ValueType::Union(u.instance_union(&list)?));
+                        },
+                        UserType::Union(u) => return Ok(ValueType::Union(u.clone())),
                     }
                 }
 
@@ -1374,7 +1646,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::HashMap(_) => return Err("Cannot use comparison with hash map".to_owned()),
                 ValueType::Function(_) => return Err("Cannot use comparison with function".to_owned()),
                 ValueType::Enum(_) => return Err("Cannot use comparison with enum".to_owned()), // FIXME
-                ValueType::Struct(_) => return Err("Cannot use comparison with struct".to_owned()) // FIXME
+                ValueType::Struct(_) => return Err("Cannot use comparison with struct".to_owned()), // FIXME
+                ValueType::Union(_) => return Err("Cannot use comparison with union".to_owned()), // FIXME
             };
         }
 
@@ -1765,7 +2038,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 if let Some(ut) = self.user_types.get(name) {
                     match ut {
                         UserType::Enum(e) => self.enum_value(chunk, name, e.clone())?,
-                        UserType::Struct(s) => self.struct_construction(chunk, name, s.clone())?
+                        UserType::Struct(s) => self.struct_construction(chunk, name, s.clone())?,
+                        UserType::TemplatedUnion(_) => todo!(),
+                        UserType::Union(_) => todo!()
                     }
                 }
                 else {
@@ -2374,5 +2649,135 @@ mod test {
                     s.i = 1.5;
                 ").is_err()
         );
+    }
+
+    #[test]
+    fn test_define_union() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "union Union_empty {}
+                ").unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table,
+                "union Union_0
+                {
+                    A, B, C,
+                }
+                ").unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table,
+                "union Union_1
+                {
+                    I(int),
+                    F(float),
+                    S(string),
+                }
+                ").unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table,
+                "union Union_2<T>
+                {
+                    A(T),
+                }
+                ").unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table,
+                "union Union_3<T, U, V>
+                {
+                    A(T),
+                    B(U),
+                    C(V),
+                }
+                ").unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table,
+                "union Union_4<T, U, V>
+                {
+                    A(T), A1(T), A2(T),
+                    B(U),
+                    C(V), C1(V),
+
+                    I(int), I1(int),
+                    F(float), F1(float),
+                    S(string), S1(string),
+                }
+                ").unwrap();
+            true
+        });
+
+        assert!(
+            compiler.compile(&mut table, "union Union_err<T, T> {} ").is_err()
+        );
+    }
+
+    #[test]
+    fn test_union_constructor() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "union Union
+                {
+                    I(int), F(float), S(string),
+                }
+
+                let mut u: Union = Union.I(9,);
+                u = Union.S(\"Hello world\",);
+                u = Union.F(3.142,);
+                ").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_templated_union_constructor() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "union Union<A, B, C>
+                {
+                    I(A), F(B), S(C),
+                }
+
+                let mut u: Union<int, float, string,> = Union<int, float, string,>.I(9,);
+                u = Union<int, float, string,>.S(\"Hello world\",);
+                u = Union<int, float, string,>.F(3.142,);
+                ").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_union_option() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "union Option<T>
+                {
+                    Some(T),
+                    None,
+                }
+                ").unwrap();
+            true
+        });
     }
 }

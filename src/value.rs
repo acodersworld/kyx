@@ -35,6 +35,12 @@ pub struct StructValue {
 }
 
 #[derive(Debug)]
+pub struct UnionValue {
+    pub member_idx: usize,
+    pub members: Vec<Value>
+}
+
+#[derive(Debug)]
 pub enum GcValue {
     //    Float(f32),
     //    Integer(i32),
@@ -43,6 +49,7 @@ pub enum GcValue {
     HashMap(Box<HashMapValue>),
     Function(Box<FunctionValue>),
     Struct(Box<StructValue>),
+    Union(Box<UnionValue>),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
@@ -55,6 +62,7 @@ pub enum Value {
     HashMap(NonNull<HashMapValue>),
     Function(NonNull<FunctionValue>),
     Struct(NonNull<StructValue>),
+    Union(NonNull<UnionValue>),
 }
 
 impl Hash for Value {
@@ -68,6 +76,7 @@ impl Hash for Value {
             Value::HashMap(h) => h.hash(state),
             Value::Function(f) => f.hash(state),
             Value::Struct(f) => f.hash(state),
+            Value::Union(f) => f.hash(state),
         }
     }
 }
