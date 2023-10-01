@@ -197,7 +197,12 @@ impl<'printer> VM<'printer> {
             }
         };
 
+        let mut pc = 0;
         while let Some(op) = frame_stack.top.next_code() {
+            let mut ds = disassembler::Disassembler::new(unsafe { &frame_stack.top.function.as_ref().chunk.code });
+            ds.set_offset(pc);
+            ds.disassemble_one();
+
             match op {
                 opcode::CONSTANT_INTEGER => self.push_integer(&mut frame_stack.top),
                 opcode::CONSTANT_FLOAT => self.push_float(&mut frame_stack.top),
@@ -236,6 +241,7 @@ impl<'printer> VM<'printer> {
                 opcode::BREAK => self.break_loop(&mut frame_stack.top),
                 opcode::JMP => self.jmp(&mut frame_stack.top),
                 opcode::JMP_IF_FALSE => self.jmp_if_false(&mut frame_stack.top),
+                opcode::JMP_IF_DETERMINANT_MISMATCH => self.jmp_if_determinant_mismatch(&mut frame_stack.top),
                 opcode::READ_INPUT => self.read_input(&mut frame_stack.top),
                 opcode::CALL => self.call(&mut frame_stack),
                 opcode::RETURN => self.do_return(&mut frame_stack),
@@ -247,6 +253,8 @@ impl<'printer> VM<'printer> {
                     )
                 }
             }
+            pc = frame_stack.top.pc;
+            println!("STACK ({}): {:?}", pc, self.value_stack);
         }
     }
 
@@ -269,7 +277,7 @@ impl<'printer> VM<'printer> {
         for (fname, fchunk) in functions {
             let mut ds = disassembler::Disassembler::new(&fchunk.code);
             println!("-- Function: {} --", fname);
-            ds.disassemble();
+            ds.disassemble_all();
 
             let function_value = self.function(fchunk);
             let mut data_section = VMDataSection {
@@ -283,7 +291,7 @@ impl<'printer> VM<'printer> {
 
         println!("-- Main --");
         let mut ds = disassembler::Disassembler::new(&chunk.code);
-        ds.disassemble();
+        ds.disassemble_all();
 
         self.run(chunk);
 
@@ -594,7 +602,7 @@ impl<'printer> VM<'printer> {
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
             Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
             Value::Struct(s) => format!("struct<0x{:x}>", s.as_ptr() as usize),
-            Value::Union(u) => format!("union<0x{:x}>", u.as_ptr() as usize),
+            Value::Union(u) => format!("union<0x{:x}> {:?}", u.as_ptr() as usize, unsafe { u.as_ref() } ),
         }
     }
 
@@ -673,6 +681,30 @@ impl<'printer> VM<'printer> {
             frame.pc += offset as usize;
         } else {
             frame.pc += 1;
+        }
+    }
+
+    fn jmp_if_determinant_mismatch(&mut self, frame: &mut Frame) {
+        assert!(!self.value_stack.is_empty());
+        let top_value = self.value_stack.pop().unwrap();
+
+        let code = unsafe { &frame.function.as_ref().chunk.code };
+        let check_member_idx = code[frame.pc] as usize;
+        frame.pc += 1;
+
+        let union_value = match top_value {
+            Value::Union(u) => unsafe { u.as_ref() },
+            x => panic!("Unexpected non-union! {:?}", x)
+        };
+
+        let offset = code[frame.pc] as usize;
+        if union_value.member_idx == check_member_idx {
+            self.value_stack.push(union_value.members[0]);
+            frame.pc += 1;
+        }
+        else {
+            self.value_stack.pop();
+            frame.pc += offset;
         }
     }
 
@@ -1900,4 +1932,56 @@ mod test {
         assert_eq!(vm.interpret(src), Ok(()));
     }
 
+    #[test]
+    fn test_if_let() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src =
+                "union Union
+                {
+                    I(int),
+                    F(float),
+                    S(string),
+                }
+
+                let mut o: Union = Union.I(10,);
+                if let Union.I(x) = o {
+                    print(x);
+                }
+                else {
+                    print(\"Mismatch\");
+                }
+
+                if let Union.F(x) = o {
+                    print(x);
+                }
+                else {
+                    print(\"Mismatch\");
+                }
+
+                o = Union.F(3.142,);
+                if let Union.F(x) = o {
+                    print(x);
+                }
+                else {
+                    print(\"Mismatch\");
+                }
+
+                if let Union.I(x) = o {
+                    print(x);
+                }
+                else {
+                    print(\"Mismatch\");
+                }
+                ";
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        println!("{:?}", printer.strings);
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "Mismatch");
+        assert_eq!(printer.strings[2], "3.142");
+        assert_eq!(printer.strings[3], "Mismatch");
+    }
 }

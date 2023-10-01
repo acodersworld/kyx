@@ -45,6 +45,7 @@ const OPCODES: &[&str] = &[
     "BREAK",
     "JMP",
     "JMP_IF_FALSE",
+    "JMP_IF_DETERMINANT_MISMATCH",
     //
     "READ_INPUT",
     //

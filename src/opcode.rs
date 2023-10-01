@@ -36,9 +36,10 @@ pub const LOOP: u8 = 33;
 pub const BREAK: u8 = 34;
 pub const JMP: u8 = 35;
 pub const JMP_IF_FALSE: u8 = 36;
-pub const READ_INPUT: u8 = 37;
-pub const CALL: u8 = 38;
-pub const RETURN: u8 = 39;
+pub const JMP_IF_DETERMINANT_MISMATCH: u8 = 37;
+pub const READ_INPUT: u8 = 38;
+pub const CALL: u8 = 39;
+pub const RETURN: u8 = 40;
 // OP CODE END
 
 #[allow(dead_code)]
@@ -81,9 +82,10 @@ pub fn to_string(code: u8) -> String {
         34 => "BREAK".to_owned(),
         35 => "JMP".to_owned(),
         36 => "JMP_IF_FALSE".to_owned(),
-        37 => "READ_INPUT".to_owned(),
-        38 => "CALL".to_owned(),
-        39 => "RETURN".to_owned(),
+        37 => "JMP_IF_DETERMINANT_MISMATCH".to_owned(),
+        38 => "READ_INPUT".to_owned(),
+        39 => "CALL".to_owned(),
+        40 => "RETURN".to_owned(),
         _ => "UNKNOWN".to_owned(),
     }
 }

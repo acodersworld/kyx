@@ -13,56 +13,65 @@ impl<'a> Disassembler<'a> {
         Disassembler { code, offset: 0 }
     }
 
-    pub fn disassemble(&mut self) {
-        while self.offset < self.code.len() {
-            let offset = self.offset;
-            self.offset += 1;
+    pub fn set_offset(&mut self, offset: usize) {
+        self.offset = offset;
+    }
 
-            print!("{: >4} | ", offset);
-            match self.code[offset] {
-                opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
-                opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
-                opcode::CONSTANT_STRING => self.constant_string_instruction(),
-                opcode::CONSTANT_BOOL => self.constant_bool_instruction(),
-                opcode::CREATE_VEC => self.create_vec(),
-                opcode::CREATE_HASH_MAP => self.create_hash_map(),
-                opcode::CREATE_STRUCT => self.create_struct(),
-                opcode::CREATE_UNION => self.create_union(),
-                opcode::GET_INDEX => self.simple_instruction("get index"),
-                opcode::SET_INDEX => self.simple_instruction("set vec"),
-                opcode::GET_FIELD => self.get_field(),
-                opcode::SET_FIELD => self.set_field(),
-                opcode::SET_GLOBAL => self.set_global(),
-                opcode::SET_LOCAL => self.set_local(),
-                opcode::PUSH_GLOBAL => self.push_global(),
-                opcode::PUSH_LOCAL => self.push_local(),
-                opcode::DEFINE_GLOBAL => self.define_global(),
-                opcode::DEFINE_LOCAL => self.define_local(),
-                opcode::ADD => self.simple_instruction("add"),
-                opcode::SUB => self.simple_instruction("sub"),
-                opcode::MUL => self.simple_instruction("mul"),
-                opcode::DIV => self.simple_instruction("div"),
-                opcode::EQ => self.simple_instruction("eq"),
-                opcode::NEQ => self.simple_instruction("neq"),
-                opcode::LESS => self.simple_instruction("less"),
-                opcode::LESS_EQUAL => self.simple_instruction("less equal"),
-                opcode::GREATER => self.simple_instruction("greater"),
-                opcode::GREATER_EQUAL => self.simple_instruction("greater equal"),
-                opcode::PRINT => self.simple_instruction("print"),
-                opcode::POP => self.simple_instruction("pop"),
-                opcode::LOCAL_POP => self.simple_instruction("local pop"),
-                opcode::PUSH_FRAME => self.simple_instruction("push frame"),
-                opcode::POP_FRAME => self.simple_instruction("pop frame"),
-                opcode::LOOP => self.jmp_instruction("loop", -1),
-                opcode::BREAK => self.jmp_instruction("break", 1),
-                opcode::JMP => self.jmp_instruction("jump", 1),
-                opcode::JMP_IF_FALSE => self.jmp_instruction("jump if false", 1),
-                opcode::READ_INPUT => self.read_instruction(),
-                opcode::CALL => self.call(),
-                opcode::RETURN => self.simple_instruction("return"),
-                code => {
-                    panic!("Unknown instruction {}", code);
-                }
+    pub fn disassemble_all(&mut self) {
+        while self.offset < self.code.len() {
+            self.disassemble_one();
+        }
+    }
+
+    pub fn disassemble_one(&mut self) {
+        let offset = self.offset;
+        self.offset += 1;
+
+        print!("{: >4} | ", offset);
+        match self.code[offset] {
+            opcode::CONSTANT_INTEGER => self.constant_integer_instruction(),
+            opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
+            opcode::CONSTANT_STRING => self.constant_string_instruction(),
+            opcode::CONSTANT_BOOL => self.constant_bool_instruction(),
+            opcode::CREATE_VEC => self.create_vec(),
+            opcode::CREATE_HASH_MAP => self.create_hash_map(),
+            opcode::CREATE_STRUCT => self.create_struct(),
+            opcode::CREATE_UNION => self.create_union(),
+            opcode::GET_INDEX => self.simple_instruction("get index"),
+            opcode::SET_INDEX => self.simple_instruction("set vec"),
+            opcode::GET_FIELD => self.get_field(),
+            opcode::SET_FIELD => self.set_field(),
+            opcode::SET_GLOBAL => self.set_global(),
+            opcode::SET_LOCAL => self.set_local(),
+            opcode::PUSH_GLOBAL => self.push_global(),
+            opcode::PUSH_LOCAL => self.push_local(),
+            opcode::DEFINE_GLOBAL => self.define_global(),
+            opcode::DEFINE_LOCAL => self.define_local(),
+            opcode::ADD => self.simple_instruction("add"),
+            opcode::SUB => self.simple_instruction("sub"),
+            opcode::MUL => self.simple_instruction("mul"),
+            opcode::DIV => self.simple_instruction("div"),
+            opcode::EQ => self.simple_instruction("eq"),
+            opcode::NEQ => self.simple_instruction("neq"),
+            opcode::LESS => self.simple_instruction("less"),
+            opcode::LESS_EQUAL => self.simple_instruction("less equal"),
+            opcode::GREATER => self.simple_instruction("greater"),
+            opcode::GREATER_EQUAL => self.simple_instruction("greater equal"),
+            opcode::PRINT => self.simple_instruction("print"),
+            opcode::POP => self.simple_instruction("pop"),
+            opcode::LOCAL_POP => self.simple_instruction("local pop"),
+            opcode::PUSH_FRAME => self.simple_instruction("push frame"),
+            opcode::POP_FRAME => self.simple_instruction("pop frame"),
+            opcode::LOOP => self.jmp_instruction("loop", -1),
+            opcode::BREAK => self.jmp_instruction("break", 1),
+            opcode::JMP => self.jmp_instruction("jump", 1),
+            opcode::JMP_IF_FALSE => self.jmp_instruction("jump if false", 1),
+            opcode::JMP_IF_DETERMINANT_MISMATCH => self.jmp_if_determinant_mismatch(),
+            opcode::READ_INPUT => self.read_instruction(),
+            opcode::CALL => self.call(),
+            opcode::RETURN => self.simple_instruction("return"),
+            code => {
+                panic!("Unknown instruction {}", code);
             }
         }
     }
@@ -82,6 +91,18 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
     }
 
+    fn jmp_if_determinant_mismatch(&mut self) {
+        let member_idx = self.code[self.offset] as i64;
+        let jmp_offset = self.code[self.offset + 1] as i64;
+        println!(
+            "jmp if determinant mismatch ({}): {} -> {}",
+            member_idx,
+            jmp_offset,
+            self.offset as i64 + jmp_offset
+        );
+        self.offset += 2;
+    }
+    
     fn read_instruction(&mut self) {
         let read_type = self.code[self.offset];
         self.offset += 1;

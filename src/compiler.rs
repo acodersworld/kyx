@@ -52,6 +52,7 @@ use itertools::Itertools;
        expression -> assignment |
                      block_expression |
                      if_expr |
+                     if_let_expr |
                      vector_constructor |
                      hash_map_constructor |
                      struct_constructor |
@@ -63,6 +64,7 @@ use itertools::Itertools;
 
             block_expression -> "{" declaration* expression? "}"
             if_expr -> "if" expression block_expression ("else" block_expression)?
+            if_let_expr -> "if" "let" identifier ("(" identifier+ ")")? = expression block_expression ("else" block_expression)?
             vector_constructor -> vec<type>{ expression? ("," expression)* }
             hash_map_constructor -> hash_map<type, type>{ hash_map_argument? ("," hash_map_argument)* }
                 hash_map_argument -> expression ":" expression
@@ -1325,15 +1327,114 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn if_expression(&mut self, chunk: &mut Chunk) -> Result<(), String> {
-        self.expression(chunk)?;
-        self.consume(Token::LeftBrace)?;
-        chunk.write_byte(opcode::JMP_IF_FALSE);
-        self.type_stack.pop();
+        self.scoped_block(chunk, |cm, ch| {
+            cm.if_expression_impl(ch)
+        })
+    }
 
-        let if_jmp_idx = chunk.write_byte(0);
+    fn parse_if_let_expression(&mut self, chunk: &mut Chunk) -> Result<(usize, String, Rc<UnionType>), String> {
+        // if let Option<int>.Some(x) = expr
+        let union_name = self.match_identifier()?;
+        
+        let user_type = match self.user_types.get(&union_name) {
+            Some(u) => u.clone(),
+            None => return Err(format!("No union named {}", union_name))
+        };
+
+        /*
+        let mut template_parameters = vec![];
+        if self.scanner.match_token(Token::Less)? {
+            while !self.scanner.match_token(Token::Greater)? {
+                template_parameters.push(self.match_identifier()?);
+                self.consume(Token::Comma)?;
+            }
+        }
+        */
+
+        self.consume(Token::Dot)?;
+
+        let member_name = self.match_identifier()?;
+
+        self.consume(Token::LeftParen)?;
+
+        let variable_name = self.match_identifier()?;
+
+        self.consume(Token::RightParen)?;
+        self.consume(Token::Equal)?;
+
+        self.expression(chunk)?;
+
+        let union_type = match user_type {
+            UserType::Union(u) => u,
+            _ => return Err(format!("Not a union"))
+        };
+
+        if self.type_stack.last().unwrap().value_type != ValueType::Union(union_type.clone()) {
+            return Err(format!("Union type does not match"));
+        }
+
+        let member_idx = match union_type.members.iter().position(|(name, _)| *name == member_name) {
+            Some(x) => x,
+            None => return Err(format!("{} not a member of union {}", member_name, union_name))
+        };
+
+        Ok((member_idx, variable_name, union_type))
+    }
+
+    fn if_expression_impl(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+
+        let mut is_if_let = false;
+        let if_jmp_idx;
+        if self.scanner.match_token(Token::Let)? {
+            let (member_idx, variable_name, union_type) = self.parse_if_let_expression(chunk)?;
+
+            chunk.write_byte(opcode::JMP_IF_DETERMINANT_MISMATCH);
+            chunk.write_byte(member_idx as u8);
+            if_jmp_idx = chunk.write_byte(0);
+
+            let frame = self.stack_frames.last_mut().unwrap();
+            let found = frame
+                .locals
+                .iter()
+                .find(|l| l.scope == frame.current_scope && l.name == variable_name);
+
+            if found.is_none() {
+                frame.locals.push(LocalVariable {
+                    name: variable_name.to_string(),
+                    v: Variable {
+                        read_only: false,
+                        value_type: union_type.members[member_idx].1[0].clone(),
+                    },
+                    scope: frame.current_scope,
+                });
+                chunk.write_byte(opcode::DEFINE_LOCAL);
+            } else {
+                return Err(format!(
+                    "Local {} is already defined in current scope",
+                    variable_name
+                ));
+            }
+
+            is_if_let = true;
+            self.type_stack.pop();
+            self.consume(Token::LeftBrace)?;
+        }
+        else {
+            self.expression(chunk)?;
+            self.consume(Token::LeftBrace)?;
+            chunk.write_byte(opcode::JMP_IF_FALSE);
+            self.type_stack.pop();
+            if_jmp_idx = chunk.write_byte(0);
+        }
+
 
         let stack_top = self.type_stack.len();
         self.block_expression(chunk)?;
+
+        if is_if_let {
+            let frame = self.stack_frames.last_mut().unwrap();
+            frame.locals.pop();
+        }
 
         if self.scanner.match_token(Token::Else)? {
             let (if_type, if_is_read_only) = {
@@ -2775,6 +2876,26 @@ mod test {
                 {
                     Some(T),
                     None,
+                }
+                ").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_if_let() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "union Option
+                {
+                    Some(int),
+                    None,
+                }
+
+                let o: Option = Option.Some(10,);
+                if let Option.Some(x) = o {
                 }
                 ").unwrap();
             true
