@@ -495,7 +495,7 @@ impl<'printer> VM<'printer> {
 
     fn create_union(&mut self, frame: &mut Frame) {
         let member_count = frame.next_code().unwrap() as usize;
-        let member_idx = frame.next_code().unwrap() as usize;
+        let determinant = frame.next_code().unwrap() as usize;
 
         let mut members = vec![Value::Integer(0); member_count];
 
@@ -505,7 +505,7 @@ impl<'printer> VM<'printer> {
         }
 
         let mut union_val = Box::new(UnionValue {
-            member_idx,
+            determinant,
             members
         });
         let ptr = unsafe { NonNull::new_unchecked(union_val.as_mut() as *mut _) };
@@ -689,7 +689,7 @@ impl<'printer> VM<'printer> {
         let top_value = self.value_stack.pop().unwrap();
 
         let code = unsafe { &frame.function.as_ref().chunk.code };
-        let check_member_idx = code[frame.pc] as usize;
+        let check_determinant = code[frame.pc] as usize;
         frame.pc += 1;
 
         let union_value = match top_value {
@@ -698,7 +698,7 @@ impl<'printer> VM<'printer> {
         };
 
         let offset = code[frame.pc] as usize;
-        if union_value.member_idx == check_member_idx {
+        if union_value.determinant == check_determinant {
             self.value_stack.push(union_value.members[0]);
             frame.pc += 1;
         }

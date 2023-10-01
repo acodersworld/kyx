@@ -36,7 +36,7 @@ pub struct StructValue {
 
 #[derive(Debug)]
 pub struct UnionValue {
-    pub member_idx: usize,
+    pub determinant: usize,
     pub members: Vec<Value>
 }
 

@@ -860,12 +860,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let member_name = self.match_identifier()?;
 
-        let (member_idx, member) = match union_type.members.iter().enumerate().find(|(_, x)| x.0 == member_name) {
+        let (determinant, member) = match union_type.members.iter().enumerate().find(|(_, x)| x.0 == member_name) {
             Some(x) => x,
             None => return Err(format!("{} is not a member of union", member_name))
         };
 
-        let member_count = union_type.members.len();
+        let member_count = member.1.len();
         if member_count > 0 {
             self.consume(Token::LeftParen)?;
 
@@ -885,7 +885,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         chunk.write_byte(opcode::CREATE_UNION);
         chunk.write_byte(member.1.len() as u8);
-        chunk.write_byte(member_idx as u8);
+        chunk.write_byte(determinant as u8);
 
         self.type_stack.push(Variable {
             value_type: ValueType::Union(union_type),
@@ -1373,12 +1373,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err(format!("Union type does not match"));
         }
 
-        let member_idx = match union_type.members.iter().position(|(name, _)| *name == member_name) {
+        let determinant = match union_type.members.iter().position(|(name, _)| *name == member_name) {
             Some(x) => x,
             None => return Err(format!("{} not a member of union {}", member_name, union_name))
         };
 
-        Ok((member_idx, variable_name, union_type))
+        Ok((determinant, variable_name, union_type))
     }
 
     fn if_expression_impl(&mut self, chunk: &mut Chunk) -> Result<(), String> {
@@ -1386,10 +1386,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let mut is_if_let = false;
         let if_jmp_idx;
         if self.scanner.match_token(Token::Let)? {
-            let (member_idx, variable_name, union_type) = self.parse_if_let_expression(chunk)?;
+            let (determinant, variable_name, union_type) = self.parse_if_let_expression(chunk)?;
 
             chunk.write_byte(opcode::JMP_IF_DETERMINANT_MISMATCH);
-            chunk.write_byte(member_idx as u8);
+            chunk.write_byte(determinant as u8);
             if_jmp_idx = chunk.write_byte(0);
 
             let frame = self.stack_frames.last_mut().unwrap();
@@ -1403,7 +1403,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     name: variable_name.to_string(),
                     v: Variable {
                         read_only: false,
-                        value_type: union_type.members[member_idx].1[0].clone(),
+                        value_type: union_type.members[determinant].1[0].clone(),
                     },
                     scope: frame.current_scope,
                 });
