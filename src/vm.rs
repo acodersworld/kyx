@@ -700,7 +700,9 @@ impl<'printer> VM<'printer> {
 
         let offset = code[frame.pc] as usize;
         if union_value.determinant == check_determinant {
-            self.value_stack.push(union_value.members[0]);
+            for m in &union_value.members {
+                self.value_stack.push(*m);
+            }
             frame.pc += 1;
         }
         else {
@@ -1947,14 +1949,14 @@ mod test {
                 }
 
                 let mut o: Union = Union.I(10,);
-                if let Union.I(x) = o {
+                if let Union.I(x,) = o {
                     print(x);
                 }
                 else {
                     print(\"Mismatch\");
                 }
 
-                if let Union.F(x) = o {
+                if let Union.F(x,) = o {
                     print(x);
                 }
                 else {
@@ -1962,14 +1964,14 @@ mod test {
                 }
 
                 o = Union.F(3.142,);
-                if let Union.F(x) = o {
+                if let Union.F(x,) = o {
                     print(x);
                 }
                 else {
                     print(\"Mismatch\");
                 }
 
-                if let Union.I(x) = o {
+                if let Union.I(x,) = o {
                     print(x);
                 }
                 else {
@@ -1978,11 +1980,62 @@ mod test {
                 ";
         assert_eq!(vm.interpret(src), Ok(()));
 
-        println!("{:?}", printer.strings);
         assert_eq!(printer.strings.len(), 4);
         assert_eq!(printer.strings[0], "10");
         assert_eq!(printer.strings[1], "Mismatch");
         assert_eq!(printer.strings[2], "3.142");
         assert_eq!(printer.strings[3], "Mismatch");
+    }
+
+    #[test]
+    fn test_if_let_multiple() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = 
+                "union Composite
+                {
+                    Two(int, float),
+                    Three(int, float, string),
+                }
+
+                let mut c: Composite = Composite.Two(10,1.23,);
+                if let Composite.Two(x, y,) = c {
+                    print(x);
+                    print(y);
+                }
+
+                if let Composite.Three(x, y, z,) = c {
+                    print(\"SHOULD NOT GET HERE\");
+                }
+                else {
+                    print(\"Mismatch\");
+                }
+
+                c = Composite.Three(300, 3.142, \"Hello World\",);
+                if let Composite.Three(x, y, z,) = c {
+                    print(x);
+                    print(y);
+                    print(z);
+                }
+
+                if let Composite.Two(x, y,) = c {
+                    print(\"SHOULD NOT GET HERE\");
+                }
+                else {
+                    print(\"Mismatch\");
+                }
+
+                ";
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        assert_eq!(printer.strings.len(), 7);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "1.23");
+        assert_eq!(printer.strings[2], "Mismatch");
+        assert_eq!(printer.strings[3], "300");
+        assert_eq!(printer.strings[4], "3.142");
+        assert_eq!(printer.strings[5], "Hello World");
+        assert_eq!(printer.strings[6], "Mismatch");
     }
 }

@@ -1332,14 +1332,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })
     }
 
-    fn parse_if_let_expression(&mut self, chunk: &mut Chunk) -> Result<(usize, String, Rc<UnionType>), String> {
+    fn parse_if_let_expression(&mut self, chunk: &mut Chunk) -> Result<(usize, Vec<String>, Rc<UnionType>), String> {
         // if let Option<int>.Some(x) = expr
         let union_name = self.match_identifier()?;
         
-        let user_type = match self.user_types.get(&union_name) {
-            Some(u) => u.clone(),
+        let union_type = match self.user_types.get(&union_name) {
+            Some(user_type) => {
+                let union_type = match user_type {
+                    UserType::Union(u) => u,
+                    _ => return Err(format!("Not a union"))
+                };
+
+                union_type.clone()
+            },
             None => return Err(format!("No union named {}", union_name))
         };
+
 
         /*
         let mut template_parameters = vec![];
@@ -1354,31 +1362,29 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::Dot)?;
 
         let member_name = self.match_identifier()?;
+        let (determinant, member) = match union_type.members.iter().enumerate().find(|(_, (name, _))| *name == member_name) {
+            Some(x) => (x.0, &x.1.1),
+            None => return Err(format!("{} not a member of union {}", member_name, union_name))
+        };
 
         self.consume(Token::LeftParen)?;
 
-        let variable_name = self.match_identifier()?;
+        let mut variable_names = vec![];
+        for _ in 0..member.len() {
+            variable_names.push(self.match_identifier()?);
+            self.consume(Token::Comma)?;
+        }
 
         self.consume(Token::RightParen)?;
         self.consume(Token::Equal)?;
 
         self.expression(chunk)?;
 
-        let union_type = match user_type {
-            UserType::Union(u) => u,
-            _ => return Err(format!("Not a union"))
-        };
-
         if self.type_stack.last().unwrap().value_type != ValueType::Union(union_type.clone()) {
             return Err(format!("Union type does not match"));
         }
 
-        let determinant = match union_type.members.iter().position(|(name, _)| *name == member_name) {
-            Some(x) => x,
-            None => return Err(format!("{} not a member of union {}", member_name, union_name))
-        };
-
-        Ok((determinant, variable_name, union_type))
+        Ok((determinant, variable_names, union_type))
     }
 
     fn if_expression_impl(&mut self, chunk: &mut Chunk) -> Result<(), String> {
@@ -1386,33 +1392,38 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let mut is_if_let = false;
         let if_jmp_idx;
         if self.scanner.match_token(Token::Let)? {
-            let (determinant, variable_name, union_type) = self.parse_if_let_expression(chunk)?;
+            let (determinant, variable_names, union_type) = self.parse_if_let_expression(chunk)?;
 
             chunk.write_byte(opcode::JMP_IF_DETERMINANT_MISMATCH);
             chunk.write_byte(determinant as u8);
             if_jmp_idx = chunk.write_byte(0);
 
             let frame = self.stack_frames.last_mut().unwrap();
-            let found = frame
-                .locals
-                .iter()
-                .find(|l| l.scope == frame.current_scope && l.name == variable_name);
 
-            if found.is_none() {
+            for var_name in &variable_names {
+                let found = frame
+                    .locals
+                    .iter()
+                    .find(|l| l.scope == frame.current_scope && l.name == *var_name);
+
+                if found.is_some() {
+                    return Err(format!(
+                        "Local {} is already defined in current scope",
+                        var_name
+                    ));
+                }
+            }
+
+            for (idx, var_name) in variable_names.iter().enumerate().rev() {
                 frame.locals.push(LocalVariable {
-                    name: variable_name.to_string(),
+                    name: var_name.clone(),
                     v: Variable {
                         read_only: false,
-                        value_type: union_type.members[determinant].1[0].clone(),
+                        value_type: union_type.members[determinant].1[idx].clone(),
                     },
                     scope: frame.current_scope,
                 });
                 chunk.write_byte(opcode::DEFINE_LOCAL);
-            } else {
-                return Err(format!(
-                    "Local {} is already defined in current scope",
-                    variable_name
-                ));
             }
 
             is_if_let = true;
@@ -2895,7 +2906,31 @@ mod test {
                 }
 
                 let o: Option = Option.Some(10,);
-                if let Option.Some(x) = o {
+                if let Option.Some(x,) = o {
+                }
+                ").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_if_let_multiple() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler.compile(&mut table,
+                "union Composite
+                {
+                    Two(int, float),
+                    Three(int, float, string),
+                }
+
+                let mut c: Composite = Composite.Two(10,1.23,);
+                if let Composite.Two(x, y,) = c {
+                }
+
+                c = Composite.Three(300, 3.142, \"Hello World\",);
+                if let Composite.Three(x, y, z,) = c {
                 }
                 ").unwrap();
             true
