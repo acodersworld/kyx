@@ -519,7 +519,8 @@ impl<'printer> VM<'printer> {
 
         let name = self.constant_strs[idx];
         assert!(self.globals.contains_key(&name));
-        self.globals.insert(name, *self.value_stack.last().unwrap());
+        assert!(!self.value_stack.is_empty());
+        self.globals.insert(name, self.value_stack.pop().unwrap());
     }
 
     fn set_local(&mut self, frame: &mut Frame) {
