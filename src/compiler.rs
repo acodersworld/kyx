@@ -91,26 +91,26 @@ use std::vec::Vec;
             primary -> literal | identifier | "(" expression ")" | enum_value
 */
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 struct FunctionType {
     return_type: ValueType,
     parameters: Vec<ValueType>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 enum EnumValue {
     Str(String),
     Integer(i32),
     Float(f32),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 struct EnumType {
     base_type: ValueType,
     members: HashMap<String, EnumValue>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 struct StructType {
     members: Vec<(String, ValueType)>,
 }
@@ -127,18 +127,18 @@ impl StructType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 struct UnionType {
     members: Vec<(String, Vec<ValueType>)>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 enum UnionMemberType {
     Templated(usize),
     Fixed(ValueType),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 struct UnionTemplatedType {
     template_parameter_count: usize,
     members: Vec<(String, Vec<UnionMemberType>)>,
@@ -195,8 +195,9 @@ impl UnionTemplatedType {
     }
 }
 
+#[derive(Debug, PartialEq)]
 struct TupleType {
-    element_types: Vec<ValueType>
+    element_types: Vec<ValueType>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -205,6 +206,7 @@ enum UserType {
     Struct(Rc<StructType>),
     TemplatedUnion(Rc<UnionTemplatedType>),
     Union(Rc<UnionType>),
+    Tuple(Rc<TupleType>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -264,6 +266,9 @@ impl fmt::Display for ValueType {
             Self::Union(u) => {
                 format!("union {:?}", u.members)
             }
+            Self::Tuple(t) => {
+                format!("tuple {:?}", t)
+            }
         };
 
         write!(f, "{}", s)
@@ -295,7 +300,7 @@ struct StackFrame {
 pub struct Compiler {
     globals: HashMap<String, Variable>,
     user_types: HashMap<String, UserType>,
-    tuple_types: Vec<Rc<Vec<ValueType>>>,
+    tuple_types: Vec<Rc<TupleType>>,
 }
 
 pub struct SrcCompiler<'a, T> {
@@ -308,7 +313,7 @@ pub struct SrcCompiler<'a, T> {
     is_in_loop: bool,
     function_chunks: HashMap<String, Chunk>,
     user_types: &'a mut HashMap<String, UserType>,
-    tuple_types: &'a Vec<Rc<TupleType>>,
+    tuple_types: &'a mut Vec<Rc<TupleType>>,
 }
 
 impl Compiler {
@@ -567,6 +572,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     }
                     UserType::TemplatedUnion(_u) => todo!(), //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
                     UserType::Union(_u) => todo!(), //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
+                    UserType::Tuple(t) => {
+                        return Ok(UnionMemberType::Fixed(ValueType::Tuple(t.clone())))
+                    }
                 }
             }
         }
@@ -662,7 +670,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn type_alias_definition(&mut self) -> Result<(), String> {
         // type_alias MyTuple = (int,)
-        
+
         let alias_name = self.match_identifier()?;
 
         if self.user_types.contains_key(&alias_name) {
@@ -679,12 +687,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ValueType::Float => todo!(),
             ValueType::Str => todo!(),
             ValueType::Bool => todo!(),
-            ValueType::Vector(x) => todo!(),
-            ValueType::HashMap(x) => todo!(),
-            ValueType::Function(x) => todo!(),
+            ValueType::Vector(_) => todo!(),
+            ValueType::HashMap(_) => todo!(),
+            ValueType::Function(_) => todo!(),
             ValueType::Enum(e) => UserType::Enum(e),
             ValueType::Struct(s) => UserType::Struct(s),
             ValueType::Union(u) => UserType::Union(u),
+            ValueType::Tuple(t) => UserType::Tuple(t),
         };
 
         self.user_types.insert(alias_name, user_type);
@@ -767,24 +776,53 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while self.scanner.match_token(Token::Dot)? {
             is_field = true;
             let variable = self.type_stack.last().unwrap().clone();
-            let struct_type = match &variable.value_type {
-                ValueType::Struct(s) => s,
-                x => return Err(format!("Only structs have members, got {}", x)),
-            };
+            let (member_idx, member_name, member_type) = match &variable.value_type {
+                ValueType::Struct(s) => {
+                    let member_name = self.match_identifier()?;
+                    let member_idx = match s.get_member_idx(&member_name) {
+                        Some(i) => i,
+                        None => {
+                            return Err(format!(
+                                "Struct does not have member named '{}'",
+                                member_name
+                            ))
+                        }
+                    };
 
-            let member_name = match self.scanner.scan_token()? {
-                Token::Identifier(i) => i,
-                x => return Err(format!("Expected member identifier after '.', got {}", x)),
-            };
-
-            let member_index = match struct_type.get_member_idx(member_name) {
-                Some(i) => i,
-                None => {
-                    return Err(format!(
-                        "Struct does not have member named '{}'",
-                        member_name
-                    ))
+                    (member_idx, member_name, s.members[member_idx].1.clone())
                 }
+                ValueType::Tuple(t) => {
+                    let member_idx = match self.scanner.scan_token()? {
+                        Token::Integer(i) => i,
+                        x => {
+                            return Err(format!("Expected member identifier after '.', got {}", x))
+                        }
+                    };
+
+                    if member_idx < 0 {
+                        return Err(format!(
+                            "Negative tuple fields are not allowed, fot {}",
+                            member_idx
+                        ));
+                    }
+
+                    let member_idx = member_idx as usize;
+                    let elem_count = t.element_types.len();
+
+                    if member_idx >= elem_count {
+                        return Err(format!(
+                            "Tuple index is too high. Must be less than {}, got {}",
+                            elem_count, member_idx
+                        ));
+                    }
+
+                    (
+                        member_idx,
+                        member_idx.to_string(),
+                        t.element_types[member_idx].clone(),
+                    )
+                }
+                x => return Err(format!("Only structs have members, got {}", x)),
             };
 
             if self.scanner.match_token(Token::Equal)? {
@@ -794,22 +832,21 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 self.expression(chunk)?;
 
-                let member_type = &struct_type.members[member_index].1;
                 let expr_type = &self.type_stack.last().unwrap().value_type;
                 if !member_type.can_assign(&expr_type) {
                     return Err(format!("Expected type {}, got {}", member_type, expr_type));
                 }
 
                 chunk.write_byte(opcode::SET_FIELD);
-                chunk.write_byte(member_index as u8);
+                chunk.write_byte(member_idx as u8);
                 self.type_stack.drain(self.type_stack.len() - 2..);
                 break;
             } else {
                 self.type_stack.pop();
                 chunk.write_byte(opcode::GET_FIELD);
-                chunk.write_byte(member_index as u8);
+                chunk.write_byte(member_idx as u8);
                 self.type_stack.push(Variable {
-                    value_type: struct_type.members[member_index].1.clone(),
+                    value_type: member_type,
                     read_only: variable.read_only,
                 });
             }
@@ -832,6 +869,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.vector_constructor(chunk)?;
         } else if self.scanner.match_token(Token::HashMap)? {
             self.hash_map_constructor(chunk)?;
+        } else if self.scanner.match_token(Token::Tuple)? {
+            self.tuple_constructor(chunk)?;
         } else if let Ok(Some(struct_type)) = self.match_struct_type() {
             self.struct_constructor(struct_type, chunk)?;
         } else if let Ok(Some(union_type)) = self.match_union_type() {
@@ -1074,6 +1113,29 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn tuple_constructor(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        self.consume(Token::LeftParen)?;
+
+        let mut type_list = vec![];
+        while !self.scanner.match_token(Token::RightParen)? {
+            self.expression(chunk)?;
+            self.consume(Token::Comma)?;
+
+            type_list.push(self.type_stack.pop().unwrap().value_type);
+        }
+
+        let tuple_type = self.instance_tuple(&type_list);
+        self.type_stack.push(Variable {
+            value_type: tuple_type,
+            read_only: false,
+        });
+
+        chunk.write_byte(opcode::CREATE_TUPLE);
+        chunk.write_byte(type_list.len() as u8);
+
+        Ok(())
+    }
+
     fn parse_type_vec_or_map(&mut self) -> Result<ValueType, String> {
         let t0 = self.parse_type()?;
 
@@ -1090,6 +1152,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         result
     }
 
+    fn instance_tuple(&mut self, type_list: &Vec<ValueType>) -> ValueType {
+        let found = self
+            .tuple_types
+            .iter()
+            .find(|x| x.element_types == *type_list);
+        if let Some(x) = found {
+            return ValueType::Tuple(x.clone());
+        }
+
+        let tuple_type = Rc::new(TupleType {
+            element_types: type_list.clone(),
+        });
+        self.tuple_types.push(tuple_type.clone());
+        ValueType::Tuple(tuple_type)
+    }
+
     fn parse_tuple(&mut self) -> Result<ValueType, String> {
         let mut type_list = vec![];
 
@@ -1098,14 +1176,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.consume(Token::Comma)?;
         }
 
-        let found = self.tuple_types.iter().find(|x| x.element_types == type_list);
-        if let Some(x) = found {
-            return Ok(ValueType::Tuple(x.clone()));
-        }
-
-        let tuple_type = Rc::new(TupleType { element_types: type_list.clone() });
-        self.tuple_types.push(tuple_type.clone());
-        Ok(ValueType::Tuple(tuple_type))
+        return Ok(self.instance_tuple(&type_list));
     }
 
     fn parse_template_type_arg_list(&mut self) -> Result<Vec<ValueType>, String> {
@@ -1138,6 +1209,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             return Ok(ValueType::Union(u.instance_union(&list)?));
                         }
                         UserType::Union(u) => return Ok(ValueType::Union(u.clone())),
+                        UserType::Tuple(t) => return Ok(ValueType::Tuple(t.clone())),
                     }
                 }
 
@@ -1483,37 +1555,36 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut template_parameters = vec![];
 
-        let union_type =
-            if self.scanner.match_token(Token::Less)? {
-                while !self.scanner.match_token(Token::Greater)? {
-                    template_parameters.push(self.parse_type()?);
-                    self.consume(Token::Comma)?;
-                }
+        let union_type = if self.scanner.match_token(Token::Less)? {
+            while !self.scanner.match_token(Token::Greater)? {
+                template_parameters.push(self.parse_type()?);
+                self.consume(Token::Comma)?;
+            }
 
-                match self.user_types.get(&union_name) {
-                    Some(user_type) => {
-                        let templated_union_type = match user_type {
-                            UserType::TemplatedUnion(u) => u,
-                            _ => return Err(format!("Not a templated union")),
-                        };
+            match self.user_types.get(&union_name) {
+                Some(user_type) => {
+                    let templated_union_type = match user_type {
+                        UserType::TemplatedUnion(u) => u,
+                        _ => return Err(format!("Not a templated union")),
+                    };
 
-                        templated_union_type.instance_union(&template_parameters)?
-                    }
-                    None => return Err(format!("No union named {}", union_name)),
+                    templated_union_type.instance_union(&template_parameters)?
                 }
-            } else {
-                match self.user_types.get(&union_name) {
-                    Some(user_type) => {
-                        let union_type = match user_type {
-                            UserType::Union(u) => u,
-                            _ => return Err(format!("Not a union")),
-                        };
+                None => return Err(format!("No union named {}", union_name)),
+            }
+        } else {
+            match self.user_types.get(&union_name) {
+                Some(user_type) => {
+                    let union_type = match user_type {
+                        UserType::Union(u) => u,
+                        _ => return Err(format!("Not a union")),
+                    };
 
-                        union_type.clone()
-                    }
-                    None => return Err(format!("No union named {}", union_name)),
+                    union_type.clone()
                 }
-            };
+                None => return Err(format!("No union named {}", union_name)),
+            }
+        };
 
         self.consume(Token::Dot)?;
 
@@ -1913,7 +1984,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err("Type error".to_owned());
         } else {
             match left_type {
-                ValueType::Unit => return Err("Cannot use comparison with unit type".to_owned()),
+                ValueType::Unit => todo!(),
                 ValueType::Integer | ValueType::Float => chunk.write_byte(op),
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
@@ -1927,6 +1998,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Enum(_) => return Err("Cannot use comparison with enum".to_owned()), // FIXME
                 ValueType::Struct(_) => return Err("Cannot use comparison with struct".to_owned()), // FIXME
                 ValueType::Union(_) => return Err("Cannot use comparison with union".to_owned()), // FIXME
+                ValueType::Tuple(_) => return Err("Cannot use comparison with tuple".to_owned()), // FIXME
             };
         }
 
@@ -2352,6 +2424,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         UserType::Struct(s) => self.struct_construction(chunk, name, s.clone())?,
                         UserType::TemplatedUnion(_) => todo!(),
                         UserType::Union(_) => todo!(),
+                        UserType::Tuple(_) => todo!(),
                     }
                 } else {
                     self.identifier(chunk, name)?;
@@ -3323,6 +3396,29 @@ mod test {
                 type_alias MyStruct = Struct;
 
                 let s: Struct = MyStruct { s = \"hello world\", };
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_tuple() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                type_alias MyTuple = (int, float, string,);
+
+                let t: MyTuple = tuple (10, 3.142, \"Hello world\",);
+                let i: int = t.0;
+                let f: float = t.1;
+                let s: string = t.2;
                 ",
                 )
                 .unwrap();

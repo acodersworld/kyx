@@ -11,6 +11,7 @@ const OPCODES: &[&str] = &[
     "CREATE_HASH_MAP",
     "CREATE_STRUCT",
     "CREATE_UNION",
+    "CREATE_TUPLE",
     //
     "GET_INDEX",
     "SET_INDEX",

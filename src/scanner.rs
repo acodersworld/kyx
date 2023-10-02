@@ -25,6 +25,7 @@ pub enum Token<'a> {
 
     Vector,
     HashMap,
+    Tuple,
 
     Identifier(&'a str),
     Integer(i32),
@@ -96,6 +97,7 @@ impl Token<'_> {
 
             Self::Vector => "vec",
             Self::HashMap => "hash_map",
+            Self::Tuple => "tuple",
 
             Self::Identifier(id) => id,
             Self::Integer(i) => return i.to_string(),
@@ -239,6 +241,7 @@ impl<'a> Scanner<'a> {
             "type_alias" => Token::TypeAlias,
             "vec" => Token::Vector,
             "hash_map" => Token::HashMap,
+            "tuple" => Token::Tuple,
             "struct" => Token::Struct,
             "enum" => Token::Enum,
             "union" => Token::Union,
@@ -480,7 +483,7 @@ mod tests {
     #[test]
     fn test_keywords() {
         let src =
-            "int float string type_alias vec hash_map struct enum union interface while for return fn let mut true false";
+            "int float string type_alias vec hash_map tuple struct enum union interface while for return fn let mut true false";
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::TypeInt));
         assert_eq!(scanner.scan_token(), Ok(Token::TypeFloat));
@@ -489,6 +492,7 @@ mod tests {
 
         assert_eq!(scanner.scan_token(), Ok(Token::Vector));
         assert_eq!(scanner.scan_token(), Ok(Token::HashMap));
+        assert_eq!(scanner.scan_token(), Ok(Token::Tuple));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Struct));
         assert_eq!(scanner.scan_token(), Ok(Token::Enum));

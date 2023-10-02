@@ -35,6 +35,7 @@ impl<'a> Disassembler<'a> {
             opcode::CONSTANT_BOOL => self.constant_bool_instruction(),
             opcode::CREATE_VEC => self.create_vec(),
             opcode::CREATE_HASH_MAP => self.create_hash_map(),
+            opcode::CREATE_TUPLE => self.create_tuple(),
             opcode::CREATE_STRUCT => self.create_struct(),
             opcode::CREATE_UNION => self.create_union(),
             opcode::GET_INDEX => self.simple_instruction("get index"),
@@ -188,6 +189,13 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("CREATE HASH MAP: {}", arg_count);
+    }
+
+    fn create_tuple(&mut self) {
+        let elem_count = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CREATE TUPLE: {}", elem_count);
     }
 
     fn create_struct(&mut self) {

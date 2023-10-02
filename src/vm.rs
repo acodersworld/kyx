@@ -210,6 +210,7 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_BOOL => self.push_constant_bool(&mut frame_stack.top),
                 opcode::CREATE_VEC => self.create_vec(&mut frame_stack.top),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(&mut frame_stack.top),
+                opcode::CREATE_TUPLE => self.create_tuple(&mut frame_stack.top),
                 opcode::CREATE_STRUCT => self.create_struct(&mut frame_stack.top),
                 opcode::CREATE_UNION => self.create_union(&mut frame_stack.top),
                 opcode::GET_INDEX => self.get_index(),
@@ -474,6 +475,22 @@ impl<'printer> VM<'printer> {
         self.objects.push(GcValue::HashMap(hash_map_val));
 
         self.value_stack.push(Value::HashMap(ptr));
+    }
+
+    fn create_tuple(&mut self, frame: &mut Frame) {
+        let elem_count = frame.next_code().unwrap() as usize;
+        assert!(self.value_stack.len() >= elem_count);
+
+        let elements: Vec<Value> = self
+            .value_stack
+            .drain((self.value_stack.len() - elem_count)..)
+            .collect();
+
+        let mut struct_val = Box::new(StructValue { members: elements });
+        let ptr = unsafe { NonNull::new_unchecked(struct_val.as_mut() as *mut _) };
+        self.objects.push(GcValue::Struct(struct_val));
+
+        self.value_stack.push(Value::Struct(ptr));
     }
 
     fn create_struct(&mut self, frame: &mut Frame) {
@@ -2037,5 +2054,27 @@ mod test {
         assert_eq!(printer.strings[4], "3.142");
         assert_eq!(printer.strings[5], "Hello World");
         assert_eq!(printer.strings[6], "Mismatch");
+    }
+
+    #[test]
+    fn test_tuple() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            type_alias MyTuple = (int, float, string,);
+
+            let t: MyTuple = tuple (10, 3.142, \"Hello world\",);
+            print(t.0);
+            print(t.1);
+            print(t.2);
+            ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "3.142");
+        assert_eq!(printer.strings[2], "Hello world");
     }
 }
