@@ -1414,30 +1414,41 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         &mut self,
         chunk: &mut Chunk,
     ) -> Result<(usize, Vec<String>, Rc<UnionType>), String> {
-        // if let Option<int>.Some(x) = expr
         let union_name = self.match_identifier()?;
 
-        let union_type = match self.user_types.get(&union_name) {
-            Some(user_type) => {
-                let union_type = match user_type {
-                    UserType::Union(u) => u,
-                    _ => return Err(format!("Not a union")),
-                };
-
-                union_type.clone()
-            }
-            None => return Err(format!("No union named {}", union_name)),
-        };
-
-        /*
         let mut template_parameters = vec![];
-        if self.scanner.match_token(Token::Less)? {
-            while !self.scanner.match_token(Token::Greater)? {
-                template_parameters.push(self.match_identifier()?);
-                self.consume(Token::Comma)?;
-            }
-        }
-        */
+
+        let union_type =
+            if self.scanner.match_token(Token::Less)? {
+                while !self.scanner.match_token(Token::Greater)? {
+                    template_parameters.push(self.parse_type()?);
+                    self.consume(Token::Comma)?;
+                }
+
+                match self.user_types.get(&union_name) {
+                    Some(user_type) => {
+                        let templated_union_type = match user_type {
+                            UserType::TemplatedUnion(u) => u,
+                            _ => return Err(format!("Not a templated union")),
+                        };
+
+                        templated_union_type.instance_union(&template_parameters)?
+                    }
+                    None => return Err(format!("No union named {}", union_name)),
+                }
+            } else {
+                match self.user_types.get(&union_name) {
+                    Some(user_type) => {
+                        let union_type = match user_type {
+                            UserType::Union(u) => u,
+                            _ => return Err(format!("Not a union")),
+                        };
+
+                        union_type.clone()
+                    }
+                    None => return Err(format!("No union named {}", union_name)),
+                }
+            };
 
         self.consume(Token::Dot)?;
 
@@ -3185,6 +3196,35 @@ mod test {
 
                 c = Composite.Three(300, 3.142, \"Hello World\",);
                 if let Composite.Three(x, y, z,) = c {
+                }
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_if_let_templated() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                union Composite<A, B, C>
+                {
+                    Two(A, B),
+                    Three(A, C, B),
+                }
+
+                let mut c: Composite<int, float, string,> = Composite<int, float, string,>.Two(10,1.23,);
+                if let Composite<int, float, string,>.Two(x, y,) = c {
+                }
+
+                c = Composite<int, float, string,>.Three(300, \"Hello World\", 3.142,);
+                if let Composite<int, float, string,>.Three(x, y, z,) = c {
                 }
                 ",
                 )
