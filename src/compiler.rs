@@ -29,7 +29,8 @@ use std::vec::Vec;
                       print_stmt |
                       return_stmt |
                       enum_definition |
-                      union_definition
+                      union_definition |
+                      type_alias
 
            let_decl -> "let" ("mut")? ":" identifier type = expression ";"
            print_stmt -> print expression ";"
@@ -46,7 +47,7 @@ use std::vec::Vec;
            union_definition -> "union" identifier ("<" template_type* ">")? "{" member* "}"
                 template_type -> identifier ","
                 member -> identifier ("(" type ")") ","
-
+           type_alias -> "type_alias" identifier = type
 
    EXPRESSIONS:
        expression -> assignment |
@@ -373,6 +374,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.struct_definition()?;
             } else if self.scanner.match_token(Token::Union)? {
                 self.union_definition()?;
+            } else if self.scanner.match_token(Token::TypeAlias)? {
+                self.type_alias_definition()?;
+                self.consume(Token::SemiColon)?;
             } else {
                 self.rule(chunk)?;
             }
@@ -642,6 +646,37 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             );
         }
 
+        Ok(())
+    }
+
+    fn type_alias_definition(&mut self) -> Result<(), String> {
+        // type_alias MyTuple = (int,)
+        
+        let alias_name = self.match_identifier()?;
+
+        if self.user_types.contains_key(&alias_name) {
+            return Err(format!("{} is already defined", alias_name));
+        }
+
+        self.consume(Token::Equal)?;
+
+        let alias_type = self.parse_type()?;
+
+        let user_type = match alias_type {
+            ValueType::Unit => todo!(),
+            ValueType::Integer => todo!(),
+            ValueType::Float => todo!(),
+            ValueType::Str => todo!(),
+            ValueType::Bool => todo!(),
+            ValueType::Vector(x) => todo!(),
+            ValueType::HashMap(x) => todo!(),
+            ValueType::Function(x) => todo!(),
+            ValueType::Enum(e) => UserType::Enum(e),
+            ValueType::Struct(s) => UserType::Struct(s),
+            ValueType::Union(u) => UserType::Union(u),
+        };
+
+        self.user_types.insert(alias_name, user_type);
         Ok(())
     }
 
@@ -3226,6 +3261,38 @@ mod test {
                 c = Composite<int, float, string,>.Three(300, \"Hello World\", 3.142,);
                 if let Composite<int, float, string,>.Three(x, y, z,) = c {
                 }
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_type_alias() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                union Option<T> {
+                    Some(T),
+                    None,
+                }
+
+                type_alias MyOption = Option<int,>;
+
+                let o: Option<int,> = MyOption.Some(10,);
+
+                struct Struct {
+                    s: string,
+                }
+
+                type_alias MyStruct = Struct;
+
+                let s: Struct = MyStruct { s = \"hello world\", };
                 ",
                 )
                 .unwrap();

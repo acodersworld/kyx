@@ -21,6 +21,7 @@ pub enum Token<'a> {
     TypeInt,
     TypeFloat,
     TypeString,
+    TypeAlias,
 
     Vector,
     HashMap,
@@ -91,6 +92,7 @@ impl Token<'_> {
             Self::TypeInt => "int",
             Self::TypeFloat => "float",
             Self::TypeString => "string",
+            Self::TypeAlias => "type_alias",
 
             Self::Vector => "vec",
             Self::HashMap => "hash_map",
@@ -234,6 +236,7 @@ impl<'a> Scanner<'a> {
             "int" => Token::TypeInt,
             "float" => Token::TypeFloat,
             "string" => Token::TypeString,
+            "type_alias" => Token::TypeAlias,
             "vec" => Token::Vector,
             "hash_map" => Token::HashMap,
             "struct" => Token::Struct,
@@ -477,11 +480,12 @@ mod tests {
     #[test]
     fn test_keywords() {
         let src =
-            "int float string vec hash_map struct enum union interface while for return fn let mut true false";
+            "int float string type_alias vec hash_map struct enum union interface while for return fn let mut true false";
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token(), Ok(Token::TypeInt));
         assert_eq!(scanner.scan_token(), Ok(Token::TypeFloat));
         assert_eq!(scanner.scan_token(), Ok(Token::TypeString));
+        assert_eq!(scanner.scan_token(), Ok(Token::TypeAlias));
 
         assert_eq!(scanner.scan_token(), Ok(Token::Vector));
         assert_eq!(scanner.scan_token(), Ok(Token::HashMap));
