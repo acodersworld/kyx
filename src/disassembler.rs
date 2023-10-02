@@ -102,7 +102,7 @@ impl<'a> Disassembler<'a> {
         );
         self.offset += 2;
     }
-    
+
     fn read_instruction(&mut self) {
         let read_type = self.code[self.offset];
         self.offset += 1;
@@ -240,5 +240,4 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
         println!("CALL: idx({}) arity({})", idx, arity);
     }
-
 }

@@ -4,12 +4,12 @@ use crate::opcode;
 use crate::scanner::{Scanner, Token};
 use crate::var_len_int;
 
+use itertools::Itertools;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 use std::vec::Vec;
-use std::cell::RefCell;
-use itertools::Itertools;
 
 /*
    PROGRAM:
@@ -46,7 +46,7 @@ use itertools::Itertools;
            union_definition -> "union" identifier ("<" template_type* ">")? "{" member* "}"
                 template_type -> identifier ","
                 member -> identifier ("(" type ")") ","
-                
+
 
    EXPRESSIONS:
        expression -> assignment |
@@ -98,7 +98,7 @@ struct FunctionType {
 enum EnumValue {
     Str(String),
     Integer(i32),
-    Float(f32)
+    Float(f32),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -126,26 +126,33 @@ impl StructType {
 
 #[derive(Debug, PartialEq, Clone)]
 struct UnionType {
-    members: Vec<(String, Vec<ValueType>)>
+    members: Vec<(String, Vec<ValueType>)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 enum UnionMemberType {
     Templated(usize),
-    Fixed(ValueType)
+    Fixed(ValueType),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 struct UnionTemplatedType {
     template_parameter_count: usize,
     members: Vec<(String, Vec<UnionMemberType>)>,
-    instanced_unions: RefCell<Vec<(Vec<ValueType>, Rc<UnionType>)>>
+    instanced_unions: RefCell<Vec<(Vec<ValueType>, Rc<UnionType>)>>,
 }
 
 impl UnionTemplatedType {
-    fn instance_union(&self, template_parameters: &Vec<ValueType>) -> Result<Rc<UnionType>, String> {
+    fn instance_union(
+        &self,
+        template_parameters: &Vec<ValueType>,
+    ) -> Result<Rc<UnionType>, String> {
         if self.template_parameter_count != template_parameters.len() {
-            return Err(format!("Expected {} template parameters, got {}", self.template_parameter_count, template_parameters.len()));
+            return Err(format!(
+                "Expected {} template parameters, got {}",
+                self.template_parameter_count,
+                template_parameters.len()
+            ));
         }
 
         for instance in self.instanced_unions.borrow().iter() {
@@ -158,23 +165,31 @@ impl UnionTemplatedType {
     }
 
     fn create_new_instance(&self, template_parameters: &Vec<ValueType>) -> Rc<UnionType> {
-        let new_members = self.members.iter().map(|(name, member_types)| {
-            let new_types = member_types.iter().map(|t| {
-                match t {
-                    UnionMemberType::Templated(idx) => template_parameters[*idx].clone(),
-                    UnionMemberType::Fixed(v) => v.clone()
-                }
-            }).collect();
-            
-            (name.clone(), new_types)
-        }).collect::<Vec<(String, Vec<ValueType>)>>();
+        let new_members = self
+            .members
+            .iter()
+            .map(|(name, member_types)| {
+                let new_types = member_types
+                    .iter()
+                    .map(|t| match t {
+                        UnionMemberType::Templated(idx) => template_parameters[*idx].clone(),
+                        UnionMemberType::Fixed(v) => v.clone(),
+                    })
+                    .collect();
 
-        let new_instance = Rc::new(UnionType { members: new_members });
-        self.instanced_unions.borrow_mut().push((template_parameters.clone(), new_instance.clone()));
+                (name.clone(), new_types)
+            })
+            .collect::<Vec<(String, Vec<ValueType>)>>();
+
+        let new_instance = Rc::new(UnionType {
+            members: new_members,
+        });
+        self.instanced_unions
+            .borrow_mut()
+            .push((template_parameters.clone(), new_instance.clone()));
 
         new_instance
     }
-
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -182,7 +197,7 @@ enum UserType {
     Enum(Rc<EnumType>),
     Struct(Rc<StructType>),
     TemplatedUnion(Rc<UnionTemplatedType>),
-    Union(Rc<UnionType>)
+    Union(Rc<UnionType>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -212,8 +227,7 @@ impl ValueType {
     fn can_coerce_to(&self, src: &ValueType) -> bool {
         if let ValueType::Enum(e) = self {
             *src == e.base_type
-        }
-        else {
+        } else {
             false
         }
     }
@@ -232,16 +246,16 @@ impl fmt::Display for ValueType {
             Self::Function(f) => {
                 let parameters = f.parameters.iter().join(", ");
                 format!("fn({}) -> {}", parameters, f.return_type)
-            },
+            }
             Self::Enum(e) => {
                 format!("enum {:?}", e.members)
-            },
+            }
             Self::Struct(s) => {
                 format!("struct {:?}", s.members)
-            },
+            }
             Self::Union(u) => {
                 format!("union {:?}", u.members)
-            },
+            }
         };
 
         write!(f, "{}", s)
@@ -272,7 +286,7 @@ struct StackFrame {
 
 pub struct Compiler {
     globals: HashMap<String, Variable>,
-    user_types: HashMap<String, UserType>
+    user_types: HashMap<String, UserType>,
 }
 
 pub struct SrcCompiler<'a, T> {
@@ -284,14 +298,14 @@ pub struct SrcCompiler<'a, T> {
     unpatched_break_offsets: Vec<usize>,
     is_in_loop: bool,
     function_chunks: HashMap<String, Chunk>,
-    user_types: &'a mut HashMap<String, UserType>
+    user_types: &'a mut HashMap<String, UserType>,
 }
 
 impl Compiler {
     pub fn new() -> Compiler {
         Compiler {
             globals: HashMap::new(),
-            user_types: HashMap::new()
+            user_types: HashMap::new(),
         }
     }
 
@@ -309,7 +323,7 @@ impl Compiler {
             unpatched_break_offsets: Vec::new(),
             is_in_loop: false,
             function_chunks: HashMap::new(),
-            user_types: &mut self.user_types
+            user_types: &mut self.user_types,
         };
 
         let mut chunk = Chunk::new();
@@ -325,11 +339,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             // This will happen when a function returns no values. Since it does not return any values
             // no pop instruction should be emitted.
             //
-            // Unit is on the type stack so types can still be validated, eg. 
-            // let a = func(); 
+            // Unit is on the type stack so types can still be validated, eg.
+            // let a = func();
             // where func does not return a value.
-        }
-        else {
+        } else {
             self.type_stack.clear();
 
             for _ in 0..pop_count {
@@ -354,17 +367,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while self.scanner.peek_token()? != Token::Eof {
             if self.scanner.match_token(Token::Fn)? {
                 self.function_definition()?;
-            }
-            else if self.scanner.match_token(Token::Enum)? {
+            } else if self.scanner.match_token(Token::Enum)? {
                 self.enum_definition()?;
-            }
-            else if self.scanner.match_token(Token::Struct)? {
+            } else if self.scanner.match_token(Token::Struct)? {
                 self.struct_definition()?;
-            }
-            else if self.scanner.match_token(Token::Union)? {
+            } else if self.scanner.match_token(Token::Union)? {
                 self.union_definition()?;
-            }
-            else {
+            } else {
                 self.rule(chunk)?;
             }
         }
@@ -376,8 +385,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if !self.try_statement(chunk)? {
             if self.scanner.match_token(Token::Return)? {
                 self.return_statement(chunk)?;
-            }
-            else {
+            } else {
                 let is_block = self.expression(chunk)?;
 
                 // only times an expression doesn't have to be followed by a ';'
@@ -400,12 +408,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn enum_definition(&mut self) -> Result<ValueType, String> {
-          // enum_definition -> "enum" STRING ":" type "{" enum_value* "}"
-          //      enum_value = STRING "=" literal ","?
+        // enum_definition -> "enum" STRING ":" type "{" enum_value* "}"
+        //      enum_value = STRING "=" literal ","?
 
         let enum_name = match self.scanner.scan_token()? {
             Token::Identifier(s) => s,
-            x => return Err(format!("Expected name for enum. Got {:?}", x))
+            x => return Err(format!("Expected name for enum. Got {:?}", x)),
         };
 
         self.consume(Token::Colon)?;
@@ -414,13 +422,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut enum_type = EnumType {
             base_type: enum_base_type.clone(),
-            members: HashMap::new()
+            members: HashMap::new(),
         };
 
         while !self.scanner.match_token(Token::RightBrace)? {
             let member_name = match self.scanner.scan_token()? {
                 Token::Identifier(s) => s,
-                x => return Err(format!("Expected name for enum member. Got {:?}", x))
+                x => return Err(format!("Expected name for enum member. Got {:?}", x)),
             };
 
             self.consume(Token::Equal)?;
@@ -428,41 +436,58 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let enum_value = match self.scanner.scan_token()? {
                 Token::Str(s) => {
                     if enum_base_type != ValueType::Str {
-                        return Err(format!("Enum type is string but enum value is {}", enum_base_type));
+                        return Err(format!(
+                            "Enum type is string but enum value is {}",
+                            enum_base_type
+                        ));
                     }
                     EnumValue::Str(s.to_string())
-                },
+                }
                 Token::Integer(i) => {
                     if enum_base_type != ValueType::Integer {
-                        return Err(format!("Enum type is int but enum value is {}", enum_base_type));
+                        return Err(format!(
+                            "Enum type is int but enum value is {}",
+                            enum_base_type
+                        ));
                     }
                     EnumValue::Integer(i)
-                },
+                }
                 Token::Float(f) => {
                     if enum_base_type != ValueType::Float {
-                        return Err(format!("Enum type is float but enum value is {}", enum_base_type));
+                        return Err(format!(
+                            "Enum type is float but enum value is {}",
+                            enum_base_type
+                        ));
                     }
                     EnumValue::Float(f)
-                },
-                _ => return Err(format!("Expected name for enum"))
+                }
+                _ => return Err(format!("Expected name for enum")),
             };
 
-            if enum_type.members.insert(member_name.to_string(), enum_value).is_some() {
-                return Err(format!("{} already defined in enum {}", member_name, enum_name));
+            if enum_type
+                .members
+                .insert(member_name.to_string(), enum_value)
+                .is_some()
+            {
+                return Err(format!(
+                    "{} already defined in enum {}",
+                    member_name, enum_name
+                ));
             }
 
             self.consume(Token::Comma)?;
         }
 
         let enum_type = Rc::new(enum_type);
-        self.user_types.insert(enum_name.to_string(), UserType::Enum(enum_type.clone()));
+        self.user_types
+            .insert(enum_name.to_string(), UserType::Enum(enum_type.clone()));
         Ok(ValueType::Enum(enum_type))
     }
 
     fn struct_definition(&mut self) -> Result<(), String> {
         let struct_name = match self.scanner.scan_token()? {
             Token::Identifier(s) => s,
-            x => return Err(format!("Expected name for struct. Got {:?}", x))
+            x => return Err(format!("Expected name for struct. Got {:?}", x)),
         };
 
         if self.user_types.contains_key(struct_name) {
@@ -475,43 +500,58 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while !self.scanner.match_token(Token::RightBrace)? {
             let member_name = match self.scanner.scan_token()? {
                 Token::Identifier(s) => s,
-                x => return Err(format!("Expected name for struct member. Got {:?}", x))
+                x => return Err(format!("Expected name for struct member. Got {:?}", x)),
             };
 
             self.consume(Token::Colon)?;
             let member_type = self.parse_type()?;
             self.consume(Token::Comma)?;
 
-            if members.insert(member_name.to_string(), member_type).is_some() {
-                return Err(format!("Member {} already defined in struct {}", member_name, struct_name));
+            if members
+                .insert(member_name.to_string(), member_type)
+                .is_some()
+            {
+                return Err(format!(
+                    "Member {} already defined in struct {}",
+                    member_name, struct_name
+                ));
             }
         }
 
-        self.user_types.insert(struct_name.to_string(), 
-            UserType::Struct(
-                Rc::new(
-                    StructType
-                    {
-                        members: members.into_iter().map(|(name, value_type)| (name, value_type)).collect()
-                    }
-                )
-            )
+        self.user_types.insert(
+            struct_name.to_string(),
+            UserType::Struct(Rc::new(StructType {
+                members: members
+                    .into_iter()
+                    .map(|(name, value_type)| (name, value_type))
+                    .collect(),
+            })),
         );
         Ok(())
     }
 
-    fn union_member_type(&mut self, template_parameter_types: &Vec<String>) -> Result<UnionMemberType, String> {
+    fn union_member_type(
+        &mut self,
+        template_parameter_types: &Vec<String>,
+    ) -> Result<UnionMemberType, String> {
         if let Ok(type_name) = self.match_identifier() {
-            if let Some(idx) = template_parameter_types.iter().position(|x| *x == type_name) {
+            if let Some(idx) = template_parameter_types
+                .iter()
+                .position(|x| *x == type_name)
+            {
                 return Ok(UnionMemberType::Templated(idx));
             }
 
             if let Some(user_type) = self.user_types.get(&type_name) {
                 match user_type {
-                    UserType::Enum(e) => return Ok(UnionMemberType::Fixed(ValueType::Enum(e.clone()))),
-                    UserType::Struct(s) => return Ok(UnionMemberType::Fixed(ValueType::Struct(s.clone()))),
+                    UserType::Enum(e) => {
+                        return Ok(UnionMemberType::Fixed(ValueType::Enum(e.clone())))
+                    }
+                    UserType::Struct(s) => {
+                        return Ok(UnionMemberType::Fixed(ValueType::Struct(s.clone())))
+                    }
                     UserType::TemplatedUnion(_u) => todo!(), //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
-                    UserType::Union(_u) => todo!() //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
+                    UserType::Union(_u) => todo!(), //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
                 }
             }
         }
@@ -522,7 +562,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn union_definition(&mut self) -> Result<(), String> {
         let union_name = match self.scanner.scan_token()? {
             Token::Identifier(s) => s,
-            x => return Err(format!("Expected name for union. Got {:?}", x))
+            x => return Err(format!("Expected name for union. Got {:?}", x)),
         };
 
         if self.user_types.contains_key(union_name) {
@@ -531,12 +571,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut template_parameter_types = vec![];
         if self.scanner.match_token(Token::Less)? {
-
             template_parameter_types.push(self.match_identifier()?);
             while self.scanner.match_token(Token::Comma)? {
                 let template_parameter = self.match_identifier()?;
                 if template_parameter_types.contains(&template_parameter) {
-                    return Err(format!("{} previously defined in template type list", template_parameter));
+                    return Err(format!(
+                        "{} previously defined in template type list",
+                        template_parameter
+                    ));
                 }
                 template_parameter_types.push(template_parameter);
             }
@@ -568,16 +610,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let template_parameter_count = template_parameter_types.len();
         if template_parameter_count > 0 {
-            self.user_types.insert(union_name.to_string(), 
-                UserType::TemplatedUnion(
-                    Rc::new(
-                        UnionTemplatedType {
-                            template_parameter_count,
-                            members,
-                            instanced_unions: RefCell::new(vec![])
-                        })));
-        }
-        else {
+            self.user_types.insert(
+                union_name.to_string(),
+                UserType::TemplatedUnion(Rc::new(UnionTemplatedType {
+                    template_parameter_count,
+                    members,
+                    instanced_unions: RefCell::new(vec![]),
+                })),
+            );
+        } else {
             let mut fixed_members = vec![];
 
             for (name, member_types) in members.into_iter() {
@@ -585,8 +626,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 for t in member_types {
                     if let UnionMemberType::Fixed(f) = t {
                         fixed_types.push(f);
-                    }
-                    else {
+                    } else {
                         panic!("Should not be fixed!");
                     }
                 }
@@ -594,8 +634,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 fixed_members.push((name, fixed_types));
             }
 
-            self.user_types.insert(union_name.to_string(), 
-                UserType::Union(Rc::new(UnionType { members: fixed_members }))
+            self.user_types.insert(
+                union_name.to_string(),
+                UserType::Union(Rc::new(UnionType {
+                    members: fixed_members,
+                })),
             );
         }
 
@@ -626,7 +669,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if let Token::Identifier(i) = self.scanner.peek_token()? {
             let user_type = match self.user_types.get(i) {
                 Some(ut) => ut,
-                None => return Ok(None)
+                None => return Ok(None),
             };
 
             if let UserType::Struct(s) = user_type {
@@ -642,8 +685,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if let Token::Identifier(i) = self.scanner.peek_token()? {
             let user_type = match self.user_types.get(i) {
                 Some(ut) => ut,
-                None => return Ok(None)
-            }.clone();
+                None => return Ok(None),
+            }
+            .clone();
 
             if let UserType::TemplatedUnion(u) = user_type {
                 self.scanner.scan_token()?; // eat union name
@@ -678,23 +722,28 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             is_field = true;
             let variable = self.type_stack.last().unwrap().clone();
             let struct_type = match &variable.value_type {
-                    ValueType::Struct(s) => s,
-                    x => return Err(format!("Only structs have members, got {}", x))
-                };
+                ValueType::Struct(s) => s,
+                x => return Err(format!("Only structs have members, got {}", x)),
+            };
 
             let member_name = match self.scanner.scan_token()? {
                 Token::Identifier(i) => i,
-                x => return Err(format!("Expected member identifier after '.', got {}", x))
+                x => return Err(format!("Expected member identifier after '.', got {}", x)),
             };
 
             let member_index = match struct_type.get_member_idx(member_name) {
                 Some(i) => i,
-                None => return Err(format!("Struct does not have member named '{}'", member_name))
+                None => {
+                    return Err(format!(
+                        "Struct does not have member named '{}'",
+                        member_name
+                    ))
+                }
             };
 
             if self.scanner.match_token(Token::Equal)? {
                 if variable.read_only {
-                    return Err(format!("Cannot set read only field {}", member_name))
+                    return Err(format!("Cannot set read only field {}", member_name));
                 }
 
                 self.expression(chunk)?;
@@ -709,14 +758,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 chunk.write_byte(member_index as u8);
                 self.type_stack.drain(self.type_stack.len() - 2..);
                 break;
-            }
-            else {
+            } else {
                 self.type_stack.pop();
                 chunk.write_byte(opcode::GET_FIELD);
                 chunk.write_byte(member_index as u8);
                 self.type_stack.push(Variable {
                     value_type: struct_type.members[member_index].1.clone(),
-                    read_only: variable.read_only
+                    read_only: variable.read_only,
                 });
             }
         }
@@ -804,23 +852,31 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn struct_constructor(&mut self, struct_type: Rc<StructType>, chunk: &mut Chunk) -> Result<(), String> {
+    fn struct_constructor(
+        &mut self,
+        struct_type: Rc<StructType>,
+        chunk: &mut Chunk,
+    ) -> Result<(), String> {
         //    hash_map_constructor -> identifier { struct_member_init }
         //        struct_member_init -> identifier "=" expression ","
         self.consume(Token::LeftBrace)?;
 
-        let mut unset_members: HashSet<String> = struct_type.members.iter().map(|(member_name, _)| member_name.to_string()).collect();
+        let mut unset_members: HashSet<String> = struct_type
+            .members
+            .iter()
+            .map(|(member_name, _)| member_name.to_string())
+            .collect();
         let mut member_indices = Vec::new();
 
         while !self.scanner.match_token(Token::RightBrace)? {
             let member_name = match self.scanner.scan_token()? {
                 Token::Identifier(i) => i,
-                x => return Err(format!("Expected member name, got {}", x))
+                x => return Err(format!("Expected member name, got {}", x)),
             };
 
             let member_index = match struct_type.get_member_idx(member_name) {
                 Some(i) => i,
-                None => return Err(format!("{} is not a member of struct", member_name))
+                None => return Err(format!("{} is not a member of struct", member_name)),
             };
 
             self.consume(Token::Equal)?;
@@ -841,15 +897,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             chunk.write_byte(*idx);
         }
 
-        self.type_stack.drain(self.type_stack.len() - member_indices.len()..);
+        self.type_stack
+            .drain(self.type_stack.len() - member_indices.len()..);
         self.type_stack.push(Variable {
             value_type: ValueType::Struct(struct_type),
-            read_only: false
+            read_only: false,
         });
         Ok(())
     }
 
-    fn union_constructor(&mut self, union_type: Rc<UnionType>, chunk: &mut Chunk) -> Result<(), String> {
+    fn union_constructor(
+        &mut self,
+        union_type: Rc<UnionType>,
+        chunk: &mut Chunk,
+    ) -> Result<(), String> {
         //   union_constructor -> identifier "." identifier "(" union_member_init* ")"
         //       union_member_init -> expresion ","
 
@@ -860,9 +921,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let member_name = self.match_identifier()?;
 
-        let (determinant, member) = match union_type.members.iter().enumerate().find(|(_, x)| x.0 == member_name) {
+        let (determinant, member) = match union_type
+            .members
+            .iter()
+            .enumerate()
+            .find(|(_, x)| x.0 == member_name)
+        {
             Some(x) => x,
-            None => return Err(format!("{} is not a member of union", member_name))
+            None => return Err(format!("{} is not a member of union", member_name)),
         };
 
         let member_count = member.1.len();
@@ -871,10 +937,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             for member_type in &member.1 {
                 self.expression(chunk)?;
-                
+
                 let expr_type = &self.type_stack.pop().unwrap().value_type;
                 if !member_type.can_assign(expr_type) {
-                    return Err(format!("Cannot assign type {} to {}", expr_type, member_type));
+                    return Err(format!(
+                        "Cannot assign type {} to {}",
+                        expr_type, member_type
+                    ));
                 }
 
                 self.consume(Token::Comma)?;
@@ -889,7 +958,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.type_stack.push(Variable {
             value_type: ValueType::Union(union_type),
-            read_only: false
+            read_only: false,
         });
         Ok(())
     }
@@ -1002,13 +1071,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             self.consume(Token::Less)?;
                             let list = self.parse_template_type_arg_list()?;
                             return Ok(ValueType::Union(u.instance_union(&list)?));
-                        },
+                        }
                         UserType::Union(u) => return Ok(ValueType::Union(u.clone())),
                     }
                 }
 
                 return Err(format!("Expected type but got {}", i));
-            },
+            }
             token => return Err(format!("Expected type but got {}", token)),
         };
 
@@ -1028,7 +1097,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         chunk.write_byte(opcode::RETURN);
-        return Ok(())
+        return Ok(());
     }
 
     fn function(&mut self, function_name: &str) -> Result<Chunk, String> {
@@ -1045,7 +1114,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             {
                 let name = match self.scanner.scan_token()? {
                     Token::Identifier(i) => i,
-                    _ => return Err("Expected identifier".to_string())
+                    _ => return Err("Expected identifier".to_string()),
                 };
 
                 self.consume(Token::Colon)?;
@@ -1055,14 +1124,18 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 parameters.push(param_type.clone());
 
-                self.stack_frames.last_mut().unwrap().locals.push(LocalVariable {
-                    name: name.to_string(),
-                    v: Variable {
-                        value_type: param_type,
-                        read_only: !mutable
-                    },
-                    scope: 0,
-                });
+                self.stack_frames
+                    .last_mut()
+                    .unwrap()
+                    .locals
+                    .push(LocalVariable {
+                        name: name.to_string(),
+                        v: Variable {
+                            value_type: param_type,
+                            read_only: !mutable,
+                        },
+                        scope: 0,
+                    });
             }
 
             while !self.scanner.match_token(Token::RightParen)? {
@@ -1070,7 +1143,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 let name = match self.scanner.scan_token()? {
                     Token::Identifier(i) => i,
-                    _ => return Err("Expected identifier".to_string())
+                    _ => return Err("Expected identifier".to_string()),
                 };
 
                 self.consume(Token::Colon)?;
@@ -1080,35 +1153,41 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 parameters.push(param_type.clone());
 
-                self.stack_frames.last_mut().unwrap().locals.push(LocalVariable {
-                    name: name.to_string(),
-                    v: Variable {
-                        value_type: param_type,
-                        read_only: !mutable
-                    },
-                    scope: 0,
-                });
+                self.stack_frames
+                    .last_mut()
+                    .unwrap()
+                    .locals
+                    .push(LocalVariable {
+                        name: name.to_string(),
+                        v: Variable {
+                            value_type: param_type,
+                            read_only: !mutable,
+                        },
+                        scope: 0,
+                    });
             }
         }
 
         let return_type = {
             if self.scanner.match_token(Token::MinusGreater)? {
                 self.parse_type()?
-            }
-            else {
+            } else {
                 ValueType::Unit
             }
         };
 
-        let function_type = FunctionType{
+        let function_type = FunctionType {
             return_type: return_type.clone(),
-            parameters
+            parameters,
         };
 
-        self.globals.insert(function_name.to_string(), Variable {
-            value_type: ValueType::Function(Rc::new(function_type)),
-            read_only: true
-        });
+        self.globals.insert(
+            function_name.to_string(),
+            Variable {
+                value_type: ValueType::Function(Rc::new(function_type)),
+                read_only: true,
+            },
+        );
         self.consume(Token::LeftBrace)?;
 
         self.stack_frames.last_mut().unwrap().current_scope = 1;
@@ -1119,15 +1198,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                     let expr_type = self.type_stack.pop().unwrap().value_type;
                     if expr_type != return_type {
-                        return Err(format!("return type does not match return expression. Expected {}, got {}", return_type, expr_type));
+                        return Err(format!(
+                            "return type does not match return expression. Expected {}, got {}",
+                            return_type, expr_type
+                        ));
                     }
 
                     self.consume(Token::SemiColon)?;
                 }
 
                 chunk.write_byte(opcode::RETURN);
-            }
-            else {
+            } else {
                 self.rule(&mut chunk)?;
             }
         }
@@ -1150,7 +1231,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 let chunk = self.function(ident)?;
 
                 self.function_chunks.insert(ident.to_string(), chunk);
-            },
+            }
             _ => return Err("Expected identifier after 'fn'".to_owned()),
         };
 
@@ -1284,8 +1365,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             match symbol {
                 Identifier::Global => {
                     chunk.write_byte(opcode::SET_GLOBAL);
-                    chunk
-                        .write_byte(self.data_section.create_constant_str(name));
+                    chunk.write_byte(self.data_section.create_constant_str(name));
                 }
                 Identifier::Local(idx) => {
                     chunk.write_byte(opcode::SET_LOCAL);
@@ -1327,27 +1407,27 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn if_expression(&mut self, chunk: &mut Chunk) -> Result<(), String> {
-        self.scoped_block(chunk, |cm, ch| {
-            cm.if_expression_impl(ch)
-        })
+        self.scoped_block(chunk, |cm, ch| cm.if_expression_impl(ch))
     }
 
-    fn parse_if_let_expression(&mut self, chunk: &mut Chunk) -> Result<(usize, Vec<String>, Rc<UnionType>), String> {
+    fn parse_if_let_expression(
+        &mut self,
+        chunk: &mut Chunk,
+    ) -> Result<(usize, Vec<String>, Rc<UnionType>), String> {
         // if let Option<int>.Some(x) = expr
         let union_name = self.match_identifier()?;
-        
+
         let union_type = match self.user_types.get(&union_name) {
             Some(user_type) => {
                 let union_type = match user_type {
                     UserType::Union(u) => u,
-                    _ => return Err(format!("Not a union"))
+                    _ => return Err(format!("Not a union")),
                 };
 
                 union_type.clone()
-            },
-            None => return Err(format!("No union named {}", union_name))
+            }
+            None => return Err(format!("No union named {}", union_name)),
         };
-
 
         /*
         let mut template_parameters = vec![];
@@ -1362,9 +1442,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::Dot)?;
 
         let member_name = self.match_identifier()?;
-        let (determinant, member) = match union_type.members.iter().enumerate().find(|(_, (name, _))| *name == member_name) {
-            Some(x) => (x.0, &x.1.1),
-            None => return Err(format!("{} not a member of union {}", member_name, union_name))
+        let (determinant, member) = match union_type
+            .members
+            .iter()
+            .enumerate()
+            .find(|(_, (name, _))| *name == member_name)
+        {
+            Some(x) => (x.0, &x.1 .1),
+            None => {
+                return Err(format!(
+                    "{} not a member of union {}",
+                    member_name, union_name
+                ))
+            }
         };
 
         self.consume(Token::LeftParen)?;
@@ -1388,7 +1478,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn if_expression_impl(&mut self, chunk: &mut Chunk) -> Result<(), String> {
-
         let mut is_if_let = false;
         let if_jmp_idx;
         if self.scanner.match_token(Token::Let)? {
@@ -1429,15 +1518,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             is_if_let = true;
             self.type_stack.pop();
             self.consume(Token::LeftBrace)?;
-        }
-        else {
+        } else {
             self.expression(chunk)?;
             self.consume(Token::LeftBrace)?;
             chunk.write_byte(opcode::JMP_IF_FALSE);
             self.type_stack.pop();
             if_jmp_idx = chunk.write_byte(0);
         }
-
 
         let stack_top = self.type_stack.len();
         self.block_expression(chunk)?;
@@ -1755,8 +1842,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
                 ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
-                ValueType::HashMap(_) => return Err("Cannot use comparison with hash map".to_owned()),
-                ValueType::Function(_) => return Err("Cannot use comparison with function".to_owned()),
+                ValueType::HashMap(_) => {
+                    return Err("Cannot use comparison with hash map".to_owned())
+                }
+                ValueType::Function(_) => {
+                    return Err("Cannot use comparison with function".to_owned())
+                }
                 ValueType::Enum(_) => return Err("Cannot use comparison with enum".to_owned()), // FIXME
                 ValueType::Struct(_) => return Err("Cannot use comparison with struct".to_owned()), // FIXME
                 ValueType::Union(_) => return Err("Cannot use comparison with union".to_owned()), // FIXME
@@ -1802,7 +1893,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 | ValueType::Vector(_)
                 | ValueType::HashMap(_)
                 | ValueType::Enum(_) => chunk.write_byte(op),
-                _ => return Err("Cannot compare functions".to_owned())
+                _ => return Err("Cannot compare functions".to_owned()),
             };
         }
 
@@ -1860,7 +1951,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn index_vec(&mut self, chunk: &mut Chunk, read_only: bool, elem_type: &ValueType) -> Result<(), String> {
+    fn index_vec(
+        &mut self,
+        chunk: &mut Chunk,
+        read_only: bool,
+        elem_type: &ValueType,
+    ) -> Result<(), String> {
         self.expression(chunk)?;
         let index_type = self.type_stack.pop().unwrap();
         if index_type.value_type != ValueType::Integer {
@@ -1943,7 +2039,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let indexable = self.type_stack.pop().unwrap();
             match &indexable.value_type {
                 ValueType::Vector(e) => self.index_vec(chunk, indexable.read_only, e)?,
-                ValueType::HashMap(kv) => self.index_hash_map(chunk, indexable.read_only, &kv.0, &kv.1)?,
+                ValueType::HashMap(kv) => {
+                    self.index_hash_map(chunk, indexable.read_only, &kv.0, &kv.1)?
+                }
                 t => return Err(format!("Cannot index type {}", t)),
             }
         }
@@ -1982,7 +2080,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ValueType::Function(f) => {
                 let arity = f.parameters.len();
                 if argument_count as usize != arity {
-                    return Err(format!("Unexpected number of arguments to function call. Expected {}, got {}", arity, argument_count));
+                    return Err(format!(
+                        "Unexpected number of arguments to function call. Expected {}, got {}",
+                        arity, argument_count
+                    ));
                 }
 
                 for (idx, pair) in std::iter::zip(&argument_types, &f.parameters).enumerate() {
@@ -1993,12 +2094,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 self.type_stack.push(Variable {
                     value_type: f.return_type.clone(),
-                    read_only: true
+                    read_only: true,
                 });
-            },
-            _ => return Err(format!("\"{}\" is not a function", name))
+            }
+            _ => return Err(format!("\"{}\" is not a function", name)),
         }
-        
+
         Ok(())
     }
 
@@ -2069,8 +2170,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn string(&mut self, chunk: &mut Chunk, s: &str) {
         chunk.write_byte(opcode::CONSTANT_STRING);
-        chunk
-            .write_byte(self.data_section.create_constant_str(s));
+        chunk.write_byte(self.data_section.create_constant_str(s));
         self.type_stack.push(Variable {
             value_type: ValueType::Str,
             read_only: true,
@@ -2089,16 +2189,26 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn enum_value(&mut self, chunk: &mut Chunk, enum_name: &str, enum_type: Rc<EnumType>) -> Result<(), String> {
+    fn enum_value(
+        &mut self,
+        chunk: &mut Chunk,
+        enum_name: &str,
+        enum_type: Rc<EnumType>,
+    ) -> Result<(), String> {
         self.consume(Token::Dot)?;
         let enum_value_name = match self.scanner.scan_token()? {
             Token::Identifier(v) => v,
-            x => return Err(format!("Expected enum value name. Got {:?}", x))
+            x => return Err(format!("Expected enum value name. Got {:?}", x)),
         };
 
         let enum_value = match enum_type.members.get(enum_value_name) {
             Some(v) => v,
-            None => return Err(format!("Enum value {} does not exist in {}", enum_value_name, enum_name))
+            None => {
+                return Err(format!(
+                    "Enum value {} does not exist in {}",
+                    enum_value_name, enum_name
+                ))
+            }
         };
 
         match enum_value {
@@ -2112,23 +2222,36 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn struct_construction(&mut self, chunk: &mut Chunk, struct_name: &str, struct_type: Rc<StructType>) -> Result<(), String> {
+    fn struct_construction(
+        &mut self,
+        chunk: &mut Chunk,
+        struct_name: &str,
+        struct_type: Rc<StructType>,
+    ) -> Result<(), String> {
         self.consume(Token::LeftBrace)?;
 
         let mut members = HashSet::new();
         while !self.scanner.match_token(Token::RightBrace)? {
             let member_name = match self.scanner.scan_token()? {
                 Token::Identifier(v) => v,
-                x => return Err(format!("Expected struct member name. Got {:?}", x))
+                x => return Err(format!("Expected struct member name. Got {:?}", x)),
             };
 
             if !members.insert(member_name) {
-                return Err(format!("Struct {} member {} assigned more than once", struct_name, member_name));
+                return Err(format!(
+                    "Struct {} member {} assigned more than once",
+                    struct_name, member_name
+                ));
             }
 
             let _idx = match struct_type.get_member_idx(member_name) {
                 Some(i) => i,
-                None => return Err(format!("{} is not a member of struct {}", member_name, struct_name))
+                None => {
+                    return Err(format!(
+                        "{} is not a member of struct {}",
+                        member_name, struct_name
+                    ))
+                }
             };
 
             self.consume(Token::Equal)?;
@@ -2138,7 +2261,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.type_stack.push(Variable {
             value_type: ValueType::Struct(struct_type),
-            read_only: false
+            read_only: false,
         });
         Ok(())
     }
@@ -2152,10 +2275,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         UserType::Enum(e) => self.enum_value(chunk, name, e.clone())?,
                         UserType::Struct(s) => self.struct_construction(chunk, name, s.clone())?,
                         UserType::TemplatedUnion(_) => todo!(),
-                        UserType::Union(_) => todo!()
+                        UserType::Union(_) => todo!(),
                     }
-                }
-                else {
+                } else {
                     self.identifier(chunk, name)?;
                 }
             }
@@ -2429,7 +2551,12 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table, "fn test(a: int, b: float, c: string) {} test(1, 1.2, \"hello\");").unwrap();
+            compiler
+                .compile(
+                    &mut table,
+                    "fn test(a: int, b: float, c: string) {} test(1, 1.2, \"hello\");",
+                )
+                .unwrap();
             true
         });
     }
@@ -2438,22 +2565,30 @@ mod test {
     fn function_wrong_argument_count() {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
-        assert!(compiler.compile(&mut table, 
+        assert!(compiler
+            .compile(
+                &mut table,
                 "
                 fn test() {}
                 test(1);
-                ").is_err());
+                "
+            )
+            .is_err());
     }
 
     #[test]
     fn function_wrong_argument_type() {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
-        assert!(compiler.compile(&mut table, 
+        assert!(compiler
+            .compile(
+                &mut table,
                 "
                 fn test(a: string) {}
                 test(1);
-                ").is_err());
+                "
+            )
+            .is_err());
     }
 
     #[test]
@@ -2461,7 +2596,9 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table, "fn test() { test(); }").unwrap();
+            compiler
+                .compile(&mut table, "fn test() { test(); }")
+                .unwrap();
             true
         });
     }
@@ -2471,13 +2608,18 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table, "
+            compiler
+                .compile(
+                    &mut table,
+                    "
                 fn fib(i: int) -> int {
                     if i <= 1 {
                         return i;
                     }
                     return fib(i - 1) + fib(i - 2);
-                }").unwrap();
+                }",
+                )
+                .unwrap();
             true
         });
     }
@@ -2487,8 +2629,13 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table, "
-                enum Enum : int {}").unwrap();
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                enum Enum : int {}",
+                )
+                .unwrap();
             true
         });
     }
@@ -2499,11 +2646,16 @@ mod test {
             let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
             assert!({
-                compiler.compile(&mut table, "
+                compiler
+                    .compile(
+                        &mut table,
+                        "
                     enum Enum : int {
                         a = 1,
                         b = 2,
-                    }").unwrap();
+                    }",
+                    )
+                    .unwrap();
                 true
             });
         }
@@ -2512,11 +2664,16 @@ mod test {
             let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
             assert!({
-                compiler.compile(&mut table, "
+                compiler
+                    .compile(
+                        &mut table,
+                        "
                     enum Enum : float {
                         a = 1.0,
                         b = 2.2,
-                    }").unwrap();
+                    }",
+                    )
+                    .unwrap();
                 true
             });
         }
@@ -2524,11 +2681,16 @@ mod test {
             let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
             assert!({
-                compiler.compile(&mut table, "
+                compiler
+                    .compile(
+                        &mut table,
+                        "
                     enum Enum : string {
                         a = \"hello\",
                         b = \"world\",
-                    }").unwrap();
+                    }",
+                    )
+                    .unwrap();
                 true
             });
         }
@@ -2539,33 +2701,42 @@ mod test {
         {
             let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
-            assert!(
-                compiler.compile(&mut table, "
+            assert!(compiler
+                .compile(
+                    &mut table,
+                    "
                     enum Enum : int {
                         a = \"hello\",
-                    }").is_err()
-            );
+                    }"
+                )
+                .is_err());
         }
 
         {
             let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
-            assert!(
-                compiler.compile(&mut table, "
+            assert!(compiler
+                .compile(
+                    &mut table,
+                    "
                     enum Enum : float {
                         a = \"hello\",
-                    }").is_err()
-            );
+                    }"
+                )
+                .is_err());
         }
         {
             let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
-            assert!(
-                compiler.compile(&mut table, "
+            assert!(compiler
+                .compile(
+                    &mut table,
+                    "
                     enum Enum : string {
                         a = 1.23,
-                    }").is_err()
-            );
+                    }"
+                )
+                .is_err());
         }
     }
 
@@ -2574,7 +2745,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table, "
+            compiler
+                .compile(
+                    &mut table,
+                    "
                 enum Enum : int {
                     a = 1,
                     b = 2,
@@ -2582,7 +2756,9 @@ mod test {
 
                 let mut e: Enum = Enum.a;
                 e = Enum.b;
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2591,16 +2767,19 @@ mod test {
     fn test_enum_type_mismatch() {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
-        assert!(
-            compiler.compile(&mut table, "
+        assert!(compiler
+            .compile(
+                &mut table,
+                "
                 enum Enum : int {
                     a = 1,
                     b = 2,
                 }
 
                 let e: Enum = 1;
-                ").is_err()
-        );
+                "
+            )
+            .is_err());
     }
 
     #[test]
@@ -2608,7 +2787,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table, "
+            compiler
+                .compile(
+                    &mut table,
+                    "
                 enum Enum : int {
                     a = 1,
                     b = 2,
@@ -2618,7 +2800,9 @@ mod test {
 
                 fn test(i: int) {}
                 test(Enum.a);
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2638,14 +2822,18 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "struct Struct
+            compiler
+                .compile(
+                    &mut table,
+                    "struct Struct
                 {
                     i: int,
                     f: float,
                     s: string,
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2655,8 +2843,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "struct Struct
+            compiler
+                .compile(
+                    &mut table,
+                    "struct Struct
                 {
                     i: int,
                     f: float,
@@ -2669,7 +2859,9 @@ mod test {
                     s = \"hello world\",
                 };
 
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2679,8 +2871,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "struct Struct
+            compiler
+                .compile(
+                    &mut table,
+                    "struct Struct
                 {
                     i: int,
                     f: float,
@@ -2693,16 +2887,20 @@ mod test {
                     s = \"hello world\",
                 };
 
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
 
-        assert!(
-            compiler.compile(&mut table,
+        assert!(compiler
+            .compile(
+                &mut table,
                 "
                     s.i = 10;
-                ").is_err()
-        );
+                "
+            )
+            .is_err());
     }
 
     #[test]
@@ -2710,8 +2908,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "struct Struct
+            compiler
+                .compile(
+                    &mut table,
+                    "struct Struct
                 {
                     i: int,
                     f: float,
@@ -2724,15 +2924,21 @@ mod test {
                     s = \"hello world\",
                 };
 
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
 
         assert!({
-            compiler.compile(&mut table,
-                "
+            compiler
+                .compile(
+                    &mut table,
+                    "
                     s.i = 10;
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2742,8 +2948,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "struct Struct
+            compiler
+                .compile(
+                    &mut table,
+                    "struct Struct
                 {
                     i: int,
                 }
@@ -2751,16 +2959,20 @@ mod test {
                 let mut s: Struct = Struct {
                     i = 0,
                 };
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
 
-        assert!(
-            compiler.compile(&mut table,
+        assert!(compiler
+            .compile(
+                &mut table,
                 "
                     s.i = 1.5;
-                ").is_err()
-        );
+                "
+            )
+            .is_err());
     }
 
     #[test]
@@ -2768,59 +2980,81 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "union Union_empty {}
-                ").unwrap();
+            compiler
+                .compile(
+                    &mut table,
+                    "union Union_empty {}
+                ",
+                )
+                .unwrap();
             true
         });
 
         assert!({
-            compiler.compile(&mut table,
-                "union Union_0
+            compiler
+                .compile(
+                    &mut table,
+                    "union Union_0
                 {
                     A, B, C,
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
 
         assert!({
-            compiler.compile(&mut table,
-                "union Union_1
+            compiler
+                .compile(
+                    &mut table,
+                    "union Union_1
                 {
                     I(int),
                     F(float),
                     S(string),
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
 
         assert!({
-            compiler.compile(&mut table,
-                "union Union_2<T>
+            compiler
+                .compile(
+                    &mut table,
+                    "union Union_2<T>
                 {
                     A(T),
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
 
         assert!({
-            compiler.compile(&mut table,
-                "union Union_3<T, U, V>
+            compiler
+                .compile(
+                    &mut table,
+                    "union Union_3<T, U, V>
                 {
                     A(T),
                     B(U),
                     C(V),
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
 
         assert!({
-            compiler.compile(&mut table,
-                "union Union_4<T, U, V>
+            compiler
+                .compile(
+                    &mut table,
+                    "union Union_4<T, U, V>
                 {
                     A(T), A1(T), A2(T),
                     B(U),
@@ -2830,13 +3064,15 @@ mod test {
                     F(float), F1(float),
                     S(string), S1(string),
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
 
-        assert!(
-            compiler.compile(&mut table, "union Union_err<T, T> {} ").is_err()
-        );
+        assert!(compiler
+            .compile(&mut table, "union Union_err<T, T> {} ")
+            .is_err());
     }
 
     #[test]
@@ -2844,8 +3080,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "union Union
+            compiler
+                .compile(
+                    &mut table,
+                    "union Union
                 {
                     I(int), F(float), S(string),
                 }
@@ -2853,7 +3091,9 @@ mod test {
                 let mut u: Union = Union.I(9,);
                 u = Union.S(\"Hello world\",);
                 u = Union.F(3.142,);
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2863,8 +3103,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "union Union<A, B, C>
+            compiler
+                .compile(
+                    &mut table,
+                    "union Union<A, B, C>
                 {
                     I(A), F(B), S(C),
                 }
@@ -2872,7 +3114,9 @@ mod test {
                 let mut u: Union<int, float, string,> = Union<int, float, string,>.I(9,);
                 u = Union<int, float, string,>.S(\"Hello world\",);
                 u = Union<int, float, string,>.F(3.142,);
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2882,13 +3126,17 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "union Option<T>
+            compiler
+                .compile(
+                    &mut table,
+                    "union Option<T>
                 {
                     Some(T),
                     None,
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2898,8 +3146,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "union Option
+            compiler
+                .compile(
+                    &mut table,
+                    "union Option
                 {
                     Some(int),
                     None,
@@ -2908,7 +3158,9 @@ mod test {
                 let o: Option = Option.Some(10,);
                 if let Option.Some(x,) = o {
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }
@@ -2918,8 +3170,10 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!({
-            compiler.compile(&mut table,
-                "union Composite
+            compiler
+                .compile(
+                    &mut table,
+                    "union Composite
                 {
                     Two(int, float),
                     Three(int, float, string),
@@ -2932,7 +3186,9 @@ mod test {
                 c = Composite.Three(300, 3.142, \"Hello World\",);
                 if let Composite.Three(x, y, z,) = c {
                 }
-                ").unwrap();
+                ",
+                )
+                .unwrap();
             true
         });
     }

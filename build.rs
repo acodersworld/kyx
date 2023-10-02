@@ -50,7 +50,7 @@ const OPCODES: &[&str] = &[
     "READ_INPUT",
     //
     "CALL",
-    "RETURN"
+    "RETURN",
 ];
 
 fn main() -> std::io::Result<()> {

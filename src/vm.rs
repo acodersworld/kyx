@@ -5,13 +5,13 @@ use std::vec::Vec;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 
+use crate::chunk::Chunk;
 use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
 use crate::opcode;
-use crate::value::{GcValue, StructValue, UnionValue, StringValue, FunctionValue, Value};
+use crate::value::{FunctionValue, GcValue, StringValue, StructValue, UnionValue, Value};
 use crate::var_len_int;
-use crate::chunk::Chunk;
 
 pub trait Printer {
     fn print(&mut self, s: &str);
@@ -20,7 +20,7 @@ pub trait Printer {
 struct Frame {
     function: NonNull<FunctionValue>,
     locals: Vec<Value>,
-    pc: usize
+    pc: usize,
 }
 
 impl Frame {
@@ -33,8 +33,7 @@ impl Frame {
         if pc < code.len() {
             self.pc += 1;
             Some(code[pc])
-        }
-        else {
+        } else {
             None
         }
     }
@@ -42,7 +41,7 @@ impl Frame {
 
 struct FrameStack {
     stack: Vec<Frame>,
-    top: Frame
+    top: Frame,
 }
 
 impl FrameStack {
@@ -50,7 +49,7 @@ impl FrameStack {
         self.stack.push(Frame {
             function: self.top.function,
             locals: std::mem::replace(&mut self.top.locals, Vec::new()),
-            pc: self.top.pc
+            pc: self.top.pc,
         });
 
         self.top.function = function;
@@ -187,19 +186,20 @@ impl<'printer> VM<'printer> {
     }
 
     fn run(&mut self, chunk: Chunk) {
-
         let mut frame_stack = FrameStack {
             stack: Vec::new(),
             top: Frame {
                 function: self.function(chunk),
                 locals: Vec::new(),
-                pc: 0
-            }
+                pc: 0,
+            },
         };
 
         let mut pc = 0;
         while let Some(op) = frame_stack.top.next_code() {
-            let mut ds = disassembler::Disassembler::new(unsafe { &frame_stack.top.function.as_ref().chunk.code });
+            let mut ds = disassembler::Disassembler::new(unsafe {
+                &frame_stack.top.function.as_ref().chunk.code
+            });
             ds.set_offset(pc);
             ds.disassemble_one();
 
@@ -241,16 +241,14 @@ impl<'printer> VM<'printer> {
                 opcode::BREAK => self.break_loop(&mut frame_stack.top),
                 opcode::JMP => self.jmp(&mut frame_stack.top),
                 opcode::JMP_IF_FALSE => self.jmp_if_false(&mut frame_stack.top),
-                opcode::JMP_IF_DETERMINANT_MISMATCH => self.jmp_if_determinant_mismatch(&mut frame_stack.top),
+                opcode::JMP_IF_DETERMINANT_MISMATCH => {
+                    self.jmp_if_determinant_mismatch(&mut frame_stack.top)
+                }
                 opcode::READ_INPUT => self.read_input(&mut frame_stack.top),
                 opcode::CALL => self.call(&mut frame_stack),
                 opcode::RETURN => self.do_return(&mut frame_stack),
                 _ => {
-                    panic!(
-                        "Unknown instruction: {} @ {}",
-                        op,
-                        frame_stack.top.pc - 1
-                    )
+                    panic!("Unknown instruction: {} @ {}", op, frame_stack.top.pc - 1)
                 }
             }
             pc = frame_stack.top.pc;
@@ -285,8 +283,10 @@ impl<'printer> VM<'printer> {
                 constant_strs: &mut self.constant_strs,
             };
             let name_idx = data_section.create_constant_str(&fname) as usize;
-            self.globals.insert(self.constant_strs[name_idx], Value::Function(function_value));
-
+            self.globals.insert(
+                self.constant_strs[name_idx],
+                Value::Function(function_value),
+            );
         }
 
         println!("-- Main --");
@@ -340,8 +340,7 @@ impl<'printer> VM<'printer> {
 
     fn push_integer(&mut self, frame: &mut Frame) {
         let mut decoder = var_len_int::Decoder::new();
-        while !decoder.step_decode(frame.next_code().unwrap()) {
-        }
+        while !decoder.step_decode(frame.next_code().unwrap()) {}
 
         self.value_stack.push(Value::Integer(decoder.val()));
     }
@@ -371,7 +370,10 @@ impl<'printer> VM<'printer> {
         let arg_count = frame.next_code().unwrap() as usize;
 
         assert!(self.value_stack.len() >= arg_count);
-        let vector: Vec<Value> = self.value_stack.drain((self.value_stack.len() - arg_count)..).collect();
+        let vector: Vec<Value> = self
+            .value_stack
+            .drain((self.value_stack.len() - arg_count)..)
+            .collect();
 
         let mut vec_val = Box::new(vector);
         let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
@@ -388,7 +390,7 @@ impl<'printer> VM<'printer> {
             Value::HashMap(h) => {
                 let hash_map = unsafe { h.as_ref() };
                 self.value_stack.push(hash_map[&index]);
-            },
+            }
             Value::Vector(v) => {
                 let vector = unsafe { v.as_ref() };
                 let index = match index {
@@ -396,7 +398,7 @@ impl<'printer> VM<'printer> {
                     _ => panic!("Bad index value"),
                 };
                 self.value_stack.push(vector[index]);
-            },
+            }
             _ => panic!("Not a hash map"),
         };
     }
@@ -410,7 +412,7 @@ impl<'printer> VM<'printer> {
                 let hash_map = unsafe { h.as_mut() };
                 hash_map.insert(index, new_value);
                 self.value_stack.push(new_value);
-            },
+            }
             Value::Vector(mut v) => {
                 let vector = unsafe { v.as_mut() };
                 let index = match index {
@@ -422,7 +424,6 @@ impl<'printer> VM<'printer> {
             }
             _ => panic!("Not a vector"),
         };
-
     }
 
     fn get_field(&mut self, frame: &mut Frame) {
@@ -433,7 +434,7 @@ impl<'printer> VM<'printer> {
             Value::Struct(s) => {
                 let struct_value = unsafe { s.as_ref() };
                 self.value_stack.push(struct_value.members[index]);
-            },
+            }
             _ => panic!("Not a struct"),
         };
     }
@@ -448,7 +449,7 @@ impl<'printer> VM<'printer> {
             Value::Struct(mut s) => {
                 let struct_value = unsafe { s.as_mut() };
                 struct_value.members[index] = value;
-            },
+            }
             _ => panic!("Not a struct"),
         };
     }
@@ -457,7 +458,10 @@ impl<'printer> VM<'printer> {
         let arg_count = frame.next_code().unwrap() as usize * 2;
 
         assert!(self.value_stack.len() >= arg_count);
-        let args: Vec<Value> = self.value_stack.drain((self.value_stack.len() - arg_count)..).collect();
+        let args: Vec<Value> = self
+            .value_stack
+            .drain((self.value_stack.len() - arg_count)..)
+            .collect();
 
         let mut hash_map = HashMap::<Value, Value>::new();
 
@@ -484,9 +488,7 @@ impl<'printer> VM<'printer> {
             members[member_idx] = value;
         }
 
-        let mut struct_val = Box::new(StructValue {
-            members
-        });
+        let mut struct_val = Box::new(StructValue { members });
         let ptr = unsafe { NonNull::new_unchecked(struct_val.as_mut() as *mut _) };
         self.objects.push(GcValue::Struct(struct_val));
 
@@ -506,7 +508,7 @@ impl<'printer> VM<'printer> {
 
         let mut union_val = Box::new(UnionValue {
             determinant,
-            members
+            members,
         });
         let ptr = unsafe { NonNull::new_unchecked(union_val.as_mut() as *mut _) };
         self.objects.push(GcValue::Union(union_val));
@@ -603,7 +605,9 @@ impl<'printer> VM<'printer> {
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
             Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
             Value::Struct(s) => format!("struct<0x{:x}>", s.as_ptr() as usize),
-            Value::Union(u) => format!("union<0x{:x}> {:?}", u.as_ptr() as usize, unsafe { u.as_ref() } ),
+            Value::Union(u) => format!("union<0x{:x}> {:?}", u.as_ptr() as usize, unsafe {
+                u.as_ref()
+            }),
         }
     }
 
@@ -624,27 +628,26 @@ impl<'printer> VM<'printer> {
 
     fn push_frame(&mut self, frame: &mut Frame) {
         frame.locals.clear();
- 
-//        assert!(!self.frame_stack.is_empty());
-//        let (function, pc) = {
-//            let frame = self.frame_stack.last().unwrap();
-//            (frame.function, frame.pc)
-//        };
-//
-//        self.frame_stack.push(StackFrame {
-//            function,
-//            locals: Vec::new(),
-//            pc
-//        });
+
+        //        assert!(!self.frame_stack.is_empty());
+        //        let (function, pc) = {
+        //            let frame = self.frame_stack.last().unwrap();
+        //            (frame.function, frame.pc)
+        //        };
+        //
+        //        self.frame_stack.push(StackFrame {
+        //            function,
+        //            locals: Vec::new(),
+        //            pc
+        //        });
     }
 
     fn pop_frame(&mut self) {
-//        assert!(!self.frame_stack.is_empty());
-//        self.frame_stack.pop();
+        //        assert!(!self.frame_stack.is_empty());
+        //        self.frame_stack.pop();
     }
 
     fn jmp_loop(&mut self, frame: &mut Frame) {
-
         let do_loop = !self.break_loop_flag;
         self.break_loop_flag = false;
         if do_loop {
@@ -695,7 +698,7 @@ impl<'printer> VM<'printer> {
 
         let union_value = match top_value {
             Value::Union(u) => unsafe { u.as_ref() },
-            x => panic!("Unexpected non-union! {:?}", x)
+            x => panic!("Unexpected non-union! {:?}", x),
         };
 
         let offset = code[frame.pc] as usize;
@@ -704,8 +707,7 @@ impl<'printer> VM<'printer> {
                 self.value_stack.push(*m);
             }
             frame.pc += 1;
-        }
-        else {
+        } else {
             self.value_stack.pop();
             frame.pc += offset;
         }
@@ -1940,8 +1942,7 @@ mod test {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
 
-        let src =
-                "union Union
+        let src = "union Union
                 {
                     I(int),
                     F(float),
@@ -1992,8 +1993,7 @@ mod test {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
 
-        let src = 
-                "union Composite
+        let src = "union Composite
                 {
                     Two(int, float),
                     Three(int, float, string),

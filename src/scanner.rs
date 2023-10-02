@@ -354,10 +354,10 @@ impl<'a> Scanner<'a> {
             '+' => Ok(Token::Plus),
             '-' => {
                 if self.match_char('>') {
-                    return Ok(Token::MinusGreater)
+                    return Ok(Token::MinusGreater);
                 }
                 Ok(Token::Minus)
-            },
+            }
             '*' => Ok(Token::Star),
 
             '{' => Ok(Token::LeftBrace),

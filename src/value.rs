@@ -1,9 +1,9 @@
 use ordered_float::OrderedFloat;
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 use std::vec::Vec;
-use std::fmt;
 
 use crate::chunk::Chunk;
 
@@ -14,15 +14,15 @@ pub struct StringValue {
 }
 
 pub struct FunctionValue {
-    pub chunk: Chunk 
+    pub chunk: Chunk,
 }
 
 impl fmt::Debug for FunctionValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ptr = self.chunk.code.as_ptr();
         f.debug_struct("FunctionValue")
-         .field("chunk", &ptr)
-         .finish()
+            .field("chunk", &ptr)
+            .finish()
     }
 }
 
@@ -31,13 +31,13 @@ pub type HashMapValue = HashMap<Value, Value>;
 
 #[derive(Debug)]
 pub struct StructValue {
-    pub members: Vec<Value>
+    pub members: Vec<Value>,
 }
 
 #[derive(Debug)]
 pub struct UnionValue {
     pub determinant: usize,
-    pub members: Vec<Value>
+    pub members: Vec<Value>,
 }
 
 #[derive(Debug)]
