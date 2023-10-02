@@ -1,7 +1,7 @@
 use crate::chunk::Chunk;
 use crate::float;
 use crate::opcode;
-use crate::scanner::{Scanner, Token};
+use crate::scanner::{Scanner, Token, TokenLocation};
 use crate::var_len_int;
 
 use itertools::Itertools;
@@ -304,6 +304,7 @@ pub struct Compiler {
 }
 
 pub struct SrcCompiler<'a, T> {
+    src: &'a str,
     globals: &'a mut HashMap<String, Variable>,
     stack_frames: Vec<StackFrame>,
     scanner: Scanner<'a>,
@@ -331,6 +332,7 @@ impl Compiler {
         src: &'a str,
     ) -> Result<(Chunk, HashMap<String, Chunk>), String> {
         let mut compiler = SrcCompiler::<'_, T> {
+            src,
             globals: &mut self.globals,
             stack_frames: Vec::new(),
             data_section,
@@ -344,7 +346,12 @@ impl Compiler {
         };
 
         let mut chunk = Chunk::new();
-        compiler.compile(&mut chunk)?;
+        //compiler.compile(&mut chunk)?;
+        if let Err(e) = compiler.compile(&mut chunk) {
+            eprintln!("{}", e);
+            return Err(e);
+        }
+
         Ok((chunk, compiler.function_chunks))
     }
 }
@@ -376,12 +383,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Err(format!(
             "Expected {}, got {}",
             token,
-            self.scanner.peek_token()?
+            self.scanner.peek_token2()?
         ))
     }
 
     pub fn compile(&mut self, chunk: &mut Chunk) -> Result<(), String> {
-        while self.scanner.peek_token()? != Token::Eof {
+        while self.scanner.peek_token2()? != Token::Eof {
             if self.scanner.match_token(Token::Fn)? {
                 self.function_definition()?;
             } else if self.scanner.match_token(Token::Enum)? {
@@ -410,7 +417,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 // only times an expression doesn't have to be followed by a ';'
                 // is when it is the last expression of a block or if it is a block itself
-                let peeked_token = self.scanner.peek_token()?;
+                let peeked_token = self.scanner.peek_token2()?;
                 if peeked_token != Token::RightBrace && peeked_token != Token::Eof {
                     if is_block {
                         if self.scanner.match_token(Token::SemiColon)? {
@@ -427,14 +434,23 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn enum_definition(&mut self) -> Result<ValueType, String> {
-        // enum_definition -> "enum" STRING ":" type "{" enum_value* "}"
-        //      enum_value = STRING "=" literal ","?
+    fn location_info_str(&self, location: &TokenLocation) -> String {
+        let line = format!("{}: ", location.line);
+        let spaces: String = std::iter::repeat(' ').take(line.len() + location.column).collect();
 
-        let enum_name = match self.scanner.scan_token()? {
-            Token::Identifier(s) => s,
-            x => return Err(format!("Expected name for enum. Got {:?}", x)),
-        };
+        spaces.to_string() + "Here\n" + 
+        &spaces + "|\n" + 
+        &spaces + "V\n" + 
+        &line + location.get_text_line(&self.src)
+    }
+
+    fn make_error_msg(&self, msg: &str, location: &TokenLocation) -> String {
+        let location: String = self.location_info_str(location);
+        return format!("{}\n{}", msg, location);
+    }
+
+    fn enum_definition(&mut self) -> Result<ValueType, String> {
+        let (enum_name, enum_name_location) = self.match_identifier()?;
 
         self.consume(Token::Colon)?;
         let enum_base_type = self.parse_type()?;
@@ -446,71 +462,72 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         };
 
         while !self.scanner.match_token(Token::RightBrace)? {
-            let member_name = match self.scanner.scan_token()? {
-                Token::Identifier(s) => s,
-                x => return Err(format!("Expected name for enum member. Got {:?}", x)),
-            };
-
+            let (member_name, member_name_location) = self.match_identifier()?;
             self.consume(Token::Equal)?;
 
-            let enum_value = match self.scanner.scan_token()? {
-                Token::Str(s) => {
-                    if enum_base_type != ValueType::Str {
-                        return Err(format!(
-                            "Enum type is string but enum value is {}",
-                            enum_base_type
-                        ));
+            let enum_value = {
+                let t = self.scanner.scan_token()?;
+                match t.token {
+                    Token::Str(s) => {
+                        if enum_base_type != ValueType::Str {
+                            return Err(self.make_error_msg(
+                                &format!("Enum type is string but enum value is {}", enum_base_type), &t.location));
+                        }
+                        EnumValue::Str(s.to_string())
                     }
-                    EnumValue::Str(s.to_string())
-                }
-                Token::Integer(i) => {
-                    if enum_base_type != ValueType::Integer {
-                        return Err(format!(
-                            "Enum type is int but enum value is {}",
-                            enum_base_type
-                        ));
+                    Token::Integer(i) => {
+                        if enum_base_type != ValueType::Integer {
+                            return Err(self.make_error_msg(&format!(
+                                "Enum type is int but enum value is {}",
+                                enum_base_type), &t.location));
+                        }
+                        EnumValue::Integer(i)
                     }
-                    EnumValue::Integer(i)
-                }
-                Token::Float(f) => {
-                    if enum_base_type != ValueType::Float {
-                        return Err(format!(
-                            "Enum type is float but enum value is {}",
-                            enum_base_type
-                        ));
+                    Token::Float(f) => {
+                        if enum_base_type != ValueType::Float {
+                            return Err(self.make_error_msg(&format!(
+                                "Enum type is float but enum value is {}",
+                                enum_base_type), &t.location));
+                        }
+                        EnumValue::Float(f)
                     }
-                    EnumValue::Float(f)
+                    _ => return Err(self.make_error_msg("Expected name for enum", &t.location)),
                 }
-                _ => return Err(format!("Expected name for enum")),
             };
 
-            if enum_type
+            let member_already_exists = enum_type
                 .members
                 .insert(member_name.to_string(), enum_value)
-                .is_some()
-            {
-                return Err(format!(
+                .is_some();
+
+            if member_already_exists {
+                return Err(self.make_error_msg(&format!(
                     "{} already defined in enum {}",
                     member_name, enum_name
-                ));
+                ), &member_name_location));
             }
 
             self.consume(Token::Comma)?;
         }
 
         let enum_type = Rc::new(enum_type);
-        self.user_types
-            .insert(enum_name.to_string(), UserType::Enum(enum_type.clone()));
+        let type_already_exists = self.user_types
+            .insert(enum_name.to_string(), UserType::Enum(enum_type.clone())).is_some();
+
+        if type_already_exists {
+            return Err(self.make_error_msg(&format!(
+                "{} already defined",
+                enum_name
+            ), &enum_name_location));
+        }
+
         Ok(ValueType::Enum(enum_type))
     }
 
     fn struct_definition(&mut self) -> Result<(), String> {
-        let struct_name = match self.scanner.scan_token()? {
-            Token::Identifier(s) => s,
-            x => return Err(format!("Expected name for struct. Got {:?}", x)),
-        };
+        let (struct_name, struct_name_location) = self.match_identifier()?;
 
-        if self.user_types.contains_key(struct_name) {
+        if self.user_types.contains_key(&struct_name) {
             return Err(format!("{} already defined", struct_name));
         }
 
@@ -518,10 +535,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.consume(Token::LeftBrace)?;
         while !self.scanner.match_token(Token::RightBrace)? {
-            let member_name = match self.scanner.scan_token()? {
-                Token::Identifier(s) => s,
-                x => return Err(format!("Expected name for struct member. Got {:?}", x)),
-            };
+            let (member_name, member_name_location) = self.match_identifier()?;
 
             self.consume(Token::Colon)?;
             let member_type = self.parse_type()?;
@@ -531,14 +545,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 .insert(member_name.to_string(), member_type)
                 .is_some()
             {
-                return Err(format!(
+                return Err(self.make_error_msg(&format!(
                     "Member {} already defined in struct {}",
-                    member_name, struct_name
-                ));
+                    member_name, struct_name), &member_name_location));
             }
         }
 
-        self.user_types.insert(
+        let user_type_already_defined = self.user_types.insert(
             struct_name.to_string(),
             UserType::Struct(Rc::new(StructType {
                 members: members
@@ -546,7 +559,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     .map(|(name, value_type)| (name, value_type))
                     .collect(),
             })),
-        );
+        ).is_some();
+
+        if user_type_already_defined {
+            return Err(self.make_error_msg(&format!("Symbol {} is already defined", struct_name), &struct_name_location));
+        }
+
         Ok(())
     }
 
@@ -554,7 +572,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         &mut self,
         template_parameter_types: &Vec<String>,
     ) -> Result<UnionMemberType, String> {
-        if let Ok(type_name) = self.match_identifier() {
+        if let Ok((type_name, _)) = self.match_identifier() {
             if let Some(idx) = template_parameter_types
                 .iter()
                 .position(|x| *x == type_name)
@@ -583,20 +601,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn union_definition(&mut self) -> Result<(), String> {
-        let union_name = match self.scanner.scan_token()? {
-            Token::Identifier(s) => s,
-            x => return Err(format!("Expected name for union. Got {:?}", x)),
-        };
+        let (union_name, union_name_location) = self.match_identifier()?;
 
-        if self.user_types.contains_key(union_name) {
-            return Err(format!("{} already defined", union_name));
+        if self.user_types.contains_key(&union_name) {
+            return Err(self.make_error_msg(&format!("{} already defined", union_name), &union_name_location));
         }
 
         let mut template_parameter_types = vec![];
         if self.scanner.match_token(Token::Less)? {
-            template_parameter_types.push(self.match_identifier()?);
+            template_parameter_types.push(self.match_identifier()?.0);
             while self.scanner.match_token(Token::Comma)? {
-                let template_parameter = self.match_identifier()?;
+                let template_parameter = self.match_identifier()?.0;
                 if template_parameter_types.contains(&template_parameter) {
                     return Err(format!(
                         "{} previously defined in template type list",
@@ -611,10 +626,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.consume(Token::LeftBrace)?;
 
-        let mut members = vec![];
+        let mut members: Vec<(String, Vec<UnionMemberType>)> = vec![];
 
         while !self.scanner.match_token(Token::RightBrace)? {
-            let member_name = self.match_identifier()?;
+            let (member_name, member_name_location) = self.match_identifier()?;
 
             let mut member_types = vec![];
             if self.scanner.match_token(Token::LeftParen)? {
@@ -625,6 +640,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 self.consume(Token::RightParen)?;
+            }
+
+            if members.iter().find(|(name, _)| *name == member_name).is_some() {
+                return Err(self.make_error_msg(&format!("Union {} already has a member {} defined", union_name, member_name), &member_name_location));
             }
 
             self.consume(Token::Comma)?;
@@ -669,12 +688,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn type_alias_definition(&mut self) -> Result<(), String> {
-        // type_alias MyTuple = (int,)
-
-        let alias_name = self.match_identifier()?;
+        let (alias_name, alias_name_location) = self.match_identifier()?;
 
         if self.user_types.contains_key(&alias_name) {
-            return Err(format!("{} is already defined", alias_name));
+            return Err(self.make_error_msg(&format!("{} is already defined", alias_name), &alias_name_location));
         }
 
         self.consume(Token::Equal)?;
@@ -721,7 +738,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn match_struct_type(&mut self) -> Result<Option<Rc<StructType>>, String> {
-        if let Token::Identifier(i) = self.scanner.peek_token()? {
+        let t = self.scanner.peek_token()?;
+        if let Token::Identifier(i) = t.token {
             let user_type = match self.user_types.get(i) {
                 Some(ut) => ut,
                 None => return Ok(None),
@@ -737,7 +755,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn match_union_type(&mut self) -> Result<Option<Rc<UnionType>>, String> {
-        if let Token::Identifier(i) = self.scanner.peek_token()? {
+        if let Token::Identifier(i) = self.scanner.peek_token()?.token {
             let user_type = match self.user_types.get(i) {
                 Some(ut) => ut,
                 None => return Ok(None),
@@ -761,14 +779,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(None)
     }
 
-    pub fn match_identifier(&mut self) -> Result<String, String> {
+    pub fn match_identifier(&mut self) -> Result<(String, TokenLocation), String> {
         let t = self.scanner.peek_token()?;
-        if let Token::Identifier(i) = t {
+        if let Token::Identifier(i) = t.token {
             self.scanner.scan_token()?; // eat identifier name
-            return Ok(i.to_string());
+            return Ok((i.to_string(), t.location));
         }
 
-        Err(format!("Expected identifier, got {:?}", t))
+        Err(format!("Expected identifier, got {:?}\n{}", t.token, self.location_info_str(&t.location)))
+    }
+
+    pub fn match_integer(&mut self) -> Result<(i32, TokenLocation), String> {
+        let t = self.scanner.peek_token()?;
+        if let Token::Integer(i) = t.token {
+            self.scanner.scan_token()?; // eat identifier name
+            return Ok((i, t.location));
+        }
+
+        Err(format!("Expected integer, got {:?}\n{}", t.token, self.location_info_str(&t.location)))
     }
 
     fn try_field(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
@@ -778,32 +806,26 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let variable = self.type_stack.last().unwrap().clone();
             let (member_idx, member_name, member_type) = match &variable.value_type {
                 ValueType::Struct(s) => {
-                    let member_name = self.match_identifier()?;
+                    let (member_name, member_name_location) = self.match_identifier()?;
                     let member_idx = match s.get_member_idx(&member_name) {
                         Some(i) => i,
                         None => {
-                            return Err(format!(
+                            return Err(self.make_error_msg(&format!(
                                 "Struct does not have member named '{}'",
-                                member_name
-                            ))
+                                member_name), &member_name_location))
                         }
                     };
 
                     (member_idx, member_name, s.members[member_idx].1.clone())
                 }
                 ValueType::Tuple(t) => {
-                    let member_idx = match self.scanner.scan_token()? {
-                        Token::Integer(i) => i,
-                        x => {
-                            return Err(format!("Expected member identifier after '.', got {}", x))
-                        }
-                    };
+                    let (member_idx, member_idx_location) = self.match_integer()?;
 
                     if member_idx < 0 {
-                        return Err(format!(
+                        return Err(self.make_error_msg(&format!(
                             "Negative tuple fields are not allowed, fot {}",
                             member_idx
-                        ));
+                        ), &member_idx_location));
                     }
 
                     let member_idx = member_idx as usize;
@@ -954,7 +976,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let mut member_indices = Vec::new();
 
         while !self.scanner.match_token(Token::RightBrace)? {
-            let member_name = match self.scanner.scan_token()? {
+            let member_name = match self.scanner.scan_token2()? {
                 Token::Identifier(i) => i,
                 x => return Err(format!("Expected member name, got {}", x)),
             };
@@ -1004,7 +1026,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
          */
         self.consume(Token::Dot)?;
 
-        let member_name = self.match_identifier()?;
+        let member_name = self.match_identifier()?.0;
 
         let (determinant, member) = match union_type
             .members
@@ -1191,7 +1213,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn parse_type(&mut self) -> Result<ValueType, String> {
-        let var_type = match self.scanner.scan_token()? {
+        let var_type = match self.scanner.scan_token2()? {
             Token::TypeInt => ValueType::Integer,
             Token::TypeFloat => ValueType::Float,
             Token::TypeString => ValueType::Str,
@@ -1249,7 +1271,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let mut parameters: Vec<ValueType> = Vec::new();
         if !self.scanner.match_token(Token::RightParen)? {
             {
-                let name = match self.scanner.scan_token()? {
+                let name = match self.scanner.scan_token2()? {
                     Token::Identifier(i) => i,
                     _ => return Err("Expected identifier".to_string()),
                 };
@@ -1275,19 +1297,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     });
             }
 
+            let mut parameter_names = vec![];
             while !self.scanner.match_token(Token::RightParen)? {
                 self.consume(Token::Comma)?;
 
-                let name = match self.scanner.scan_token()? {
-                    Token::Identifier(i) => i,
-                    _ => return Err("Expected identifier".to_string()),
-                };
+                let (name, name_location) = self.match_identifier()?;
 
                 self.consume(Token::Colon)?;
 
                 let mutable = self.scanner.match_token(Token::Mut)?;
                 let param_type = self.parse_type()?;
 
+                if parameter_names.iter().contains(&name) {
+                    return Err(self.make_error_msg(&format!("Parameter {} redefined", name), &name_location));
+                }
+
+                parameter_names.push(name.clone());
                 parameters.push(param_type.clone());
 
                 self.stack_frames
@@ -1295,7 +1320,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     .unwrap()
                     .locals
                     .push(LocalVariable {
-                        name: name.to_string(),
+                        name,
                         v: Variable {
                             value_type: param_type,
                             read_only: !mutable,
@@ -1359,7 +1384,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn function_definition(&mut self) -> Result<(), String> {
-        match self.scanner.scan_token()? {
+        match self.scanner.scan_token2()? {
             Token::Identifier(ident) => {
                 if self.globals.contains_key(ident) {
                     return Err(format!("Global {} is already defined", ident));
@@ -1377,10 +1402,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn let_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let mutable = self.scanner.match_token(Token::Mut)?;
-        let identifier_name = match self.scanner.scan_token()? {
-            Token::Identifier(ident) => ident,
-            _ => return Err("Expected identifier after 'let'".to_owned()),
-        };
+        let (identifier_name, identifier_name_location) = self.match_identifier()?;
 
         self.consume(Token::Colon)?;
 
@@ -1399,8 +1421,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         if self.stack_frames.is_empty() {
-            if self.globals.contains_key(identifier_name) {
-                return Err(format!("Global {} is already defined", identifier_name));
+            if self.globals.contains_key(&identifier_name) {
+                return Err(self.make_error_msg(&format!("Global {} is already defined", identifier_name), &identifier_name_location));
             }
 
             self.globals.insert(
@@ -1412,7 +1434,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             );
 
             chunk.write_byte(opcode::DEFINE_GLOBAL);
-            chunk.write_byte(self.data_section.create_constant_str(identifier_name));
+            chunk.write_byte(self.data_section.create_constant_str(&identifier_name));
         } else {
             let frame = self.stack_frames.last_mut().unwrap();
             let found = frame
@@ -1431,10 +1453,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 });
                 chunk.write_byte(opcode::DEFINE_LOCAL);
             } else {
-                return Err(format!(
+                return Err(self.make_error_msg(&format!(
                     "Local {} is already defined in current scope",
-                    identifier_name
-                ));
+                    identifier_name), &identifier_name_location));
             }
         }
 
@@ -1551,7 +1572,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         &mut self,
         chunk: &mut Chunk,
     ) -> Result<(usize, Vec<String>, Rc<UnionType>), String> {
-        let union_name = self.match_identifier()?;
+        let union_name = self.match_identifier()?.0;
 
         let mut template_parameters = vec![];
 
@@ -1588,7 +1609,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         self.consume(Token::Dot)?;
 
-        let member_name = self.match_identifier()?;
+        let member_name = self.match_identifier()?.0;
         let (determinant, member) = match union_type
             .members
             .iter()
@@ -1608,7 +1629,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut variable_names = vec![];
         for _ in 0..member.len() {
-            variable_names.push(self.match_identifier()?);
+            variable_names.push(self.match_identifier()?.0);
             self.consume(Token::Comma)?;
         }
 
@@ -1832,40 +1853,26 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.is_in_loop = false; // disable break (maybe enable later)
 
         self.scoped_block(chunk, |cm, ch| {
-            let identifier_name = {
-                match cm.scanner.scan_token()? {
-                    Token::Identifier(i) => i,
-                    _ => return Err("Expected identifier".to_owned()),
-                }
-            };
+            let (identifier_name, _) = cm.match_identifier()?;
 
             cm.consume(Token::Colon)?;
-            let start = {
-                match cm.scanner.scan_token()? {
-                    Token::Integer(i) => i,
-                    _ => return Err("Expected number".to_owned()),
+            let (start, _) = cm.match_integer()?;
+
+            let is_inclusive = {
+                let t = cm.scanner.scan_token()?;
+                match t.token {
+                    Token::DotDot => false,
+                    Token::DotDotEqual => true,
+                    _ => return Err(cm.make_error_msg("Expected range delimiter '..' or '..='", &t.location))
                 }
             };
 
-            let is_inclusive = if cm.scanner.match_token(Token::DotDot)? {
-                false
-            } else if cm.scanner.match_token(Token::DotDotEqual)? {
-                true
-            } else {
-                return Err("Expected range delimiter '..' or '..='".to_owned());
-            };
-
-            let end = {
-                match cm.scanner.scan_token()? {
-                    Token::Integer(i) => i,
-                    _ => return Err("Expected number".to_owned()),
-                }
-            };
+            let (end, _) = cm.match_integer()?;
 
             let frame = cm.stack_frames.last_mut().unwrap();
             let var_idx = frame.locals.len() as u8;
             frame.locals.push(LocalVariable {
-                name: identifier_name.to_string(),
+                name: identifier_name,
                 v: Variable {
                     read_only: true,
                     value_type: ValueType::Integer,
@@ -2344,7 +2351,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         enum_type: Rc<EnumType>,
     ) -> Result<(), String> {
         self.consume(Token::Dot)?;
-        let enum_value_name = match self.scanner.scan_token()? {
+        let enum_value_name = match self.scanner.scan_token2()? {
             Token::Identifier(v) => v,
             x => return Err(format!("Expected enum value name. Got {:?}", x)),
         };
@@ -2380,7 +2387,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut members = HashSet::new();
         while !self.scanner.match_token(Token::RightBrace)? {
-            let member_name = match self.scanner.scan_token()? {
+            let member_name = match self.scanner.scan_token2()? {
                 Token::Identifier(v) => v,
                 x => return Err(format!("Expected struct member name. Got {:?}", x)),
             };
@@ -2415,7 +2422,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn primary(&mut self, chunk: &mut Chunk) -> Result<(), String> {
-        let t = self.scanner.scan_token();
+        let t = self.scanner.scan_token2();
         match t {
             Ok(Token::Identifier(name)) => {
                 if let Some(ut) = self.user_types.get(name) {
@@ -2435,7 +2442,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.consume(Token::RightParen)?;
             }
             Ok(Token::Minus) => {
-                let next = self.scanner.scan_token();
+                let next = self.scanner.scan_token2();
                 match next {
                     Ok(Token::Integer(i)) => {
                         self.integer(chunk, -i);
