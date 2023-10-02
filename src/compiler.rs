@@ -44,6 +44,8 @@ use std::vec::Vec;
                 enum_value -> identifier ("=" literal)? ","?
            struct_definition -> "struct" identifier "{" member* "}"
                 member -> identifier ":" type ","
+           tuple_definition -> "(" member+ ")"
+                member -> type ","
            union_definition -> "union" identifier ("<" template_type* ">")? "{" member* "}"
                 template_type -> identifier ","
                 member -> identifier ("(" type ")") ","
@@ -193,6 +195,10 @@ impl UnionTemplatedType {
     }
 }
 
+struct TupleType {
+    element_types: Vec<ValueType>
+}
+
 #[derive(Debug, PartialEq, Clone)]
 enum UserType {
     Enum(Rc<EnumType>),
@@ -214,6 +220,7 @@ enum ValueType {
     Enum(Rc<EnumType>),
     Struct(Rc<StructType>),
     Union(Rc<UnionType>),
+    Tuple(Rc<TupleType>),
 }
 
 impl ValueType {
@@ -288,6 +295,7 @@ struct StackFrame {
 pub struct Compiler {
     globals: HashMap<String, Variable>,
     user_types: HashMap<String, UserType>,
+    tuple_types: Vec<Rc<Vec<ValueType>>>,
 }
 
 pub struct SrcCompiler<'a, T> {
@@ -300,6 +308,7 @@ pub struct SrcCompiler<'a, T> {
     is_in_loop: bool,
     function_chunks: HashMap<String, Chunk>,
     user_types: &'a mut HashMap<String, UserType>,
+    tuple_types: &'a Vec<Rc<TupleType>>,
 }
 
 impl Compiler {
@@ -307,6 +316,7 @@ impl Compiler {
         Compiler {
             globals: HashMap::new(),
             user_types: HashMap::new(),
+            tuple_types: vec![],
         }
     }
 
@@ -325,6 +335,7 @@ impl Compiler {
             is_in_loop: false,
             function_chunks: HashMap::new(),
             user_types: &mut self.user_types,
+            tuple_types: &mut self.tuple_types,
         };
 
         let mut chunk = Chunk::new();
@@ -1079,6 +1090,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         result
     }
 
+    fn parse_tuple(&mut self) -> Result<ValueType, String> {
+        let mut type_list = vec![];
+
+        while !self.scanner.match_token(Token::RightParen)? {
+            type_list.push(self.parse_type()?);
+            self.consume(Token::Comma)?;
+        }
+
+        let found = self.tuple_types.iter().find(|x| x.element_types == type_list);
+        if let Some(x) = found {
+            return Ok(ValueType::Tuple(x.clone()));
+        }
+
+        let tuple_type = Rc::new(TupleType { element_types: type_list.clone() });
+        self.tuple_types.push(tuple_type.clone());
+        Ok(ValueType::Tuple(tuple_type))
+    }
+
     fn parse_template_type_arg_list(&mut self) -> Result<Vec<ValueType>, String> {
         let mut list = vec![];
 
@@ -1096,6 +1125,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::TypeFloat => ValueType::Float,
             Token::TypeString => ValueType::Str,
             Token::LeftBracket => self.parse_type_vec_or_map()?,
+            Token::LeftParen => self.parse_tuple()?,
             Token::Identifier(i) => {
                 if let Some(ut) = self.user_types.get(i) {
                     let ut = ut.clone();
