@@ -2077,4 +2077,28 @@ mod test {
         assert_eq!(printer.strings[1], "3.142");
         assert_eq!(printer.strings[2], "Hello world");
     }
+
+    #[test]
+    fn test_union_tuple() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            union Option<T> { Some(T), None, }
+
+            type_alias O = Option<(int, float,),>;
+            let o: O = O.Some(tuple(9, 1.23,),);
+
+            if let O.Some(x,) = o {
+                print(x.0);
+                print(x.1);
+            }
+            ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings[0], "9");
+        assert_eq!(printer.strings[1], "1.23");
+    }
 }
