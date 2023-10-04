@@ -364,13 +364,6 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn peek_token2(&mut self) -> Result<Token<'a>, String> {
-        match self.peek_token() {
-            Ok(x) => Ok(x.token),
-            Err(e) => Err(e),
-        }
-    }
-
     pub fn peek_token(&mut self) -> Result<TokenWithLocation<'a>, String> {
         if let Some(token) = &self.peeked_token {
             return Ok(*token);
@@ -389,13 +382,6 @@ impl<'a> Scanner<'a> {
         }
 
         Ok(false)
-    }
-
-    pub fn scan_token2(&mut self) -> Result<Token<'a>, String> {
-        match self.scan_token() {
-            Ok(x) => Ok(x.token),
-            Err(e) => Err(e),
-        }
     }
 
     pub fn scan_token(&mut self) -> Result<TokenWithLocation<'a>, String> {
