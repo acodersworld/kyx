@@ -436,12 +436,18 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn location_info_str(&self, location: &TokenLocation) -> String {
         let line = format!("{}: ", location.line);
-        let spaces: String = std::iter::repeat(' ').take(line.len() + location.column).collect();
+        let spaces: String = std::iter::repeat(' ')
+            .take(line.len() + location.column)
+            .collect();
 
-        spaces.to_string() + "Here\n" + 
-        &spaces + "|\n" + 
-        &spaces + "V\n" + 
-        &line + location.get_text_line(&self.src)
+        spaces.to_string()
+            + "Here\n"
+            + &spaces
+            + "|\n"
+            + &spaces
+            + "V\n"
+            + &line
+            + location.get_text_line(&self.src)
     }
 
     fn make_error_msg(&self, msg: &str, location: &TokenLocation) -> String {
@@ -471,23 +477,30 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     Token::Str(s) => {
                         if enum_base_type != ValueType::Str {
                             return Err(self.make_error_msg(
-                                &format!("Enum type is string but enum value is {}", enum_base_type), &t.location));
+                                &format!(
+                                    "Enum type is string but enum value is {}",
+                                    enum_base_type
+                                ),
+                                &t.location,
+                            ));
                         }
                         EnumValue::Str(s.to_string())
                     }
                     Token::Integer(i) => {
                         if enum_base_type != ValueType::Integer {
-                            return Err(self.make_error_msg(&format!(
-                                "Enum type is int but enum value is {}",
-                                enum_base_type), &t.location));
+                            return Err(self.make_error_msg(
+                                &format!("Enum type is int but enum value is {}", enum_base_type),
+                                &t.location,
+                            ));
                         }
                         EnumValue::Integer(i)
                     }
                     Token::Float(f) => {
                         if enum_base_type != ValueType::Float {
-                            return Err(self.make_error_msg(&format!(
-                                "Enum type is float but enum value is {}",
-                                enum_base_type), &t.location));
+                            return Err(self.make_error_msg(
+                                &format!("Enum type is float but enum value is {}", enum_base_type),
+                                &t.location,
+                            ));
                         }
                         EnumValue::Float(f)
                     }
@@ -501,24 +514,26 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 .is_some();
 
             if member_already_exists {
-                return Err(self.make_error_msg(&format!(
-                    "{} already defined in enum {}",
-                    member_name, enum_name
-                ), &member_name_location));
+                return Err(self.make_error_msg(
+                    &format!("{} already defined in enum {}", member_name, enum_name),
+                    &member_name_location,
+                ));
             }
 
             self.consume(Token::Comma)?;
         }
 
         let enum_type = Rc::new(enum_type);
-        let type_already_exists = self.user_types
-            .insert(enum_name.to_string(), UserType::Enum(enum_type.clone())).is_some();
+        let type_already_exists = self
+            .user_types
+            .insert(enum_name.to_string(), UserType::Enum(enum_type.clone()))
+            .is_some();
 
         if type_already_exists {
-            return Err(self.make_error_msg(&format!(
-                "{} already defined",
-                enum_name
-            ), &enum_name_location));
+            return Err(self.make_error_msg(
+                &format!("{} already defined", enum_name),
+                &enum_name_location,
+            ));
         }
 
         Ok(ValueType::Enum(enum_type))
@@ -545,24 +560,34 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 .insert(member_name.to_string(), member_type)
                 .is_some()
             {
-                return Err(self.make_error_msg(&format!(
-                    "Member {} already defined in struct {}",
-                    member_name, struct_name), &member_name_location));
+                return Err(self.make_error_msg(
+                    &format!(
+                        "Member {} already defined in struct {}",
+                        member_name, struct_name
+                    ),
+                    &member_name_location,
+                ));
             }
         }
 
-        let user_type_already_defined = self.user_types.insert(
-            struct_name.to_string(),
-            UserType::Struct(Rc::new(StructType {
-                members: members
-                    .into_iter()
-                    .map(|(name, value_type)| (name, value_type))
-                    .collect(),
-            })),
-        ).is_some();
+        let user_type_already_defined = self
+            .user_types
+            .insert(
+                struct_name.to_string(),
+                UserType::Struct(Rc::new(StructType {
+                    members: members
+                        .into_iter()
+                        .map(|(name, value_type)| (name, value_type))
+                        .collect(),
+                })),
+            )
+            .is_some();
 
         if user_type_already_defined {
-            return Err(self.make_error_msg(&format!("Symbol {} is already defined", struct_name), &struct_name_location));
+            return Err(self.make_error_msg(
+                &format!("Symbol {} is already defined", struct_name),
+                &struct_name_location,
+            ));
         }
 
         Ok(())
@@ -604,7 +629,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let (union_name, union_name_location) = self.match_identifier()?;
 
         if self.user_types.contains_key(&union_name) {
-            return Err(self.make_error_msg(&format!("{} already defined", union_name), &union_name_location));
+            return Err(self.make_error_msg(
+                &format!("{} already defined", union_name),
+                &union_name_location,
+            ));
         }
 
         let mut template_parameter_types = vec![];
@@ -642,8 +670,18 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.consume(Token::RightParen)?;
             }
 
-            if members.iter().find(|(name, _)| *name == member_name).is_some() {
-                return Err(self.make_error_msg(&format!("Union {} already has a member {} defined", union_name, member_name), &member_name_location));
+            if members
+                .iter()
+                .find(|(name, _)| *name == member_name)
+                .is_some()
+            {
+                return Err(self.make_error_msg(
+                    &format!(
+                        "Union {} already has a member {} defined",
+                        union_name, member_name
+                    ),
+                    &member_name_location,
+                ));
             }
 
             self.consume(Token::Comma)?;
@@ -691,7 +729,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let (alias_name, alias_name_location) = self.match_identifier()?;
 
         if self.user_types.contains_key(&alias_name) {
-            return Err(self.make_error_msg(&format!("{} is already defined", alias_name), &alias_name_location));
+            return Err(self.make_error_msg(
+                &format!("{} is already defined", alias_name),
+                &alias_name_location,
+            ));
         }
 
         self.consume(Token::Equal)?;
@@ -786,7 +827,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Ok((i.to_string(), t.location));
         }
 
-        Err(format!("Expected identifier, got {:?}\n{}", t.token, self.location_info_str(&t.location)))
+        Err(format!(
+            "Expected identifier, got {:?}\n{}",
+            t.token,
+            self.location_info_str(&t.location)
+        ))
     }
 
     pub fn match_integer(&mut self) -> Result<(i32, TokenLocation), String> {
@@ -796,7 +841,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Ok((i, t.location));
         }
 
-        Err(format!("Expected integer, got {:?}\n{}", t.token, self.location_info_str(&t.location)))
+        Err(format!(
+            "Expected integer, got {:?}\n{}",
+            t.token,
+            self.location_info_str(&t.location)
+        ))
     }
 
     fn try_field(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
@@ -810,9 +859,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     let member_idx = match s.get_member_idx(&member_name) {
                         Some(i) => i,
                         None => {
-                            return Err(self.make_error_msg(&format!(
-                                "Struct does not have member named '{}'",
-                                member_name), &member_name_location))
+                            return Err(self.make_error_msg(
+                                &format!("Struct does not have member named '{}'", member_name),
+                                &member_name_location,
+                            ))
                         }
                     };
 
@@ -822,10 +872,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     let (member_idx, member_idx_location) = self.match_integer()?;
 
                     if member_idx < 0 {
-                        return Err(self.make_error_msg(&format!(
-                            "Negative tuple fields are not allowed, fot {}",
-                            member_idx
-                        ), &member_idx_location));
+                        return Err(self.make_error_msg(
+                            &format!("Negative tuple fields are not allowed, fot {}", member_idx),
+                            &member_idx_location,
+                        ));
                     }
 
                     let member_idx = member_idx as usize;
@@ -1309,7 +1359,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 let param_type = self.parse_type()?;
 
                 if parameter_names.iter().contains(&name) {
-                    return Err(self.make_error_msg(&format!("Parameter {} redefined", name), &name_location));
+                    return Err(self
+                        .make_error_msg(&format!("Parameter {} redefined", name), &name_location));
                 }
 
                 parameter_names.push(name.clone());
@@ -1422,7 +1473,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if self.stack_frames.is_empty() {
             if self.globals.contains_key(&identifier_name) {
-                return Err(self.make_error_msg(&format!("Global {} is already defined", identifier_name), &identifier_name_location));
+                return Err(self.make_error_msg(
+                    &format!("Global {} is already defined", identifier_name),
+                    &identifier_name_location,
+                ));
             }
 
             self.globals.insert(
@@ -1453,9 +1507,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 });
                 chunk.write_byte(opcode::DEFINE_LOCAL);
             } else {
-                return Err(self.make_error_msg(&format!(
-                    "Local {} is already defined in current scope",
-                    identifier_name), &identifier_name_location));
+                return Err(self.make_error_msg(
+                    &format!(
+                        "Local {} is already defined in current scope",
+                        identifier_name
+                    ),
+                    &identifier_name_location,
+                ));
             }
         }
 
@@ -1863,7 +1921,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 match t.token {
                     Token::DotDot => false,
                     Token::DotDotEqual => true,
-                    _ => return Err(cm.make_error_msg("Expected range delimiter '..' or '..='", &t.location))
+                    _ => {
+                        return Err(cm
+                            .make_error_msg("Expected range delimiter '..' or '..='", &t.location))
+                    }
                 }
             };
 

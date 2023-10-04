@@ -157,7 +157,7 @@ pub struct TokenLocation {
     src_line_start: usize,
     src_line_len: usize,
     pub column: usize,
-    pub line: usize
+    pub line: usize,
 }
 
 impl<'a> TokenLocation {
@@ -296,7 +296,7 @@ impl<'a> Scanner<'a> {
 
         TokenWithLocation {
             token: t,
-            location: self.get_location()
+            location: self.get_location(),
         }
     }
 
@@ -312,7 +312,7 @@ impl<'a> Scanner<'a> {
         self.advance();
         Ok(TokenWithLocation {
             token: Token::Str(&self.src_head[1..self.current_idx - 1]),
-            location: self.get_location()
+            location: self.get_location(),
         })
     }
 
@@ -334,26 +334,24 @@ impl<'a> Scanner<'a> {
             let number_str = &self.src_head[..self.current_idx];
             return Ok(TokenWithLocation {
                 token: Token::Float(str::parse::<f32>(number_str).unwrap()),
-                location: self.get_location()
+                location: self.get_location(),
             });
         }
 
         let number_str = &self.src_head[..self.current_idx];
         return Ok(TokenWithLocation {
             token: Token::Integer(str::parse::<i32>(number_str).unwrap()),
-            location: self.get_location()
+            location: self.get_location(),
         });
     }
 
     fn get_location(&self) -> TokenLocation {
         let src_line_start = self.src_line.as_ptr() as usize - self.src.as_ptr() as usize;
         let src_line_len = {
-            
             let pos = self.src_line.find('\n');
             if let Some(idx) = pos {
                 idx
-            }
-            else {
+            } else {
                 self.src_line.len()
             }
         };
@@ -362,20 +360,20 @@ impl<'a> Scanner<'a> {
             src_line_start,
             src_line_len,
             column: self.current_token_column,
-            line: self.current_line
+            line: self.current_line,
         }
     }
 
     pub fn peek_token2(&mut self) -> Result<Token<'a>, String> {
         match self.peek_token() {
             Ok(x) => Ok(x.token),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
     pub fn peek_token(&mut self) -> Result<TokenWithLocation<'a>, String> {
         if let Some(token) = &self.peeked_token {
-            return Ok(*token)
+            return Ok(*token);
         }
 
         let token = self.scan_token()?;
@@ -396,19 +394,22 @@ impl<'a> Scanner<'a> {
     pub fn scan_token2(&mut self) -> Result<Token<'a>, String> {
         match self.scan_token() {
             Ok(x) => Ok(x.token),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
     pub fn scan_token(&mut self) -> Result<TokenWithLocation<'a>, String> {
         if let Some(token) = self.peeked_token.take() {
-            return Ok(token)
+            return Ok(token);
         }
 
         loop {
             self.skip_white_space();
             if self.at_eof() {
-                return Ok(TokenWithLocation { token: Token::Eof, location: self.get_location() });
+                return Ok(TokenWithLocation {
+                    token: Token::Eof,
+                    location: self.get_location(),
+                });
             }
 
             if self.peek() == '/' {
@@ -419,13 +420,14 @@ impl<'a> Scanner<'a> {
                     self.skip_to_newline();
                 } else {
                     return Ok(TokenWithLocation {
-                        token: Token::Slash, 
+                        token: Token::Slash,
                         location: TokenLocation {
-                            src_line_start: self.src_line.as_ptr() as usize - self.src.as_ptr() as usize,
+                            src_line_start: self.src_line.as_ptr() as usize
+                                - self.src.as_ptr() as usize,
                             src_line_len: self.src_line.len(),
                             column: self.current_token_column,
-                            line: self.current_line
-                        }
+                            line: self.current_line,
+                        },
                     });
                 }
             } else {
@@ -445,79 +447,75 @@ impl<'a> Scanner<'a> {
             return self.number();
         }
 
-        let t = 
-            match c {
-                '+' => Token::Plus,
-                '-' => {
-                    if self.match_char('>') {
-                        Token::MinusGreater
-                    }
-                    else {
-                        Token::Minus
-                    }
+        let t = match c {
+            '+' => Token::Plus,
+            '-' => {
+                if self.match_char('>') {
+                    Token::MinusGreater
+                } else {
+                    Token::Minus
                 }
-                '*' => Token::Star,
+            }
+            '*' => Token::Star,
 
-                '{' => Token::LeftBrace,
-                '}' => Token::RightBrace,
-                '(' => Token::LeftParen,
-                ')' => Token::RightParen,
-                '[' => Token::LeftBracket,
-                ']' => Token::RightBracket,
+            '{' => Token::LeftBrace,
+            '}' => Token::RightBrace,
+            '(' => Token::LeftParen,
+            ')' => Token::RightParen,
+            '[' => Token::LeftBracket,
+            ']' => Token::RightBracket,
 
-                '.' => {
-                    if self.match_char('.') {
-                        if self.match_char('=') {
-                            Token::DotDotEqual
-                        } else {
-                            Token::DotDot
-                        }
+            '.' => {
+                if self.match_char('.') {
+                    if self.match_char('=') {
+                        Token::DotDotEqual
+                    } else {
+                        Token::DotDot
                     }
-                    else {
-                        Token::Dot
-                    }
+                } else {
+                    Token::Dot
                 }
-                ';' => Token::SemiColon,
-                ':' => Token::Colon,
-                ',' => Token::Comma,
+            }
+            ';' => Token::SemiColon,
+            ':' => Token::Colon,
+            ',' => Token::Comma,
 
-                '!' => {
-                    if self.match_char('=') {
-                        Token::BangEqual
-                    }
-                    else {
-                        Token::Bang
-                    }
+            '!' => {
+                if self.match_char('=') {
+                    Token::BangEqual
+                } else {
+                    Token::Bang
                 }
-                '<' => {
-                    if self.match_char('=') {
-                        Token::LessEqual
-                    }
-                    else {
-                        Token::Less
-                    }
+            }
+            '<' => {
+                if self.match_char('=') {
+                    Token::LessEqual
+                } else {
+                    Token::Less
                 }
-                '>' => {
-                    if self.match_char('=') {
-                        Token::GreaterEqual
-                    }
-                    else {
-                        Token::Greater
-                    }
+            }
+            '>' => {
+                if self.match_char('=') {
+                    Token::GreaterEqual
+                } else {
+                    Token::Greater
                 }
-                '=' => {
-                    if self.match_char('=') {
-                        Token::EqualEqual
-                    }
-                    else {
-                        Token::Equal
-                    }
+            }
+            '=' => {
+                if self.match_char('=') {
+                    Token::EqualEqual
+                } else {
+                    Token::Equal
                 }
-                '"' => return self.string(),
-                _ => return Err(format!("Unexpected token '{}'", c)),
-            };
+            }
+            '"' => return self.string(),
+            _ => return Err(format!("Unexpected token '{}'", c)),
+        };
 
-        Ok(TokenWithLocation { token: t, location: self.get_location() })
+        Ok(TokenWithLocation {
+            token: t,
+            location: self.get_location(),
+        })
     }
 }
 
@@ -542,10 +540,7 @@ mod tests {
 
     #[test]
     fn test_line_column() {
-        let src = "//a comment\n".to_owned() +
-                    "+\n" +
-                    "abc def\n" +
-                    "struct";
+        let src = "//a comment\n".to_owned() + "+\n" + "abc def\n" + "struct";
         let mut scanner = Scanner::new(&src);
         let mut location = scanner.scan_token().unwrap().location;
         assert_eq!(location.line, 2);
@@ -624,7 +619,10 @@ mod tests {
         let src = "hello".to_string();
         let mut scanner = Scanner::new(&src);
 
-        assert_eq!(scanner.scan_token().unwrap().token, Token::Identifier(&"hello"));
+        assert_eq!(
+            scanner.scan_token().unwrap().token,
+            Token::Identifier(&"hello")
+        );
         assert_eq!(scanner.scan_token().unwrap().token, Token::Eof);
     }
 
@@ -743,7 +741,10 @@ mod tests {
         {
             let src = "\"this is a string\"".to_owned();
             let mut scanner = Scanner::new(&src);
-            assert_eq!(scanner.scan_token().unwrap().token, Token::Str("this is a string"));
+            assert_eq!(
+                scanner.scan_token().unwrap().token,
+                Token::Str("this is a string")
+            );
             assert_eq!(scanner.scan_token().unwrap().token, Token::Eof);
         }
 
