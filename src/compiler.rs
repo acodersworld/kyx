@@ -1265,7 +1265,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn parse_type(&mut self) -> Result<ValueType, String> {
-        let var_type = match self.scanner.scan_token()?.token {
+        let t = self.scanner.scan_token()?;
+        let var_type = match t.token {
             Token::TypeInt => ValueType::Integer,
             Token::TypeFloat => ValueType::Float,
             Token::TypeString => ValueType::Str,
@@ -1287,9 +1288,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     }
                 }
 
-                return Err(format!("Expected type but got {}", i));
+                return Err(self.make_error_msg(&format!("Expected type but got {}", i), &t.location));
             }
-            token => return Err(format!("Expected type but got {}", token)),
+            token => return Err(self.make_error_msg(&format!("Expected type but got {}", token), &t.location)),
         };
 
         Ok(var_type)
