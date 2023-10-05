@@ -293,6 +293,7 @@ impl<'printer> VM<'printer> {
         println!("-- Main --");
         let mut ds = disassembler::Disassembler::new(&chunk.code);
         ds.disassemble_all();
+        println!("\n\n");
 
         self.run(chunk);
 
@@ -754,22 +755,17 @@ impl<'printer> VM<'printer> {
     }
 
     fn call(&mut self, frame_stack: &mut FrameStack) {
-        let idx = frame_stack.top.next_code().unwrap() as usize;
         let arity = frame_stack.top.next_code().unwrap() as usize;
 
-        let name = self.constant_strs[idx];
-        assert!(self.globals.contains_key(&name));
-        match self.globals[&name] {
-            Value::Function(f) => {
-                frame_stack.push(f);
+        assert!(!self.value_stack.is_empty());
+        let function = match self.value_stack.pop().unwrap() {
+            Value::Function(f) => f,
+            x => panic!("Top of stack is not a function! Got {:?}", x)
+        };
 
-                assert!(self.value_stack.len() >= arity);
-
-                let len = self.value_stack.len();
-                frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
-            }
-            _ => {}
-        }
+        frame_stack.push(function);
+        let len = self.value_stack.len();
+        frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
     }
 
     fn do_return(&mut self, frame_stack: &mut FrameStack) {
@@ -2100,5 +2096,54 @@ mod test {
         assert_eq!(printer.strings.len(), 2);
         assert_eq!(printer.strings[0], "9");
         assert_eq!(printer.strings[1], "1.23");
+    }
+
+    #[test]
+    fn test_function_pointer() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+                fn function(i:int) {
+                    print(\"function\");
+                    print(i);
+                }
+
+                fn function2(i:int) {
+                    print(\"function2\");
+                    print(i);
+                }
+
+                fn function3(i:int) {
+                    print(\"function3\");
+                    print(i);
+                }
+
+                fn call(local: fn(int), i: int) {
+                    print(\"local\");
+                    local(i);
+                }
+
+                let mut f: fn(int) = function;
+                f(10);
+                f = function2;
+                f(20);
+                f = function3;
+                f(30);
+                call(f, 40);
+                ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+
+        assert_eq!(printer.strings.len(), 9);
+        assert_eq!(printer.strings[0], "function");
+        assert_eq!(printer.strings[1], "10");
+        assert_eq!(printer.strings[2], "function2");
+        assert_eq!(printer.strings[3], "20");
+        assert_eq!(printer.strings[4], "function3");
+        assert_eq!(printer.strings[5], "30");
+        assert_eq!(printer.strings[6], "local");
+        assert_eq!(printer.strings[7], "function3");
+        assert_eq!(printer.strings[8], "40");
     }
 }

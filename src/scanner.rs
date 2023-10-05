@@ -61,7 +61,7 @@ pub enum Token<'a> {
     DotDot,
     DotDotEqual,
 
-    MinusGreater,
+    ThinArrow,
 
     ReadInput,
 
@@ -132,7 +132,7 @@ impl Token<'_> {
             Self::Comma => ",",
             Self::DotDot => "..",
             Self::DotDotEqual => "..=",
-            Self::MinusGreater => "->",
+            Self::ThinArrow => "->",
 
             Self::ReadInput => "read",
 
@@ -437,7 +437,7 @@ impl<'a> Scanner<'a> {
             '+' => Token::Plus,
             '-' => {
                 if self.match_char('>') {
-                    Token::MinusGreater
+                    Token::ThinArrow
                 } else {
                     Token::Minus
                 }
@@ -712,7 +712,7 @@ mod tests {
     fn test_arrow() {
         let src = "->".to_owned();
         let mut scanner = Scanner::new(&src);
-        assert_eq!(scanner.scan_token().unwrap().token, Token::MinusGreater);
+        assert_eq!(scanner.scan_token().unwrap().token, Token::ThinArrow);
     }
 
     #[test]

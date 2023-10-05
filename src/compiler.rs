@@ -17,7 +17,7 @@ use std::vec::Vec;
 
        rule -> declaration | expression ";"?
 
-       type -> "int" | "float" | "string" | "[" type "]" | "[" type ":" type "]"
+       type -> "int" | "float" | "string" | "[" type "]" | "[" type ":" type "]" | "fn" "(" (type ",")* ")" ("->" type)?
        literal -> NUMBER | FLOAT | STRING
 
    DECLARATIONS:
@@ -359,7 +359,7 @@ impl Compiler {
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn clear_stack(&mut self, chunk: &mut Chunk) {
         let pop_count = self.type_stack.len();
-        if pop_count == 1 && self.type_stack.last().unwrap().value_type == ValueType::Unit {
+        if pop_count == 1 && self.type_stack.pop().unwrap().value_type == ValueType::Unit {
             // This will happen when a function returns no values. Since it does not return any values
             // no pop instruction should be emitted.
             //
@@ -1264,6 +1264,48 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(list)
     }
 
+    fn parse_commas_separate_list<F>(
+        &mut self,
+        terminal_token: Token,
+        mut f: F,
+    ) -> Result<(), String>
+    where
+        F: FnMut(&mut Self) -> Result<(), String>,
+    {
+        if self.scanner.match_token(terminal_token)? {
+            return Ok(());
+        }
+
+        f(self)?;
+        while !self.scanner.match_token(terminal_token)? {
+            self.consume(Token::Comma)?;
+            f(self)?;
+        }
+
+        Ok(())
+    }
+
+    fn parse_type_function(&mut self) -> Result<ValueType, String> {
+        // "fn" "(" (type ",")* ")" ("->" type)?
+        self.consume(Token::LeftParen)?;
+
+        let mut parameters = vec![];
+        self.parse_commas_separate_list(Token::RightParen, |cm| {
+            parameters.push(cm.parse_type()?);
+            Ok(())
+        })?;
+
+        let mut return_type = ValueType::Unit;
+        if self.scanner.match_token(Token::ThinArrow)? {
+            return_type = self.parse_type()?;
+        }
+
+        Ok(ValueType::Function(Rc::new(FunctionType {
+            return_type,
+            parameters,
+        })))
+    }
+
     fn parse_type(&mut self) -> Result<ValueType, String> {
         let t = self.scanner.scan_token()?;
         let var_type = match t.token {
@@ -1272,6 +1314,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::TypeString => ValueType::Str,
             Token::LeftBracket => self.parse_type_vec_or_map()?,
             Token::LeftParen => self.parse_tuple()?,
+            Token::Fn => self.parse_type_function()?,
             Token::Identifier(i) => {
                 if let Some(ut) = self.user_types.get(i) {
                     let ut = ut.clone();
@@ -1288,9 +1331,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     }
                 }
 
-                return Err(self.make_error_msg(&format!("Expected type but got {}", i), &t.location));
+                return Err(
+                    self.make_error_msg(&format!("Expected type but got {}", i), &t.location)
+                );
             }
-            token => return Err(self.make_error_msg(&format!("Expected type but got {}", token), &t.location)),
+            token => {
+                return Err(
+                    self.make_error_msg(&format!("Expected type but got {}", token), &t.location)
+                )
+            }
         };
 
         Ok(var_type)
@@ -1383,7 +1432,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         let return_type = {
-            if self.scanner.match_token(Token::MinusGreater)? {
+            if self.scanner.match_token(Token::ThinArrow)? {
                 self.parse_type()?
             } else {
                 ValueType::Unit
@@ -2283,17 +2332,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let argument_count = argument_types.len();
 
-        chunk.write_byte(opcode::CALL);
-        chunk.write_byte(self.data_section.create_constant_str(name));
-        chunk.write_byte(argument_count as u8);
-
         // the arguments get moved to frame locals
         while self.type_stack.len() > stack_len {
             self.type_stack.pop();
         }
 
-        let global = self.find_global(name)?;
-        match global.value_type {
+        let function_type = if let Some((local, idx)) = self.find_local(name) {
+            chunk.write_byte(opcode::PUSH_LOCAL);
+            chunk.write_byte(idx as u8);
+
+            local.value_type
+        } else {
+            chunk.write_byte(opcode::PUSH_GLOBAL);
+            chunk.write_byte(self.data_section.create_constant_str(name));
+
+            self.find_global(name)?.value_type
+        };
+
+        match function_type {
             ValueType::Function(f) => {
                 let arity = f.parameters.len();
                 if argument_count as usize != arity {
@@ -2316,6 +2372,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
             _ => return Err(format!("\"{}\" is not a function", name)),
         }
+
+        chunk.write_byte(opcode::CALL);
+        chunk.write_byte(argument_count as u8);
 
         Ok(())
     }
@@ -3491,6 +3550,35 @@ mod test {
                 let i: int = t.0;
                 let f: float = t.1;
                 let s: string = t.2;
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_function_pointer() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                fn function(i:int) {
+                    print(\"function\");
+                    print(i);
+                }
+
+                fn call(f: fn(int), i: int) {
+                    f(i);
+                }
+
+                let mut f: fn(int) = function;
+                f(10);
+                call(f, 20);
                 ",
                 )
                 .unwrap();
