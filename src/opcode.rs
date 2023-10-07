@@ -29,18 +29,19 @@ pub const SET_GLOBAL: u8 = 26;
 pub const SET_LOCAL: u8 = 27;
 pub const PUSH_GLOBAL: u8 = 28;
 pub const PUSH_LOCAL: u8 = 29;
-pub const POP: u8 = 30;
-pub const LOCAL_POP: u8 = 31;
-pub const PUSH_FRAME: u8 = 32;
-pub const POP_FRAME: u8 = 33;
-pub const LOOP: u8 = 34;
-pub const BREAK: u8 = 35;
-pub const JMP: u8 = 36;
-pub const JMP_IF_FALSE: u8 = 37;
-pub const JMP_IF_DETERMINANT_MISMATCH: u8 = 38;
-pub const READ_INPUT: u8 = 39;
-pub const CALL: u8 = 40;
-pub const RETURN: u8 = 41;
+pub const PUSH_METHOD: u8 = 30;
+pub const POP: u8 = 31;
+pub const LOCAL_POP: u8 = 32;
+pub const PUSH_FRAME: u8 = 33;
+pub const POP_FRAME: u8 = 34;
+pub const LOOP: u8 = 35;
+pub const BREAK: u8 = 36;
+pub const JMP: u8 = 37;
+pub const JMP_IF_FALSE: u8 = 38;
+pub const JMP_IF_DETERMINANT_MISMATCH: u8 = 39;
+pub const READ_INPUT: u8 = 40;
+pub const CALL: u8 = 41;
+pub const RETURN: u8 = 42;
 // OP CODE END
 
 #[allow(dead_code)]
@@ -76,18 +77,19 @@ pub fn to_string(code: u8) -> String {
         27 => "SET_LOCAL".to_owned(),
         28 => "PUSH_GLOBAL".to_owned(),
         29 => "PUSH_LOCAL".to_owned(),
-        30 => "POP".to_owned(),
-        31 => "LOCAL_POP".to_owned(),
-        32 => "PUSH_FRAME".to_owned(),
-        33 => "POP_FRAME".to_owned(),
-        34 => "LOOP".to_owned(),
-        35 => "BREAK".to_owned(),
-        36 => "JMP".to_owned(),
-        37 => "JMP_IF_FALSE".to_owned(),
-        38 => "JMP_IF_DETERMINANT_MISMATCH".to_owned(),
-        39 => "READ_INPUT".to_owned(),
-        40 => "CALL".to_owned(),
-        41 => "RETURN".to_owned(),
+        30 => "PUSH_METHOD".to_owned(),
+        31 => "POP".to_owned(),
+        32 => "LOCAL_POP".to_owned(),
+        33 => "PUSH_FRAME".to_owned(),
+        34 => "POP_FRAME".to_owned(),
+        35 => "LOOP".to_owned(),
+        36 => "BREAK".to_owned(),
+        37 => "JMP".to_owned(),
+        38 => "JMP_IF_FALSE".to_owned(),
+        39 => "JMP_IF_DETERMINANT_MISMATCH".to_owned(),
+        40 => "READ_INPUT".to_owned(),
+        41 => "CALL".to_owned(),
+        42 => "RETURN".to_owned(),
         _ => "UNKNOWN".to_owned(),
     }
 }

@@ -42,7 +42,7 @@ use std::vec::Vec;
            return_stmt -> "return" expression?
            enum_definition -> "enum" identifier ":" type "{" enum_value* "}"
                 enum_value -> identifier ("=" literal)? ","?
-           struct_definition -> "struct" identifier "{" member* "}"
+           struct_definition -> "struct" identifier "{" member* "}" ("impl" "{" function_definition* "}")?
                 member -> identifier ":" type ","
            tuple_definition -> "(" member+ ")"
                 member -> type ","
@@ -113,6 +113,7 @@ struct EnumType {
 #[derive(Debug, PartialEq)]
 struct StructType {
     members: Vec<(String, ValueType)>,
+    methods: Vec<(String, FunctionType, usize)>,
 }
 
 impl StructType {
@@ -299,6 +300,7 @@ struct StackFrame {
 
 pub struct Compiler {
     globals: HashMap<String, Variable>,
+    method_counter: usize,
     user_types: HashMap<String, UserType>,
     tuple_types: Vec<Rc<TupleType>>,
 }
@@ -306,6 +308,7 @@ pub struct Compiler {
 pub struct SrcCompiler<'a, T> {
     src: &'a str,
     globals: &'a mut HashMap<String, Variable>,
+    method_counter: &'a mut usize,
     stack_frames: Vec<StackFrame>,
     scanner: Scanner<'a>,
     type_stack: Vec<Variable>,
@@ -313,6 +316,7 @@ pub struct SrcCompiler<'a, T> {
     unpatched_break_offsets: Vec<usize>,
     is_in_loop: bool,
     function_chunks: HashMap<String, Chunk>,
+    method_chunks: HashMap<usize, Chunk>,
     user_types: &'a mut HashMap<String, UserType>,
     tuple_types: &'a mut Vec<Rc<TupleType>>,
 }
@@ -321,6 +325,7 @@ impl Compiler {
     pub fn new() -> Compiler {
         Compiler {
             globals: HashMap::new(),
+            method_counter: 0,
             user_types: HashMap::new(),
             tuple_types: vec![],
         }
@@ -330,10 +335,11 @@ impl Compiler {
         &mut self,
         data_section: &'a mut T,
         src: &'a str,
-    ) -> Result<(Chunk, HashMap<String, Chunk>), String> {
+    ) -> Result<(Chunk, HashMap<String, Chunk>, HashMap<usize, Chunk>), String> {
         let mut compiler = SrcCompiler::<'_, T> {
             src,
             globals: &mut self.globals,
+            method_counter: &mut self.method_counter,
             stack_frames: Vec::new(),
             data_section,
             scanner: Scanner::new(src),
@@ -341,6 +347,7 @@ impl Compiler {
             unpatched_break_offsets: Vec::new(),
             is_in_loop: false,
             function_chunks: HashMap::new(),
+            method_chunks: HashMap::new(),
             user_types: &mut self.user_types,
             tuple_types: &mut self.tuple_types,
         };
@@ -352,7 +359,7 @@ impl Compiler {
             return Err(e);
         }
 
-        Ok((chunk, compiler.function_chunks))
+        Ok((chunk, compiler.function_chunks, compiler.method_chunks))
     }
 }
 
@@ -385,6 +392,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             &format!("Expected {}, got {}", expected_token, t.token),
             &t.location,
         ))
+    }
+
+    fn alloc_method_idx(&mut self) -> usize {
+        let idx = *self.method_counter;
+        *self.method_counter += 1;
+        idx
     }
 
     pub fn compile(&mut self, chunk: &mut Chunk) -> Result<(), String> {
@@ -453,6 +466,27 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn make_error_msg(&self, msg: &str, location: &TokenLocation) -> String {
         let location: String = self.location_info_str(location);
         return format!("{}\n{}", msg, location);
+    }
+
+    fn skip_to_matching_brace(&mut self) -> Result<(), String> {
+        let mut scope = 1;
+
+        loop {
+            let t = self.scanner.scan_token()?;
+            match t.token {
+                Token::LeftBrace => scope += 1,
+                Token::RightBrace => {
+                    scope -= 1;
+                    if scope == 0 {
+                        return Ok(());
+                    }
+                },
+                Token::Eof => break,
+                _ => {}
+            }
+        }
+
+        return Err(format!("Reached EOF, unmatched right brace"));
     }
 
     fn enum_definition(&mut self) -> Result<ValueType, String> {
@@ -546,7 +580,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return Err(format!("{} already defined", struct_name));
         }
 
-        let mut members = HashMap::new();
+        let mut members_map = HashMap::new();
 
         self.consume(Token::LeftBrace)?;
         while !self.scanner.match_token(Token::RightBrace)? {
@@ -556,7 +590,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let member_type = self.parse_type()?;
             self.consume(Token::Comma)?;
 
-            if members
+            if members_map
                 .insert(member_name.to_string(), member_type)
                 .is_some()
             {
@@ -570,26 +604,188 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         }
 
-        let user_type_already_defined = self
-            .user_types
-            .insert(
-                struct_name.to_string(),
-                UserType::Struct(Rc::new(StructType {
-                    members: members
-                        .into_iter()
-                        .map(|(name, value_type)| (name, value_type))
-                        .collect(),
-                })),
-            )
-            .is_some();
-
-        if user_type_already_defined {
+        if self.user_types.contains_key(&struct_name) {
             return Err(self.make_error_msg(
                 &format!("Symbol {} is already defined", struct_name),
                 &struct_name_location,
             ));
         }
 
+        let mut method_map = HashMap::new();
+        let mut method_metadata_map = HashMap::new();
+        if self.scanner.match_token(Token::Impl)? {
+            self.consume(Token::LeftBrace)?;
+
+            while !self.scanner.match_token(Token::RightBrace)? {
+                self.consume(Token::Fn)?;
+                let (function_name, function_name_location) = self.match_identifier()?;
+
+                if members_map.contains_key(&function_name) {
+                    return Err(self.make_error_msg(
+                        &format!("Function defined as {}, but it is already defined as a data member", function_name),
+                        &function_name_location))
+                }
+
+                self.consume(Token::LeftParen)?;
+
+                let mut parameter_names = vec![];
+                let mut parameter_types = vec![];
+
+                let parameter_count = self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
+                    if parameter_idx == 0 {
+                        cm.consume(Token::SmallSelf)?;
+                    }
+                    else {
+                        let (name, name_location) = cm.match_identifier()?;
+
+                        if parameter_names.contains(&name) {
+                            return Err(cm.make_error_msg(
+                                &format!("Parameter {} redefined", name),
+                                &name_location,
+                            ));
+                        }
+
+                        parameter_names.push(name);
+
+                        cm.consume(Token::Colon)?;
+                        parameter_types.push(cm.parse_type()?);
+                    }
+
+                    Ok(())
+                })?;
+
+                if parameter_count == 0 {
+                    return Err(self.make_error_msg(
+                        "Methods must have self as first parameter",
+                        &function_name_location,
+                    ));
+                }
+
+                let mut return_type = ValueType::Unit;
+                if self.scanner.match_token(Token::ThinArrow)? {
+                    return_type = self.parse_type()?;
+                }
+
+                self.consume(Token::LeftBrace)?;
+                let scanner_method_head = self.scanner.clone();
+                self.skip_to_matching_brace()?;
+
+                let parameter_names_types = {
+                    let mut v = vec![];
+                    for (pname, ptype) in std::iter::zip(parameter_names.into_iter(), parameter_types.iter()) {
+                        v.push((pname, ptype.clone()));
+                    }
+                    v
+                };
+
+                let function_type = FunctionType {
+                    return_type: return_type.clone(),
+                    parameters: parameter_types,
+                };
+
+                let method_already_defined = method_map
+                    .insert(function_name.clone(), function_type)
+                    .is_some();
+                if method_already_defined {
+                    return Err(self.make_error_msg(
+                        &format!("Method '{}' already defined", function_name),
+                        &function_name_location,
+                    ));
+                }
+
+               method_metadata_map 
+                    .insert(function_name, (scanner_method_head, parameter_names_types, return_type));
+            }
+        }
+
+        let members = members_map
+            .into_iter()
+            .map(|(name, value_type)| (name, value_type))
+            .collect::<Vec<(String, ValueType)>>();
+
+        let methods = method_map
+            .into_iter()
+            .map(|(name, function_type)| (name, function_type, self.alloc_method_idx()))
+            .collect::<Vec<(String, FunctionType, usize)>>();
+
+        let has_methods = !methods.is_empty();
+        let struct_type = Rc::new(StructType {
+            members,
+            methods,
+        });
+
+        self.user_types.insert(struct_name.to_string(), UserType::Struct(struct_type.clone()));
+
+        // A bit of a hack tbh. We need to first parse just the function signatures
+        // and then only generate code for them. This is because member functions are allows to
+        // call other member functions.
+        let saved_scanner = self.scanner.clone();
+
+        if has_methods {
+            for (method_name, (scanner, parameters, return_type)) in method_metadata_map {
+                let mut locals = vec![];
+
+                locals.push(LocalVariable {
+                    name: "self".to_owned(),
+                    v: Variable {
+                        value_type: ValueType::Struct(struct_type.clone()),
+                        read_only: true,
+                    },
+                    scope: 0,
+                });
+
+                for (pname, ptype) in &parameters {
+                    locals.push(LocalVariable {
+                        name: pname.clone(),
+                        v: Variable {
+                            value_type: (*ptype).clone(),
+                            read_only: true,
+                        },
+                        scope: 0,
+                    });
+                }
+
+                self.stack_frames.push(StackFrame {
+                    current_scope: 0,
+                    locals,
+                });
+
+                let mut chunk = Chunk::new();
+                self.scanner = scanner;
+                while !self.scanner.match_token(Token::RightBrace)? {
+                    if self.scanner.match_token(Token::Return)? {
+                        if !self.scanner.match_token(Token::SemiColon)? {
+                            self.expression(&mut chunk)?;
+
+                            let expr_type = self.type_stack.pop().unwrap().value_type;
+                            if expr_type != return_type {
+                                return Err(format!(
+                                    "return type does not match return expression. Expected {}, got {}",
+                                    return_type, expr_type
+                                ));
+                            }
+
+                            self.consume(Token::SemiColon)?;
+                        }
+
+                        chunk.write_byte(opcode::RETURN);
+                    } else {
+                        self.rule(&mut chunk)?;
+                    }
+                }
+
+                if chunk.code.is_empty() || *chunk.code.last().unwrap() != opcode::RETURN {
+                    chunk.write_byte(opcode::RETURN);
+                }
+
+                self.stack_frames.pop();
+
+                let method_idx = struct_type.methods.iter().find(|x| x.0 == method_name).map(|x| x.2).expect(&format!("Method {} not found!", method_name));
+                self.method_chunks.insert(method_idx, chunk);
+            }
+        }
+
+        self.scanner = saved_scanner;
         Ok(())
     }
 
@@ -848,14 +1044,50 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         ))
     }
 
+    fn struct_method(&mut self, struct_type: &StructType, method_name: &str, method_name_location: &TokenLocation, chunk: &mut Chunk) -> Result<(), String> {
+        // struct is already on the stack, first local 'self'
+        
+        let (function_type, method_idx) = match struct_type.methods.iter().find(|x| x.0 == method_name).map(|x| (&x.1, x.2)) {
+            Some(idx) => idx,
+            None => return Err(self.make_error_msg(&format!("No method in struct named {}", method_name), method_name_location))
+        };
+
+        let argument_count = 1 /* self */+ self.parse_commas_separate_list(Token::RightParen, |cm, _| {
+            cm.expression(chunk)?;
+            Ok(())
+        })?;
+
+        let stack_len = self.type_stack.len();
+        assert!(stack_len >= argument_count);
+        chunk.write_byte(opcode::PUSH_METHOD);
+        chunk.write_byte((method_idx & 0xFF) as u8);
+        chunk.write_byte(((method_idx >> 8) & 0xFF) as u8);
+        chunk.write_byte(opcode::CALL);
+        chunk.write_byte(argument_count as u8);
+
+        self.type_stack.drain(stack_len - argument_count..stack_len);
+        self.type_stack.push(Variable {
+            value_type: function_type.return_type.clone(),
+            read_only: true
+        });
+        Ok(())
+    }
+
     fn try_field(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
         let mut is_field = false;
         while self.scanner.match_token(Token::Dot)? {
             is_field = true;
+
+            println!("{:?}", self.scanner.peek_token()?.token);
             let variable = self.type_stack.last().unwrap().clone();
             let (member_idx, member_name, member_type) = match &variable.value_type {
                 ValueType::Struct(s) => {
                     let (member_name, member_name_location) = self.match_identifier()?;
+                    if self.scanner.match_token(Token::LeftParen)? {
+                        self.struct_method(s, &member_name, &member_name_location, chunk)?;
+                        continue;
+                    }
+
                     let member_idx = match s.get_member_idx(&member_name) {
                         Some(i) => i,
                         None => {
@@ -1268,21 +1500,24 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         &mut self,
         terminal_token: Token,
         mut f: F,
-    ) -> Result<(), String>
+    ) -> Result<usize, String>
     where
-        F: FnMut(&mut Self) -> Result<(), String>,
+        F: FnMut(&mut Self, usize) -> Result<(), String>,
     {
         if self.scanner.match_token(terminal_token)? {
-            return Ok(());
+            return Ok(0);
         }
 
-        f(self)?;
+        f(self, 0)?;
+
+        let mut idx = 1;
         while !self.scanner.match_token(terminal_token)? {
             self.consume(Token::Comma)?;
-            f(self)?;
+            f(self, idx)?;
+            idx += 1;
         }
 
-        Ok(())
+        Ok(idx)
     }
 
     fn parse_type_function(&mut self) -> Result<ValueType, String> {
@@ -1290,7 +1525,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::LeftParen)?;
 
         let mut parameters = vec![];
-        self.parse_commas_separate_list(Token::RightParen, |cm| {
+        self.parse_commas_separate_list(Token::RightParen, |cm, _| {
             parameters.push(cm.parse_type()?);
             Ok(())
         })?;
@@ -2558,6 +2793,16 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     self.identifier(chunk, name)?;
                 }
             }
+            Token::SmallSelf => {
+                if let Some((local, idx)) = self.find_local("self") {
+                    chunk.write_byte(opcode::PUSH_LOCAL);
+                    chunk.write_byte(idx as u8);
+                    self.type_stack.push(local);
+                } else {
+                    panic!("self not found in locals!");
+                }
+
+            },
             Token::LeftParen => {
                 self.expression(chunk)?;
                 self.consume(Token::RightParen)?;
@@ -3111,6 +3356,31 @@ mod test {
                     f: float,
                     s: string,
                 }
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_struct_with_methods() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                struct Struct {}
+                impl {
+                    fn test(self) {
+                        print \"Test method\";
+                    }
+                }
+
+                let s: Struct = Struct {};
+                s.test();
                 ",
                 )
                 .unwrap();

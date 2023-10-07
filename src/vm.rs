@@ -67,6 +67,7 @@ pub struct VM<'printer> {
     objects: Vec<GcValue>,
     constant_strs: Vec<NonNull<StringValue>>,
     globals: HashMap<NonNull<StringValue>, Value>,
+    method_functions: HashMap<usize, NonNull<FunctionValue>>,
     break_loop_flag: bool,
 
     compiler: Compiler,
@@ -179,6 +180,7 @@ impl<'printer> VM<'printer> {
             objects: Vec::new(),
             constant_strs: Vec::new(),
             globals: HashMap::new(),
+            method_functions: HashMap::new(),
             break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
@@ -221,6 +223,7 @@ impl<'printer> VM<'printer> {
                 opcode::SET_LOCAL => self.set_local(&mut frame_stack.top),
                 opcode::PUSH_GLOBAL => self.push_global(&mut frame_stack.top),
                 opcode::PUSH_LOCAL => self.push_local(&mut frame_stack.top),
+                opcode::PUSH_METHOD => self.push_method(&mut frame_stack.top),
                 opcode::DEFINE_GLOBAL => self.define_global(&mut frame_stack.top),
                 opcode::DEFINE_LOCAL => self.define_local(&mut frame_stack.top),
                 opcode::ADD => self.add(),
@@ -271,9 +274,9 @@ impl<'printer> VM<'printer> {
             constant_strs: &mut self.constant_strs,
         };
 
-        let (chunk, functions) = self.compiler.compile(&mut data_section, src)?;
+        let (chunk, global_functions, method_functions) = self.compiler.compile(&mut data_section, src)?;
 
-        for (fname, fchunk) in functions {
+        for (fname, fchunk) in global_functions {
             let mut ds = disassembler::Disassembler::new(&fchunk.code);
             println!("-- Function: {} --", fname);
             ds.disassemble_all();
@@ -288,6 +291,15 @@ impl<'printer> VM<'printer> {
                 self.constant_strs[name_idx],
                 Value::Function(function_value),
             );
+        }
+
+        for (fidx, fchunk) in method_functions {
+            let mut ds = disassembler::Disassembler::new(&fchunk.code);
+            println!("-- Function: {} --", fidx);
+            ds.disassemble_all();
+
+            let function_value = self.function(fchunk);
+            self.method_functions.insert(fidx, function_value);
         }
 
         println!("-- Main --");
@@ -567,6 +579,14 @@ impl<'printer> VM<'printer> {
         self.value_stack.push(locals[idx]);
     }
 
+    fn push_method(&mut self, frame: &mut Frame) {
+        let mut idx = frame.next_code().unwrap() as usize;
+        idx |= (frame.next_code().unwrap() as usize) << 8;
+
+        assert!(self.method_functions.contains_key(&idx));
+        self.value_stack.push(Value::Function(self.method_functions[&idx]));
+    }
+
     fn define_global(&mut self, frame: &mut Frame) {
         let idx = frame.next_code().unwrap() as usize;
 
@@ -760,7 +780,7 @@ impl<'printer> VM<'printer> {
         assert!(!self.value_stack.is_empty());
         let function = match self.value_stack.pop().unwrap() {
             Value::Function(f) => f,
-            x => panic!("Top of stack is not a function! Got {:?}", x)
+            x => panic!("Top of stack is not a function! Got {:?}", x),
         };
 
         frame_stack.push(function);
@@ -1924,6 +1944,54 @@ mod test {
         assert_eq!(printer.strings[0], "Nested!");
         assert_eq!(printer.strings[1], "new string");
         assert_eq!(printer.strings[2], "New instance");
+    }
+
+    #[test]
+    fn test_struct_with_methods() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+                struct Struct {
+                    i: int,
+                    f: float,
+                }
+                impl {
+                    fn test(self) {
+                        print \"Test method\";
+                        print self.i;
+                    }
+                    fn test2(self, s: string) {
+                        print \"Test 2\";
+                        print self.f;
+                        print s;
+                    }
+                }
+
+                let mut s: Struct = Struct {
+                    i = 10,
+                    f = 3.142,
+                };
+                s.test();
+                s.i = 20;
+                s.test();
+                s.test2(\"Hello method\");
+                s.f = 2.1;
+                s.test2(\"Bye method\");
+                ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 10);
+        assert_eq!(printer.strings[0], "Test method");
+        assert_eq!(printer.strings[1], "10");
+        assert_eq!(printer.strings[2], "Test method");
+        assert_eq!(printer.strings[3], "20");
+        assert_eq!(printer.strings[4], "Test 2");
+        assert_eq!(printer.strings[5], "3.142");
+        assert_eq!(printer.strings[6], "Hello method");
+        assert_eq!(printer.strings[7], "Test 2");
+        assert_eq!(printer.strings[8], "2.1");
+        assert_eq!(printer.strings[9], "Bye method");
     }
 
     #[test]

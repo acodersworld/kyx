@@ -37,6 +37,7 @@ const OPCODES: &[&str] = &[
     "SET_LOCAL",
     "PUSH_GLOBAL",
     "PUSH_LOCAL",
+    "PUSH_METHOD",
     "POP",
     "LOCAL_POP",
     "PUSH_FRAME",

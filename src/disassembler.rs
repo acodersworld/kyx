@@ -46,6 +46,7 @@ impl<'a> Disassembler<'a> {
             opcode::SET_LOCAL => self.set_local(),
             opcode::PUSH_GLOBAL => self.push_global(),
             opcode::PUSH_LOCAL => self.push_local(),
+            opcode::PUSH_METHOD => self.push_method(),
             opcode::DEFINE_GLOBAL => self.define_global(),
             opcode::DEFINE_LOCAL => self.define_local(),
             opcode::ADD => self.simple_instruction("add"),
@@ -227,6 +228,15 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("PUSH LOCAL: idx({})", idx);
+    }
+
+    fn push_method(&mut self) {
+        let mut idx: u16 = self.code[self.offset] as u16;
+        self.offset += 1;
+        idx |= (self.code[self.offset] as u16) << 8;
+        self.offset += 1;
+
+        println!("PUSH METHOD: idx({})", idx);
     }
 
     fn define_global(&mut self) {

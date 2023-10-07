@@ -6,6 +6,8 @@ pub enum Token<'a> {
     Enum,
     Union,
     Interface,
+    Impl,
+    SmallSelf,
     If,
     Else,
     While,
@@ -78,6 +80,8 @@ impl Token<'_> {
             Self::Enum => "enum",
             Self::Union => "union",
             Self::Interface => "interface",
+            Self::Impl => "impl",
+            Self::SmallSelf => "self",
             Self::If => "if",
             Self::Else => "else",
             Self::While => "while",
@@ -172,6 +176,7 @@ pub struct TokenWithLocation<'a> {
     pub location: TokenLocation,
 }
 
+#[derive(Clone)]
 pub struct Scanner<'a> {
     src: &'a str,
     src_head: &'a str,
@@ -277,6 +282,8 @@ impl<'a> Scanner<'a> {
             "enum" => Token::Enum,
             "union" => Token::Union,
             "interface" => Token::Interface,
+            "impl" => Token::Impl,
+            "self" => Token::SmallSelf,
             "fn" => Token::Fn,
             "let" => Token::Let,
             "mut" => Token::Mut,
@@ -574,7 +581,7 @@ mod tests {
     #[test]
     fn test_keywords() {
         let src =
-            "int float string type_alias vec hash_map tuple struct enum union interface while for return fn let mut true false";
+            "int float string type_alias vec hash_map tuple struct enum union interface impl self while for return fn let mut true false";
         let mut scanner = Scanner::new(&src);
         assert_eq!(scanner.scan_token().unwrap().token, Token::TypeInt);
         assert_eq!(scanner.scan_token().unwrap().token, Token::TypeFloat);
@@ -589,6 +596,8 @@ mod tests {
         assert_eq!(scanner.scan_token().unwrap().token, Token::Enum);
         assert_eq!(scanner.scan_token().unwrap().token, Token::Union);
         assert_eq!(scanner.scan_token().unwrap().token, Token::Interface);
+        assert_eq!(scanner.scan_token().unwrap().token, Token::Impl);
+        assert_eq!(scanner.scan_token().unwrap().token, Token::SmallSelf);
         assert_eq!(scanner.scan_token().unwrap().token, Token::While);
         assert_eq!(scanner.scan_token().unwrap().token, Token::For);
         assert_eq!(scanner.scan_token().unwrap().token, Token::Return);
