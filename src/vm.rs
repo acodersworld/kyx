@@ -819,6 +819,7 @@ impl<'printer> VM<'printer> {
 
         frame_stack.push(function);
         frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
+        frame_stack.top.locals[0] = interface.members[0]; // switch 'self' into first local slot
     }
 
     fn do_return(&mut self, frame_stack: &mut FrameStack) {
