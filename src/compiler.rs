@@ -1293,7 +1293,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while self.scanner.match_token(Token::Dot)? {
             is_field = true;
 
-            println!("{:?}", self.scanner.peek_token()?.token);
             let variable = self.type_stack.last().unwrap().clone();
             let (member_idx, member_name, member_type) = match &variable.value_type {
                 ValueType::Struct(s) => {
@@ -1418,44 +1417,36 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::Greater)?;
 
         self.consume(Token::LeftBrace)?;
-        if self.scanner.match_token(Token::RightBrace)? {
-            chunk.write_byte(opcode::CREATE_VEC);
-            chunk.write_byte(0);
-            self.type_stack.push(Variable {
-                value_type: ValueType::Vector(Rc::new(elem_type)),
-                read_only: false,
-            });
-            return Ok(());
-        }
 
-        self.expression(chunk)?;
-        {
-            let tp = &self.type_stack.pop().unwrap().value_type;
+        let arg_count = self.parse_commas_separate_list(Token::RightBrace, |cm, _| {
+            cm.expression(chunk)?;
+            let tp = &cm.type_stack.pop().unwrap().value_type;
             if elem_type != *tp {
-                return Err(format!(
-                    "Vector argument type mismatch. Expected {}, got {}",
-                    elem_type, tp
-                ));
-            }
-        }
+                let interface_satisfied = match (&elem_type, tp) {
+                    (ValueType::Interface(i), ValueType::Struct(s)) => {
+                        if i.does_struct_satisfy_interface(s) {
+                            cm.create_interface_object_for_struct(i, s, chunk);
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    _ => false
+                };
 
-        let mut arg_count = 1;
-        while !self.scanner.match_token(Token::RightBrace)? {
-            self.consume(Token::Comma)?;
-            self.expression(chunk)?;
-            let tp = &self.type_stack.pop().unwrap().value_type;
-            if elem_type != *tp {
-                return Err(format!(
-                    "Vector argument type mismatch. Expected {}, got {}",
-                    elem_type, tp
-                ));
+                if !interface_satisfied {
+                    return Err(format!(
+                        "Vector argument type mismatch. Expected {}, got {}",
+                        elem_type, tp
+                    ));
+                }
             }
-
-            arg_count += 1;
-        }
+            Ok(())
+        })?;
 
         chunk.write_byte(opcode::CREATE_VEC);
-        chunk.write_byte(arg_count);
+        chunk.write_byte(arg_count as u8);
         self.type_stack.push(Variable {
             value_type: ValueType::Vector(Rc::new(elem_type)),
             read_only: false,
