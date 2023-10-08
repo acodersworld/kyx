@@ -811,7 +811,6 @@ impl<'printer> VM<'printer> {
 
         let interface = unsafe { interface.as_ref() };
 
-        println!("METHOD {:?} {:?}", method_slot_idx, interface.members);
         let function = match interface.members[method_slot_idx] {
             Value::Function(f) => f,
             x => panic!("Interface method slot is not a function! Got {:?}", x),
