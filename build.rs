@@ -52,6 +52,7 @@ const OPCODES: &[&str] = &[
     "READ_INPUT",
     //
     "CALL",
+    "CALL_INTERFACE",
     "RETURN",
 ];
 

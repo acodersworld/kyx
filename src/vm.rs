@@ -250,6 +250,7 @@ impl<'printer> VM<'printer> {
                 }
                 opcode::READ_INPUT => self.read_input(&mut frame_stack.top),
                 opcode::CALL => self.call(&mut frame_stack),
+                opcode::CALL_INTERFACE => self.call_interface(&mut frame_stack),
                 opcode::RETURN => self.do_return(&mut frame_stack),
                 _ => {
                     panic!("Unknown instruction: {} @ {}", op, frame_stack.top.pc - 1)
@@ -785,6 +786,33 @@ impl<'printer> VM<'printer> {
 
         frame_stack.push(function);
         let len = self.value_stack.len();
+        frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
+    }
+
+    fn call_interface(&mut self, frame_stack: &mut FrameStack) {
+        let arity = frame_stack.top.next_code().unwrap() as usize;
+        let method_slot_idx = frame_stack.top.next_code().unwrap() as usize;
+
+        assert!(!self.value_stack.is_empty());
+        assert!(self.value_stack.len() >= arity);
+
+        let len = self.value_stack.len();
+        let interface_stack_idx = len - arity;
+
+        let interface = match self.value_stack[interface_stack_idx] {
+            Value::Struct(s) => s,
+            _ => panic!("Expected interface object @ stack idx {}", interface_stack_idx)
+        };
+
+        let interface = unsafe { interface.as_ref() };
+
+        println!("METHOD {:?} {:?}", method_slot_idx, interface.members);
+        let function = match interface.members[method_slot_idx] {
+            Value::Function(f) => f,
+            x => panic!("Interface method slot is not a function! Got {:?}", x),
+        };
+
+        frame_stack.push(function);
         frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
     }
 
@@ -2213,5 +2241,57 @@ mod test {
         assert_eq!(printer.strings[6], "local");
         assert_eq!(printer.strings[7], "function3");
         assert_eq!(printer.strings[8], "40");
+    }
+
+    #[test]
+    fn test_interface() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+                interface Interface {
+                    fn call(self, i: int) -> int
+                    fn call2(self, f: float) -> float
+                }
+
+                struct S {}
+                impl {
+                    fn call(self, i: int) -> int { return i; }
+                    fn call2(self, f: float) -> float { return f; }
+                }
+
+                struct S2 {}
+                impl {
+                    fn call(self, i: int) -> int { return i * 2; }
+                    fn call2(self, f: float) -> float { return f * 2.0; }
+                }
+
+                fn call_interface(i: Interface) {
+                    print i.call(11);
+                    print i.call2(2.7);
+                }
+
+                let mut it: Interface = S {};
+                print it.call(10);
+                print it.call2(3.142);
+
+                it = S2 {};
+                print it.call(10);
+                print it.call2(3.142);
+
+                call_interface(S{});
+                call_interface(S2{});
+                ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 8);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "3.142");
+        assert_eq!(printer.strings[2], "20");
+        assert_eq!(printer.strings[3], "6.284");
+        assert_eq!(printer.strings[4], "11");
+        assert_eq!(printer.strings[5], "2.7");
+        assert_eq!(printer.strings[6], "22");
+        assert_eq!(printer.strings[7], "5.4");
     }
 }

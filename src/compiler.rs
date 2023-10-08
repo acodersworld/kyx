@@ -38,6 +38,7 @@ use std::vec::Vec;
            break_stmt -> "break" ";"
            for_stmt "for" identifier ":" NUMBER (".." | "..=") NUMBER block_expression
            function_definition -> "fn" identifier "(" parameter_list ")" -> type block
+           function_prototype -> "fn" identifier "(" parameter_list ")" -> type
                 parameter_list -> parameter? ("," parameter)*
            return_stmt -> "return" expression?
            enum_definition -> "enum" identifier ":" type "{" enum_value* "}"
@@ -49,6 +50,7 @@ use std::vec::Vec;
            union_definition -> "union" identifier ("<" template_type* ">")? "{" member* "}"
                 template_type -> identifier ","
                 member -> identifier ("(" type ")") ","
+           interface_definition "interface" identifier "{" function_prototype* "}"
            type_alias -> "type_alias" identifier = type
 
    EXPRESSIONS:
@@ -120,6 +122,53 @@ impl StructType {
     fn get_member_idx(&self, name: &str) -> Option<usize> {
         for (idx, member) in self.members.iter().enumerate() {
             if member.0 == name {
+                return Some(idx);
+            }
+        }
+
+        None
+    }
+
+    fn get_method_call_idx(&self, name: &str) -> Option<usize> {
+        for method in &self.methods {
+            if method.0 == name {
+                return Some(method.2);
+            }
+        }
+
+        None
+    }
+
+    fn has_method(&self, method_name: &str, function_type: &FunctionType) -> bool {
+        for m in &self.methods {
+            if m.0 == method_name && m.1 == *function_type {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct InterfaceType {
+    methods: Vec<(String, FunctionType)>,
+}
+
+impl InterfaceType {
+    fn does_struct_satisfy_interface(&self, struct_type: &StructType) -> bool {
+        for m in &self.methods {
+            if !struct_type.has_method(&m.0, &m.1) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn get_method_idx(&self, method_name: &str) -> Option<usize> {
+        for (idx, m) in self.methods.iter().enumerate() {
+            if m.0 == method_name {
                 return Some(idx);
             }
         }
@@ -208,6 +257,7 @@ enum UserType {
     TemplatedUnion(Rc<UnionTemplatedType>),
     Union(Rc<UnionType>),
     Tuple(Rc<TupleType>),
+    Interface(Rc<InterfaceType>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -224,6 +274,7 @@ enum ValueType {
     Struct(Rc<StructType>),
     Union(Rc<UnionType>),
     Tuple(Rc<TupleType>),
+    Interface(Rc<InterfaceType>),
 }
 
 impl ValueType {
@@ -235,9 +286,9 @@ impl ValueType {
         return src.can_coerce_to(self);
     }
 
-    fn can_coerce_to(&self, src: &ValueType) -> bool {
+    fn can_coerce_to(&self, dest: &ValueType) -> bool {
         if let ValueType::Enum(e) = self {
-            *src == e.base_type
+            *dest == e.base_type
         } else {
             false
         }
@@ -269,6 +320,9 @@ impl fmt::Display for ValueType {
             }
             Self::Tuple(t) => {
                 format!("tuple {:?}", t)
+            }
+            Self::Interface(i) => {
+                format!("interface {:?}", i)
             }
         };
 
@@ -410,6 +464,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.struct_definition()?;
             } else if self.scanner.match_token(Token::Union)? {
                 self.union_definition()?;
+            } else if self.scanner.match_token(Token::Interface)? {
+                self.interface_definition()?;
             } else if self.scanner.match_token(Token::TypeAlias)? {
                 self.type_alias_definition()?;
                 self.consume(Token::SemiColon)?;
@@ -813,6 +869,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     UserType::Union(_u) => todo!(), //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
                     UserType::Tuple(t) => {
                         return Ok(UnionMemberType::Fixed(ValueType::Tuple(t.clone())))
+                    },
+                    UserType::Interface(i) => {
+                        return Ok(UnionMemberType::Fixed(ValueType::Interface(i.clone())))
                     }
                 }
             }
@@ -921,6 +980,70 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn interface_definition(&mut self) -> Result<(), String> {
+        let (interface_name, interface_name_location) = self.match_identifier()?;
+
+        if self.user_types.contains_key(&interface_name) {
+            return Err(self.make_error_msg(
+                &format!("{} already defined", interface_name),
+                &interface_name_location,
+            ));
+        }
+
+        self.consume(Token::LeftBrace)?;
+
+        let mut method_map = HashMap::new();
+        while !self.scanner.match_token(Token::RightBrace)? {
+            // fn func(parmas...) -> return;
+            self.consume(Token::Fn)?;
+            let (function_name, function_name_location) = self.match_identifier()?;
+            self.consume(Token::LeftParen)?;
+
+            let mut parameter_names = vec![];
+            let mut parameter_types = vec![];
+            self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
+                if parameter_idx == 0 {
+                    cm.consume(Token::SmallSelf)?;
+                }
+                else {
+                    let (parameter_name, parameter_name_location) = cm.match_identifier()?;
+
+                    if parameter_names.contains(&parameter_name) {
+                        return Err(cm.make_error_msg(&format!("Parameter {} redefined", parameter_name), &parameter_name_location));
+                    }
+
+                    cm.consume(Token::Colon)?;
+
+                    parameter_names.push(parameter_name);
+                    parameter_types.push(cm.parse_type()?);
+                }
+
+                Ok(())
+            })?;
+
+            let mut return_type = ValueType::Unit;
+            if self.scanner.match_token(Token::ThinArrow)? {
+                return_type = self.parse_type()?;
+            }
+
+            let function_type = FunctionType {
+                return_type,
+                parameters: parameter_types
+            };
+
+            if method_map.insert(function_name.clone(), function_type).is_some() {
+                return Err(self.make_error_msg(&format!("Method {} redefined", function_name), &function_name_location));
+            }
+        }
+
+        let interface_type = InterfaceType {
+            methods: method_map.into_iter().map(|(name, function_type)| (name.clone(), function_type)).collect()
+        };
+
+        self.user_types.insert(interface_name, UserType::Interface(Rc::new(interface_type)));
+        Ok(())
+    }
+
     fn type_alias_definition(&mut self) -> Result<(), String> {
         let (alias_name, alias_name_location) = self.match_identifier()?;
 
@@ -948,6 +1071,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ValueType::Struct(s) => UserType::Struct(s),
             ValueType::Union(u) => UserType::Union(u),
             ValueType::Tuple(t) => UserType::Tuple(t),
+            ValueType::Interface(i) => UserType::Interface(i),
         };
 
         self.user_types.insert(alias_name, user_type);
@@ -1073,6 +1197,45 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn interface_method(&mut self, interface_type: &InterfaceType, method_name: &str, method_name_location: &TokenLocation, chunk: &mut Chunk) -> Result<(), String> {
+        // interface is already on the stack, first local 'self'
+        
+        let method_slot_idx = match interface_type.get_method_idx(method_name) {
+            Some(idx) => idx,
+            None => return Err(self.make_error_msg(&format!("No method in interface named {}", method_name), method_name_location))
+        };
+
+        let function_type = &interface_type.methods[method_slot_idx].1;
+
+        let argument_count = 1 /* self */+ self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
+            let location = cm.scanner.peek_token()?.location;
+            if function_type.parameters.len() <= parameter_idx {
+                return Err(cm.make_error_msg("Too many function arguments", &location));
+            }
+
+            cm.expression(chunk)?;
+
+            if !function_type.parameters[parameter_idx].can_assign(&cm.type_stack.last().unwrap().value_type) {
+                return Err(cm.make_error_msg("Incorrect argument type", &location));
+            }
+
+            Ok(())
+        })?;
+
+        let stack_len = self.type_stack.len();
+        assert!(stack_len >= argument_count);
+        chunk.write_byte(opcode::CALL_INTERFACE);
+        chunk.write_byte(argument_count as u8);
+        chunk.write_byte((method_slot_idx + 1) as u8); // object 'self' is at index 0
+
+        self.type_stack.drain(stack_len - argument_count..stack_len);
+        self.type_stack.push(Variable {
+            value_type: function_type.return_type.clone(),
+            read_only: true
+        });
+        Ok(())
+    }
+
     fn try_field(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
         let mut is_field = false;
         while self.scanner.match_token(Token::Dot)? {
@@ -1125,6 +1288,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         member_idx.to_string(),
                         t.element_types[member_idx].clone(),
                     )
+                }
+                ValueType::Interface(i) => {
+                    let (member_name, member_name_location) = self.match_identifier()?;
+
+                    self.consume(Token::LeftParen)?;
+                    self.interface_method(i, &member_name, &member_name_location, chunk)?;
+                    continue;
                 }
                 x => return Err(format!("Only structs have members, got {}", x)),
             };
@@ -1563,6 +1733,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         }
                         UserType::Union(u) => return Ok(ValueType::Union(u.clone())),
                         UserType::Tuple(t) => return Ok(ValueType::Tuple(t.clone())),
+                        UserType::Interface(i) => return Ok(ValueType::Interface(i.clone())),
                     }
                 }
 
@@ -1736,6 +1907,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn create_interface_object_for_struct(&mut self, interface_type: &InterfaceType, struct_type: &StructType, chunk: &mut Chunk) {
+        for m in &interface_type.methods {
+            chunk.write_byte(opcode::PUSH_METHOD);
+
+            let idx = struct_type.get_method_call_idx(&m.0).unwrap();
+            chunk.write_byte((idx & 0xFF) as u8);
+            chunk.write_byte(((idx >> 8) & 0xFF) as u8);
+        }
+
+        chunk.write_byte(opcode::CREATE_TUPLE);
+        chunk.write_byte((interface_type.methods.len() + 1) as u8);
+    }
+
     fn let_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let mutable = self.scanner.match_token(Token::Mut)?;
         let (identifier_name, identifier_name_location) = self.match_identifier()?;
@@ -1753,7 +1937,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let expr_type = self.type_stack.pop().unwrap().value_type;
         if !var_type.can_assign(&expr_type) {
-            return Err(format!("Expected type {}, got {}", var_type, expr_type));
+            let interface_satisfied = match (&var_type, &expr_type) {
+                (ValueType::Interface(i), ValueType::Struct(s)) => {
+                    if i.does_struct_satisfy_interface(s) {
+                        self.create_interface_object_for_struct(i, s, chunk);
+                        true
+                    }
+                    else {
+                        false
+                    }
+                },
+                _ => false
+            };
+
+            if !interface_satisfied {
+                return Err(format!("Expected type {}, got {}", var_type, expr_type));
+            }
         }
 
         if self.stack_frames.is_empty() {
@@ -1851,12 +2050,27 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 return Err("Expected right hand side value, got None".to_owned());
             }
 
-            let expr_type = &self.type_stack.last().unwrap().value_type;
-            if variable.value_type != *expr_type {
-                return Err(format!(
-                    "Expected type {}, got {}",
-                    variable.value_type, expr_type
-                ));
+            let expr_type = self.type_stack.last().unwrap().value_type.clone();
+            if variable.value_type != expr_type {
+                let interface_satisfied = match (&variable.value_type, &expr_type) {
+                    (ValueType::Interface(i), ValueType::Struct(s)) => {
+                        if i.does_struct_satisfy_interface(s) {
+                            self.create_interface_object_for_struct(i, s, chunk);
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    }
+                    _ => false
+                };
+
+                if !interface_satisfied {
+                    return Err(format!(
+                        "Expected type {}, got {}",
+                        variable.value_type, expr_type
+                    ));
+                }
             }
 
             if variable.read_only {
@@ -2352,6 +2566,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Struct(_) => return Err("Cannot use comparison with struct".to_owned()), // FIXME
                 ValueType::Union(_) => return Err("Cannot use comparison with union".to_owned()), // FIXME
                 ValueType::Tuple(_) => return Err("Cannot use comparison with tuple".to_owned()), // FIXME
+                ValueType::Interface(_) => return Err("Cannot use comparison with interface".to_owned()), // FIXME
             };
         }
 
@@ -2553,60 +2768,73 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn call(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
         let stack_len = self.type_stack.len();
 
-        let mut argument_types: Vec<ValueType> = Vec::new();
-        if !self.scanner.match_token(Token::RightParen)? {
-            self.expression(chunk)?;
-            argument_types.push(self.type_stack.last().unwrap().value_type.clone());
+        let (function_type, func_opcode_1, func_opcode_2) = if let Some((local, idx)) = self.find_local(name) {
+            (local.value_type, opcode::PUSH_LOCAL, idx as u8)
+        } else {
+            (self.find_global(name)?.value_type, opcode::PUSH_GLOBAL, self.data_section.create_constant_str(name))
+        };
 
-            while !self.scanner.match_token(Token::RightParen)? {
-                self.consume(Token::Comma)?;
-                self.expression(chunk)?;
-                argument_types.push(self.type_stack.last().unwrap().value_type.clone());
+        let function_type = match function_type {
+            ValueType::Function(f) => f,
+            _ => return Err(format!("\"{}\" is not a function", name))
+        };
+
+        let mut argument_types: Vec<ValueType> = Vec::new();
+        self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
+            let location = cm.scanner.peek_token()?.location;
+
+            cm.expression(chunk)?;
+            let expr_type = cm.type_stack.last().unwrap().value_type.clone();
+
+            if parameter_idx >= function_type.parameters.len() {
+                return Err(cm.make_error_msg("Function call has too many arguments", &location));
             }
-        }
+
+            let param_type = &function_type.parameters[parameter_idx];
+            if !param_type.can_assign(&expr_type) {
+                let interface_satisfied = match (param_type, &expr_type) {
+                    (ValueType::Interface(i), ValueType::Struct(s)) => {
+                        if i.does_struct_satisfy_interface(s) {
+                            cm.create_interface_object_for_struct(i, s, chunk);
+                            true
+                        }
+                        else {
+                            false
+                        }
+                    }
+                    _ => false
+                };
+
+                if !interface_satisfied  {
+                    return Err(cm.make_error_msg(&format!("Function call has incorrect argument type. Expected {}, got {}", param_type, expr_type), &location));
+                }
+            }
+
+            argument_types.push(expr_type);
+            Ok(())
+        })?;
 
         let argument_count = argument_types.len();
+        let arity = function_type.parameters.len();
+        if argument_count as usize != arity {
+            return Err(format!(
+                "Unexpected number of arguments to function call. Expected {}, got {}",
+                arity, argument_count
+            ));
+        }
 
         // the arguments get moved to frame locals
         while self.type_stack.len() > stack_len {
             self.type_stack.pop();
         }
 
-        let function_type = if let Some((local, idx)) = self.find_local(name) {
-            chunk.write_byte(opcode::PUSH_LOCAL);
-            chunk.write_byte(idx as u8);
+        self.type_stack.push(Variable {
+            value_type: function_type.return_type.clone(),
+            read_only: true,
+        });
 
-            local.value_type
-        } else {
-            chunk.write_byte(opcode::PUSH_GLOBAL);
-            chunk.write_byte(self.data_section.create_constant_str(name));
-
-            self.find_global(name)?.value_type
-        };
-
-        match function_type {
-            ValueType::Function(f) => {
-                let arity = f.parameters.len();
-                if argument_count as usize != arity {
-                    return Err(format!(
-                        "Unexpected number of arguments to function call. Expected {}, got {}",
-                        arity, argument_count
-                    ));
-                }
-
-                for (idx, pair) in std::iter::zip(&argument_types, &f.parameters).enumerate() {
-                    if !pair.1.can_assign(pair.0) {
-                        return Err(format!("Function call has incorrect argument type. Argument {}, Expected {}, got {}", idx+1, pair.1, pair.0));
-                    }
-                }
-
-                self.type_stack.push(Variable {
-                    value_type: f.return_type.clone(),
-                    read_only: true,
-                });
-            }
-            _ => return Err(format!("\"{}\" is not a function", name)),
-        }
+        chunk.write_byte(func_opcode_1);
+        chunk.write_byte(func_opcode_2);
 
         chunk.write_byte(opcode::CALL);
         chunk.write_byte(argument_count as u8);
@@ -2788,6 +3016,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         UserType::TemplatedUnion(_) => todo!(),
                         UserType::Union(_) => todo!(),
                         UserType::Tuple(_) => todo!(),
+                        UserType::Interface(_) => todo!(),
                     }
                 } else {
                     self.identifier(chunk, name)?;
@@ -3849,6 +4078,37 @@ mod test {
                 let mut f: fn(int) = function;
                 f(10);
                 call(f, 20);
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_interface() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                interface Interface {
+                    fn call(self, i: int) -> int
+                    fn call2(self, f: float) -> float
+                }
+
+                struct S {}
+                impl {
+                    fn call(self, i: int) -> int { return i; }
+                    fn call2(self, f: float) -> float { return f; }
+                }
+
+                let it: Interface = S {};
+                it.call(10);
+                it.call2(3.142);
                 ",
                 )
                 .unwrap();

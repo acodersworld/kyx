@@ -71,6 +71,7 @@ impl<'a> Disassembler<'a> {
             opcode::JMP_IF_DETERMINANT_MISMATCH => self.jmp_if_determinant_mismatch(),
             opcode::READ_INPUT => self.read_instruction(),
             opcode::CALL => self.call(),
+            opcode::CALL_INTERFACE => self.call_interface(),
             opcode::RETURN => self.simple_instruction("return"),
             code => {
                 panic!("Unknown instruction {}", code);
@@ -254,5 +255,14 @@ impl<'a> Disassembler<'a> {
         let arity = self.code[self.offset];
         self.offset += 1;
         println!("CALL: arity({})", arity);
+    }
+
+    fn call_interface(&mut self) {
+        let arity = self.code[self.offset];
+        self.offset += 1;
+        let method_idx = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CALL INTERFACE: arity({}) idx({})", arity, method_idx);
     }
 }
