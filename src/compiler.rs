@@ -2510,6 +2510,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 ch.write_byte(opcode::JMP_IF_FALSE);
+                cm.type_stack.pop();
                 let cond_break_idx = ch.write_byte(0);
 
                 cm.for_block(ch)?;
