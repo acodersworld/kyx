@@ -536,7 +536,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     if scope == 0 {
                         return Ok(());
                     }
-                },
+                }
                 Token::Eof => break,
                 _ => {}
             }
@@ -678,8 +678,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 if members_map.contains_key(&function_name) {
                     return Err(self.make_error_msg(
-                        &format!("Function defined as {}, but it is already defined as a data member", function_name),
-                        &function_name_location))
+                        &format!(
+                            "Function defined as {}, but it is already defined as a data member",
+                            function_name
+                        ),
+                        &function_name_location,
+                    ));
                 }
 
                 self.consume(Token::LeftParen)?;
@@ -687,28 +691,28 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 let mut parameter_names = vec![];
                 let mut parameter_types = vec![];
 
-                let parameter_count = self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
-                    if parameter_idx == 0 {
-                        cm.consume(Token::SmallSelf)?;
-                    }
-                    else {
-                        let (name, name_location) = cm.match_identifier()?;
+                let parameter_count =
+                    self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
+                        if parameter_idx == 0 {
+                            cm.consume(Token::SmallSelf)?;
+                        } else {
+                            let (name, name_location) = cm.match_identifier()?;
 
-                        if parameter_names.contains(&name) {
-                            return Err(cm.make_error_msg(
-                                &format!("Parameter {} redefined", name),
-                                &name_location,
-                            ));
+                            if parameter_names.contains(&name) {
+                                return Err(cm.make_error_msg(
+                                    &format!("Parameter {} redefined", name),
+                                    &name_location,
+                                ));
+                            }
+
+                            parameter_names.push(name);
+
+                            cm.consume(Token::Colon)?;
+                            parameter_types.push(cm.parse_type()?);
                         }
 
-                        parameter_names.push(name);
-
-                        cm.consume(Token::Colon)?;
-                        parameter_types.push(cm.parse_type()?);
-                    }
-
-                    Ok(())
-                })?;
+                        Ok(())
+                    })?;
 
                 if parameter_count == 0 {
                     return Err(self.make_error_msg(
@@ -728,7 +732,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 let parameter_names_types = {
                     let mut v = vec![];
-                    for (pname, ptype) in std::iter::zip(parameter_names.into_iter(), parameter_types.iter()) {
+                    for (pname, ptype) in
+                        std::iter::zip(parameter_names.into_iter(), parameter_types.iter())
+                    {
                         v.push((pname, ptype.clone()));
                     }
                     v
@@ -749,8 +755,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     ));
                 }
 
-               method_metadata_map 
-                    .insert(function_name, (scanner_method_head, parameter_names_types, return_type));
+                method_metadata_map.insert(
+                    function_name,
+                    (scanner_method_head, parameter_names_types, return_type),
+                );
             }
         }
 
@@ -765,12 +773,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             .collect::<Vec<(String, FunctionType, usize)>>();
 
         let has_methods = !methods.is_empty();
-        let struct_type = Rc::new(StructType {
-            members,
-            methods,
-        });
+        let struct_type = Rc::new(StructType { members, methods });
 
-        self.user_types.insert(struct_name.to_string(), UserType::Struct(struct_type.clone()));
+        self.user_types.insert(
+            struct_name.to_string(),
+            UserType::Struct(struct_type.clone()),
+        );
 
         // A bit of a hack tbh. We need to first parse just the function signatures
         // and then only generate code for them. This is because member functions are allows to
@@ -836,7 +844,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 self.stack_frames.pop();
 
-                let method_idx = struct_type.methods.iter().find(|x| x.0 == method_name).map(|x| x.2).expect(&format!("Method {} not found!", method_name));
+                let method_idx = struct_type
+                    .methods
+                    .iter()
+                    .find(|x| x.0 == method_name)
+                    .map(|x| x.2)
+                    .expect(&format!("Method {} not found!", method_name));
                 self.method_chunks.insert(method_idx, chunk);
             }
         }
@@ -869,7 +882,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     UserType::Union(_u) => todo!(), //return Ok(UnionMemberType::Fixed(ValueType::Union(u.clone()))),
                     UserType::Tuple(t) => {
                         return Ok(UnionMemberType::Fixed(ValueType::Tuple(t.clone())))
-                    },
+                    }
                     UserType::Interface(i) => {
                         return Ok(UnionMemberType::Fixed(ValueType::Interface(i.clone())))
                     }
@@ -1004,12 +1017,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
                 if parameter_idx == 0 {
                     cm.consume(Token::SmallSelf)?;
-                }
-                else {
+                } else {
                     let (parameter_name, parameter_name_location) = cm.match_identifier()?;
 
                     if parameter_names.contains(&parameter_name) {
-                        return Err(cm.make_error_msg(&format!("Parameter {} redefined", parameter_name), &parameter_name_location));
+                        return Err(cm.make_error_msg(
+                            &format!("Parameter {} redefined", parameter_name),
+                            &parameter_name_location,
+                        ));
                     }
 
                     cm.consume(Token::Colon)?;
@@ -1028,19 +1043,29 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             let function_type = FunctionType {
                 return_type,
-                parameters: parameter_types
+                parameters: parameter_types,
             };
 
-            if method_map.insert(function_name.clone(), function_type).is_some() {
-                return Err(self.make_error_msg(&format!("Method {} redefined", function_name), &function_name_location));
+            if method_map
+                .insert(function_name.clone(), function_type)
+                .is_some()
+            {
+                return Err(self.make_error_msg(
+                    &format!("Method {} redefined", function_name),
+                    &function_name_location,
+                ));
             }
         }
 
         let interface_type = InterfaceType {
-            methods: method_map.into_iter().map(|(name, function_type)| (name.clone(), function_type)).collect()
+            methods: method_map
+                .into_iter()
+                .map(|(name, function_type)| (name.clone(), function_type))
+                .collect(),
         };
 
-        self.user_types.insert(interface_name, UserType::Interface(Rc::new(interface_type)));
+        self.user_types
+            .insert(interface_name, UserType::Interface(Rc::new(interface_type)));
         Ok(())
     }
 
@@ -1168,12 +1193,28 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         ))
     }
 
-    fn struct_method(&mut self, struct_type: &StructType, method_name: &str, method_name_location: &TokenLocation, chunk: &mut Chunk) -> Result<(), String> {
+    fn struct_method(
+        &mut self,
+        struct_type: &StructType,
+        method_name: &str,
+        method_name_location: &TokenLocation,
+        chunk: &mut Chunk,
+    ) -> Result<(), String> {
         // struct is already on the stack, first local 'self'
-        
-        let (function_type, method_idx) = match struct_type.methods.iter().find(|x| x.0 == method_name).map(|x| (&x.1, x.2)) {
+
+        let (function_type, method_idx) = match struct_type
+            .methods
+            .iter()
+            .find(|x| x.0 == method_name)
+            .map(|x| (&x.1, x.2))
+        {
             Some(idx) => idx,
-            None => return Err(self.make_error_msg(&format!("No method in struct named {}", method_name), method_name_location))
+            None => {
+                return Err(self.make_error_msg(
+                    &format!("No method in struct named {}", method_name),
+                    method_name_location,
+                ))
+            }
         };
 
         let argument_count = 1 /* self */+ self.parse_commas_separate_list(Token::RightParen, |cm, _| {
@@ -1192,17 +1233,28 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.type_stack.drain(stack_len - argument_count..stack_len);
         self.type_stack.push(Variable {
             value_type: function_type.return_type.clone(),
-            read_only: true
+            read_only: true,
         });
         Ok(())
     }
 
-    fn interface_method(&mut self, interface_type: &InterfaceType, method_name: &str, method_name_location: &TokenLocation, chunk: &mut Chunk) -> Result<(), String> {
+    fn interface_method(
+        &mut self,
+        interface_type: &InterfaceType,
+        method_name: &str,
+        method_name_location: &TokenLocation,
+        chunk: &mut Chunk,
+    ) -> Result<(), String> {
         // interface is already on the stack, first local 'self'
-        
+
         let method_slot_idx = match interface_type.get_method_idx(method_name) {
             Some(idx) => idx,
-            None => return Err(self.make_error_msg(&format!("No method in interface named {}", method_name), method_name_location))
+            None => {
+                return Err(self.make_error_msg(
+                    &format!("No method in interface named {}", method_name),
+                    method_name_location,
+                ))
+            }
         };
 
         let function_type = &interface_type.methods[method_slot_idx].1;
@@ -1231,7 +1283,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.type_stack.drain(stack_len - argument_count..stack_len);
         self.type_stack.push(Variable {
             value_type: function_type.return_type.clone(),
-            read_only: true
+            read_only: true,
         });
         Ok(())
     }
@@ -1907,7 +1959,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn create_interface_object_for_struct(&mut self, interface_type: &InterfaceType, struct_type: &StructType, chunk: &mut Chunk) {
+    fn create_interface_object_for_struct(
+        &mut self,
+        interface_type: &InterfaceType,
+        struct_type: &StructType,
+        chunk: &mut Chunk,
+    ) {
         for m in &interface_type.methods {
             chunk.write_byte(opcode::PUSH_METHOD);
 
@@ -1942,12 +1999,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     if i.does_struct_satisfy_interface(s) {
                         self.create_interface_object_for_struct(i, s, chunk);
                         true
-                    }
-                    else {
+                    } else {
                         false
                     }
-                },
-                _ => false
+                }
+                _ => false,
             };
 
             if !interface_satisfied {
@@ -2057,12 +2113,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         if i.does_struct_satisfy_interface(s) {
                             self.create_interface_object_for_struct(i, s, chunk);
                             true
-                        }
-                        else {
+                        } else {
                             false
                         }
                     }
-                    _ => false
+                    _ => false,
                 };
 
                 if !interface_satisfied {
@@ -2566,7 +2621,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Struct(_) => return Err("Cannot use comparison with struct".to_owned()), // FIXME
                 ValueType::Union(_) => return Err("Cannot use comparison with union".to_owned()), // FIXME
                 ValueType::Tuple(_) => return Err("Cannot use comparison with tuple".to_owned()), // FIXME
-                ValueType::Interface(_) => return Err("Cannot use comparison with interface".to_owned()), // FIXME
+                ValueType::Interface(_) => {
+                    return Err("Cannot use comparison with interface".to_owned())
+                } // FIXME
             };
         }
 
@@ -2768,15 +2825,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn call(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
         let stack_len = self.type_stack.len();
 
-        let (function_type, func_opcode_1, func_opcode_2) = if let Some((local, idx)) = self.find_local(name) {
-            (local.value_type, opcode::PUSH_LOCAL, idx as u8)
-        } else {
-            (self.find_global(name)?.value_type, opcode::PUSH_GLOBAL, self.data_section.create_constant_str(name))
-        };
+        let (function_type, func_opcode_1, func_opcode_2) =
+            if let Some((local, idx)) = self.find_local(name) {
+                (local.value_type, opcode::PUSH_LOCAL, idx as u8)
+            } else {
+                (
+                    self.find_global(name)?.value_type,
+                    opcode::PUSH_GLOBAL,
+                    self.data_section.create_constant_str(name),
+                )
+            };
 
         let function_type = match function_type {
             ValueType::Function(f) => f,
-            _ => return Err(format!("\"{}\" is not a function", name))
+            _ => return Err(format!("\"{}\" is not a function", name)),
         };
 
         let mut argument_types: Vec<ValueType> = Vec::new();
@@ -2797,16 +2859,21 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         if i.does_struct_satisfy_interface(s) {
                             cm.create_interface_object_for_struct(i, s, chunk);
                             true
-                        }
-                        else {
+                        } else {
                             false
                         }
                     }
-                    _ => false
+                    _ => false,
                 };
 
-                if !interface_satisfied  {
-                    return Err(cm.make_error_msg(&format!("Function call has incorrect argument type. Expected {}, got {}", param_type, expr_type), &location));
+                if !interface_satisfied {
+                    return Err(cm.make_error_msg(
+                        &format!(
+                            "Function call has incorrect argument type. Expected {}, got {}",
+                            param_type, expr_type
+                        ),
+                        &location,
+                    ));
                 }
             }
 
@@ -3030,8 +3097,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 } else {
                     panic!("self not found in locals!");
                 }
-
-            },
+            }
             Token::LeftParen => {
                 self.expression(chunk)?;
                 self.consume(Token::RightParen)?;

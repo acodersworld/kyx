@@ -275,7 +275,8 @@ impl<'printer> VM<'printer> {
             constant_strs: &mut self.constant_strs,
         };
 
-        let (chunk, global_functions, method_functions) = self.compiler.compile(&mut data_section, src)?;
+        let (chunk, global_functions, method_functions) =
+            self.compiler.compile(&mut data_section, src)?;
 
         for (fname, fchunk) in global_functions {
             let mut ds = disassembler::Disassembler::new(&fchunk.code);
@@ -585,7 +586,8 @@ impl<'printer> VM<'printer> {
         idx |= (frame.next_code().unwrap() as usize) << 8;
 
         assert!(self.method_functions.contains_key(&idx));
-        self.value_stack.push(Value::Function(self.method_functions[&idx]));
+        self.value_stack
+            .push(Value::Function(self.method_functions[&idx]));
     }
 
     fn define_global(&mut self, frame: &mut Frame) {
@@ -801,7 +803,10 @@ impl<'printer> VM<'printer> {
 
         let interface = match self.value_stack[interface_stack_idx] {
             Value::Struct(s) => s,
-            _ => panic!("Expected interface object @ stack idx {}", interface_stack_idx)
+            _ => panic!(
+                "Expected interface object @ stack idx {}",
+                interface_stack_idx
+            ),
         };
 
         let interface = unsafe { interface.as_ref() };
