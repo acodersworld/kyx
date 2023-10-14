@@ -62,6 +62,11 @@ impl FrameStack {
     }
 }
 
+struct Method {
+    function: NonNull<FunctionValue>,
+    method_id: usize
+}
+
 pub struct VM<'printer> {
     value_stack: Vec<Value>,
     objects: Vec<GcValue>,

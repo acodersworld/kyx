@@ -113,9 +113,16 @@ struct EnumType {
 }
 
 #[derive(Debug, PartialEq)]
+struct Method {
+    name: String,
+    function_type: FunctionType,
+    method_idx: usize
+}
+
+#[derive(Debug, PartialEq)]
 struct StructType {
     members: Vec<(String, ValueType)>,
-    methods: Vec<(String, FunctionType, usize)>,
+    methods: Vec<Method>
 }
 
 impl StructType {
@@ -131,8 +138,8 @@ impl StructType {
 
     fn get_method_call_idx(&self, name: &str) -> Option<usize> {
         for method in &self.methods {
-            if method.0 == name {
-                return Some(method.2);
+            if method.name == name {
+                return Some(method.method_idx);
             }
         }
 
@@ -141,7 +148,7 @@ impl StructType {
 
     fn has_method(&self, method_name: &str, function_type: &FunctionType) -> bool {
         for m in &self.methods {
-            if m.0 == method_name && m.1 == *function_type {
+            if m.name == method_name && m.function_type == *function_type {
                 return true;
             }
         }
@@ -769,8 +776,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let methods = method_map
             .into_iter()
-            .map(|(name, function_type)| (name, function_type, self.alloc_method_idx()))
-            .collect::<Vec<(String, FunctionType, usize)>>();
+            .map(|(name, function_type)| Method { name, function_type, method_idx: self.alloc_method_idx() })
+            .collect::<Vec<Method>>();
 
         let has_methods = !methods.is_empty();
         let struct_type = Rc::new(StructType { members, methods });
@@ -847,8 +854,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 let method_idx = struct_type
                     .methods
                     .iter()
-                    .find(|x| x.0 == method_name)
-                    .map(|x| x.2)
+                    .find(|x| x.name == method_name)
+                    .map(|x| x.method_idx)
                     .expect(&format!("Method {} not found!", method_name));
                 self.method_chunks.insert(method_idx, chunk);
             }
@@ -1205,8 +1212,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let (function_type, method_idx) = match struct_type
             .methods
             .iter()
-            .find(|x| x.0 == method_name)
-            .map(|x| (&x.1, x.2))
+            .find(|x| x.name == method_name)
+            .map(|x| (&x.function_type, x.method_idx))
         {
             Some(idx) => idx,
             None => {
