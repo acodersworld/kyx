@@ -681,6 +681,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             while !self.scanner.match_token(Token::RightBrace)? {
                 self.consume(Token::Fn)?;
+
+                self.consume(Token::LeftParen)?;
+                self.consume(Token::SmallSelf)?;
+                self.consume(Token::RightParen)?;
+
                 let (function_name, function_name_location) = self.match_identifier()?;
 
                 if members_map.contains_key(&function_name) {
@@ -700,33 +705,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 let parameter_count =
                     self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
-                        if parameter_idx == 0 {
-                            cm.consume(Token::SmallSelf)?;
-                        } else {
-                            let (name, name_location) = cm.match_identifier()?;
+                        let (name, name_location) = cm.match_identifier()?;
 
-                            if parameter_names.contains(&name) {
-                                return Err(cm.make_error_msg(
-                                    &format!("Parameter {} redefined", name),
-                                    &name_location,
-                                ));
-                            }
-
-                            parameter_names.push(name);
-
-                            cm.consume(Token::Colon)?;
-                            parameter_types.push(cm.parse_type()?);
+                        if parameter_names.contains(&name) {
+                            return Err(cm.make_error_msg(
+                                &format!("Parameter {} redefined", name),
+                                &name_location,
+                            ));
                         }
+
+                        parameter_names.push(name);
+
+                        cm.consume(Token::Colon)?;
+                        parameter_types.push(cm.parse_type()?);
 
                         Ok(())
                     })?;
-
-                if parameter_count == 0 {
-                    return Err(self.make_error_msg(
-                        "Methods must have self as first parameter",
-                        &function_name_location,
-                    ));
-                }
 
                 let mut return_type = ValueType::Unit;
                 if self.scanner.match_token(Token::ThinArrow)? {
@@ -1014,31 +1008,26 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut method_map = HashMap::new();
         while !self.scanner.match_token(Token::RightBrace)? {
-            // fn func(parmas...) -> return;
             self.consume(Token::Fn)?;
             let (function_name, function_name_location) = self.match_identifier()?;
             self.consume(Token::LeftParen)?;
 
             let mut parameter_names = vec![];
             let mut parameter_types = vec![];
-            self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
-                if parameter_idx == 0 {
-                    cm.consume(Token::SmallSelf)?;
-                } else {
-                    let (parameter_name, parameter_name_location) = cm.match_identifier()?;
+            self.parse_commas_separate_list(Token::RightParen, |cm, _| {
+                let (parameter_name, parameter_name_location) = cm.match_identifier()?;
 
-                    if parameter_names.contains(&parameter_name) {
-                        return Err(cm.make_error_msg(
-                            &format!("Parameter {} redefined", parameter_name),
-                            &parameter_name_location,
-                        ));
-                    }
-
-                    cm.consume(Token::Colon)?;
-
-                    parameter_names.push(parameter_name);
-                    parameter_types.push(cm.parse_type()?);
+                if parameter_names.contains(&parameter_name) {
+                    return Err(cm.make_error_msg(
+                        &format!("Parameter {} redefined", parameter_name),
+                        &parameter_name_location,
+                    ));
                 }
+
+                cm.consume(Token::Colon)?;
+
+                parameter_names.push(parameter_name);
+                parameter_types.push(cm.parse_type()?);
 
                 Ok(())
             })?;
@@ -3668,7 +3657,7 @@ mod test {
                     "
                 struct Struct {}
                 impl {
-                    fn test(self) {
+                    fn (self) test() {
                         print \"Test method\";
                     }
                 }
@@ -4161,14 +4150,14 @@ mod test {
                     &mut table,
                     "
                 interface Interface {
-                    fn call(self, i: int) -> int
-                    fn call2(self, f: float) -> float
+                    fn call(i: int) -> int
+                    fn call2(f: float) -> float
                 }
 
                 struct S {}
                 impl {
-                    fn call(self, i: int) -> int { return i; }
-                    fn call2(self, f: float) -> float { return f; }
+                    fn (self) call(i: int) -> int { return i; }
+                    fn (self) call2(f: float) -> float { return f; }
                 }
 
                 let it: Interface = S {};

@@ -1995,11 +1995,11 @@ mod test {
                     f: float,
                 }
                 impl {
-                    fn test(self) {
+                    fn (self) test() {
                         print \"Test method\";
                         print self.i;
                     }
-                    fn test2(self, s: string) {
+                    fn (self) test2(s: string) {
                         print \"Test 2\";
                         print self.f;
                         print s;
@@ -2260,20 +2260,20 @@ mod test {
 
         let src = "
                 interface Interface {
-                    fn call(self, i: int) -> int
-                    fn call2(self, f: float) -> float
+                    fn call(i: int) -> int
+                    fn call2(f: float) -> float
                 }
 
                 struct S {}
                 impl {
-                    fn call(self, i: int) -> int { return i; }
-                    fn call2(self, f: float) -> float { return f; }
+                    fn (self) call(i: int) -> int { return i; }
+                    fn (self) call2(f: float) -> float { return f; }
                 }
 
                 struct S2 {}
                 impl {
-                    fn call(self, i: int) -> int { return i * 2; }
-                    fn call2(self, f: float) -> float { return f * 2.0; }
+                    fn (self) call(i: int) -> int { return i * 2; }
+                    fn (self) call2(f: float) -> float { return f * 2.0; }
                 }
 
                 fn call_interface(i: Interface) {
