@@ -6,6 +6,7 @@ use std::ptr::NonNull;
 use std::vec::Vec;
 
 use crate::chunk::Chunk;
+use crate::rust_function_ctx::RustFunctionCtx;
 
 #[derive(Debug)]
 pub struct StringValue {
@@ -22,6 +23,23 @@ impl fmt::Debug for FunctionValue {
         let ptr = self.chunk.code.as_ptr();
         f.debug_struct("FunctionValue")
             .field("chunk", &ptr)
+            .finish()
+    }
+}
+
+pub struct RustFunctionValue {
+    pub func: &'static dyn Fn(&mut dyn RustFunctionCtx)
+}
+
+impl RustFunctionValue {
+    pub fn call(&self, ctx: &mut dyn RustFunctionCtx) {
+        (self.func)(ctx);
+    }
+}
+
+impl fmt::Debug for RustFunctionValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RustFunctionValue")
             .finish()
     }
 }
@@ -48,6 +66,7 @@ pub enum GcValue {
     Vector(Box<VectorValue>),
     HashMap(Box<HashMapValue>),
     Function(Box<FunctionValue>),
+    RustFunction(Box<RustFunctionValue>),
     Struct(Box<StructValue>),
     Union(Box<UnionValue>),
 }
@@ -62,6 +81,7 @@ pub enum Value {
     HashMap(NonNull<HashMapValue>),
     Function(NonNull<FunctionValue>),
     Struct(NonNull<StructValue>),
+    RustFunction(NonNull<RustFunctionValue>),
     Union(NonNull<UnionValue>),
 }
 
@@ -76,6 +96,7 @@ impl Hash for Value {
             Value::HashMap(h) => h.hash(state),
             Value::Function(f) => f.hash(state),
             Value::Struct(f) => f.hash(state),
+            Value::RustFunction(f) => f.hash(state),
             Value::Union(f) => f.hash(state),
         }
     }

@@ -392,12 +392,18 @@ impl Compiler {
         }
     }
 
-    pub fn compile<'a, T: DataSection>(
-        &mut self,
-        data_section: &'a mut T,
-        src: &'a str,
-    ) -> Result<(Chunk, HashMap<String, Chunk>, HashMap<usize, Chunk>), String> {
-        let mut compiler = SrcCompiler::<'_, T> {
+    fn define_rust_function(&mut self, name: &str, return_type: ValueType) {
+        self.globals.insert(name.to_string(), Variable {
+            value_type: ValueType::Function(Rc::new(FunctionType {
+                return_type,
+                parameters: vec![]
+            })),
+            read_only: true
+        });
+    }
+
+    fn new_src_compiler<'a, T: DataSection>(&'a mut self, data_section: &'a mut T, src: &'a str) -> SrcCompiler::<'a, T> {
+        SrcCompiler::<'a, T> {
             src,
             globals: &mut self.globals,
             method_counter: &mut self.method_counter,
@@ -411,7 +417,15 @@ impl Compiler {
             method_chunks: HashMap::new(),
             user_types: &mut self.user_types,
             tuple_types: &mut self.tuple_types,
-        };
+        }
+    }
+
+    pub fn compile<'a, T: DataSection>(
+        &mut self,
+        data_section: &'a mut T,
+        src: &'a str,
+    ) -> Result<(Chunk, HashMap<String, Chunk>, HashMap<usize, Chunk>), String> {
+        let mut compiler = self.new_src_compiler(data_section, src);
 
         let mut chunk = Chunk::new();
         //compiler.compile(&mut chunk)?;
@@ -421,6 +435,38 @@ impl Compiler {
         }
 
         Ok((chunk, compiler.function_chunks, compiler.method_chunks))
+    }
+
+    pub fn create_function<'a, T: DataSection>(&mut self, data_section: &'a mut T, signature: &'a str) -> Result<String, String> {
+        let mut return_type = ValueType::Unit;
+        let name: String;
+
+        {
+            let mut compiler = self.new_src_compiler(data_section, signature);
+            if !compiler.scanner.match_token(Token::Fn)? {
+                return Err("Expected 'Fn'".to_owned());
+            }
+
+            name = match compiler.scanner.scan_token()?.token {
+                Token::Identifier(i) => i.to_string(),
+                _ => return Err("Expected identifier".to_owned())
+            };
+
+            if !compiler.scanner.match_token(Token::LeftParen)? {
+                return Err("Expected '('".to_owned());
+            }
+
+            if !compiler.scanner.match_token(Token::RightParen)? {
+                return Err("Expected ')'".to_owned());
+            }
+
+            if compiler.scanner.match_token(Token::ThinArrow)? {
+                return_type = compiler.parse_type()?;
+            }
+        }
+
+        self.define_rust_function(&name, return_type);
+        Ok(name.to_string())
     }
 }
 

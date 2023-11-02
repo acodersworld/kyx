@@ -8,7 +8,9 @@ mod scanner;
 mod value;
 mod var_len_int;
 mod vm;
+mod rust_function_ctx;
 
+use rust_function_ctx::RustFunctionCtx;
 use rustyline::DefaultEditor;
 use std::env;
 use std::io::Read;
@@ -50,6 +52,10 @@ fn repl() {
     }
 }
 
+fn test(ctx: &mut dyn RustFunctionCtx) {
+    println!("TEST FUNCTION");
+}
+
 fn run_file(filename: &str) {
     let mut file = {
         match std::fs::File::open(filename) {
@@ -71,6 +77,9 @@ fn run_file(filename: &str) {
     println!("{}", contents);
     let mut printer = DefaultPrinter {};
     let mut machine = vm::VM::new(&mut printer);
+
+    machine.create_function("fn open()", &test);
+
     if let Err(e) = machine.interpret(&contents) {
         println!("Error: {}", e);
     }

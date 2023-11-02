@@ -10,8 +10,9 @@ use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
 use crate::opcode;
-use crate::value::{FunctionValue, GcValue, StringValue, StructValue, UnionValue, Value};
+use crate::value::{RustFunctionValue, FunctionValue, GcValue, StringValue, StructValue, UnionValue, Value};
 use crate::var_len_int;
+use crate::rust_function_ctx::{RustValue, RustFunctionCtx};
 
 pub trait Printer {
     fn print(&mut self, s: &str);
@@ -62,9 +63,28 @@ impl FrameStack {
     }
 }
 
-struct Method {
-    function: NonNull<FunctionValue>,
-    method_id: usize
+struct RustFunctionCtxImpl<'printer> {
+    parameters: Vec<RustValue>,
+    result: Option<RustValue>,
+
+    printer: &'printer mut dyn Printer,
+}
+
+impl RustFunctionCtx for RustFunctionCtxImpl<'_> {
+    fn get_parameter(&self, idx: usize) -> Option<RustValue> {
+        match self.parameters.get(idx) {
+            Some(x) => Some(x.clone()),
+            None => None
+        }
+    }
+
+    fn set_result(&mut self, value: RustValue) {
+        self.result = Some(value);
+    }
+
+    fn print(&mut self, s: &str) {
+        self.printer.print(s);
+    }
 }
 
 pub struct VM<'printer> {
@@ -116,6 +136,7 @@ fn is_truthy(value: &Value) -> bool {
         Value::HashMap(h) => unsafe { h.as_ref().len() > 0 },
         Value::Function(_) => true,
         Value::Struct(_) => true,
+        Value::RustFunction(_) => true,
         Value::Union(_) => true,
     }
 }
@@ -190,6 +211,37 @@ impl<'printer> VM<'printer> {
             compiler: Compiler::new(),
             printer,
         }
+    }
+
+    pub fn create_function(&mut self, signature: &str, func: &'static dyn Fn(&mut dyn RustFunctionCtx)) -> Result<(), String> {
+        let mut f = Box::new(RustFunctionValue {
+            func
+        });
+        let ptr = unsafe { NonNull::new_unchecked(f.as_mut() as *mut _) };
+        self.objects.push(GcValue::RustFunction(f));
+
+        let mut data_section = VMDataSection {
+            objects: &mut self.objects,
+            constant_strs: &mut self.constant_strs,
+        };
+
+        let name = self.compiler.create_function(&mut data_section, signature)?;
+
+        let v = Value::RustFunction(ptr);
+
+        let idx = {
+            let mut data_section = VMDataSection {
+                objects: &mut self.objects,
+                constant_strs: &mut self.constant_strs,
+            };
+
+            data_section.create_constant_str(&name) as usize
+        };
+
+        let n = self.constant_strs[idx];
+
+        self.globals.insert(n, v);
+        Ok(())
     }
 
     fn run(&mut self, chunk: Chunk) {
@@ -651,6 +703,7 @@ impl<'printer> VM<'printer> {
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
             Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
             Value::Struct(s) => format!("struct<0x{:x}>", s.as_ptr() as usize),
+            Value::RustFunction(f) => format!("rust_function"),
             Value::Union(u) => format!("union<0x{:x}> {:?}", u.as_ptr() as usize, unsafe {
                 u.as_ref()
             }),
@@ -786,14 +839,64 @@ impl<'printer> VM<'printer> {
         let arity = frame_stack.top.next_code().unwrap() as usize;
 
         assert!(!self.value_stack.is_empty());
-        let function = match self.value_stack.pop().unwrap() {
-            Value::Function(f) => f,
-            x => panic!("Top of stack is not a function! Got {:?}", x),
-        };
 
-        frame_stack.push(function);
-        let len = self.value_stack.len();
-        frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
+        let top = self.value_stack.pop().unwrap();
+        if let Value::RustFunction(f) = top {
+            let mut ctx = RustFunctionCtxImpl{
+                parameters: vec![],
+                result: None,
+                printer: self.printer
+            };
+            unsafe{ f.as_ref() }.call(&mut ctx);
+
+            if let Some(r) = ctx.result {
+                match r {
+                    RustValue::Float(f) => self.value_stack.push(Value::Float(OrderedFloat(f))),
+                    RustValue::Integer(i) => self.value_stack.push(Value::Integer(i)),
+                    RustValue::Str(s) => {
+                        let mut data_section = VMDataSection {
+                            objects: &mut self.objects,
+                            constant_strs: &mut self.constant_strs,
+                        };
+
+                        let idx = data_section.create_constant_str(&s) as usize;
+                        self.value_stack.push(Value::Str(self.constant_strs[idx]));
+                    },
+                    RustValue::Bool(b) => self.value_stack.push(Value::Bool(b)),
+                    RustValue::StringVector(v) => {
+                        let mut vector: Vec<Value> = vec![];
+
+                        for s in v {
+                            let idx = {
+                                let mut data_section = VMDataSection {
+                                    objects: &mut self.objects,
+                                    constant_strs: &mut self.constant_strs,
+                                };
+                                data_section.create_constant_str(&s) as usize
+                            };
+
+                            vector.push(Value::Str(self.constant_strs[idx]));
+                        }
+
+                        let mut vec_val = Box::new(vector);
+                        let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                        self.objects.push(GcValue::Vector(vec_val));
+
+                        self.value_stack.push(Value::Vector(ptr));
+                    }
+                }
+            }
+        }
+        else {
+            let function = match top {
+                Value::Function(f) => f,
+                x => panic!("Top of stack is not a function! Got {:?}", x),
+            };
+
+            frame_stack.push(function);
+            let len = self.value_stack.len();
+            frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
+        }
     }
 
     fn call_interface(&mut self, frame_stack: &mut FrameStack) {
@@ -2303,5 +2406,101 @@ mod test {
         assert_eq!(printer.strings[5], "2.7");
         assert_eq!(printer.strings[6], "22");
         assert_eq!(printer.strings[7], "5.4");
+    }
+
+    fn test_call_function(ctx: &mut dyn RustFunctionCtx) {
+        ctx.print("TEST!");
+    }
+
+    #[test]
+    fn test_call() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        if let Err(e) = vm.create_function("fn test()", &test_call_function) {
+            panic!("{}", e);
+        }
+
+        let src = "
+            test();
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "TEST!");
+    }
+
+    fn test_call_return_function_string(ctx: &mut dyn RustFunctionCtx) {
+        ctx.set_result(RustValue::Str("TEST RETURN!".to_string()));
+    }
+
+    fn test_call_return_function_float(ctx: &mut dyn RustFunctionCtx) {
+        ctx.set_result(RustValue::Float(3.142));
+    }
+
+    fn test_call_return_function_integer(ctx: &mut dyn RustFunctionCtx) {
+        ctx.set_result(RustValue::Integer(1234));
+    }
+
+    #[test]
+    fn test_call_return() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        if let Err(e) = vm.create_function("fn test_string() -> string", &test_call_return_function_string) {
+            panic!("{}", e);
+        }
+
+        if let Err(e) = vm.create_function("fn test_float() -> float", &test_call_return_function_float) {
+            panic!("{}", e);
+        }
+
+        if let Err(e) = vm.create_function("fn test_integer() -> int", &test_call_return_function_integer) {
+            panic!("{}", e);
+        }
+
+        let src = "
+            print(test_string());
+            print(test_float());
+            print(test_integer());
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "TEST RETURN!");
+        assert_eq!(printer.strings[1], "3.142");
+        assert_eq!(printer.strings[2], "1234");
+    }
+
+    fn test_call_return_vector_function(ctx: &mut dyn RustFunctionCtx) {
+        let mut v = vec![];
+
+        v.push("Hello".to_string());
+        v.push("World".to_string());
+        v.push("Kyx".to_string());
+        ctx.set_result(RustValue::StringVector(v));
+    }
+
+    #[test]
+    fn test_call_return_vector() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        if let Err(e) = vm.create_function("fn open() -> [string]", &test_call_return_vector_function) {
+            panic!("{}", e);
+        }
+
+        let src = "
+            let s: [string] = open();
+            print(s[0]);
+            print(s[1]);
+            print(s[2]);
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "Hello");
+        assert_eq!(printer.strings[1], "World");
+        assert_eq!(printer.strings[2], "Kyx");
     }
 }
