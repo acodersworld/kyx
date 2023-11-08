@@ -9,6 +9,7 @@ mod value;
 mod var_len_int;
 mod vm;
 mod rust_function_ctx;
+mod builtin_functions;
 
 use rust_function_ctx::{RustValue, RustFunctionCtx};
 use rustyline::DefaultEditor;
@@ -50,7 +51,7 @@ fn readlines(ctx: &mut dyn RustFunctionCtx) {
     ctx.set_result(RustValue::StringVector(lines));
 }
 
-fn register_buildin_functions(machine: &mut vm::VM) {
+fn register_builtin_functions(machine: &mut vm::VM) {
     machine.create_function("fn readlines(string) -> [string]", &readlines).expect("Failed to register readlines");
 }
 
@@ -67,7 +68,7 @@ fn repl() {
 
     let mut printer = DefaultPrinter {};
     let mut machine = vm::VM::new(&mut printer);
-    register_buildin_functions(&mut machine);
+    register_builtin_functions(&mut machine);
     loop {
         let line = rl.readline(">> ");
         match line {
@@ -105,7 +106,7 @@ fn run_file(filename: &str) {
     println!("{}", contents);
     let mut printer = DefaultPrinter {};
     let mut machine = vm::VM::new(&mut printer);
-    register_buildin_functions(&mut machine);
+    register_builtin_functions(&mut machine);
 
     if let Err(e) = machine.interpret(&contents) {
         println!("Error: {}", e);

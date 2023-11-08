@@ -13,6 +13,7 @@ use crate::opcode;
 use crate::value::{RustFunctionValue, FunctionValue, GcValue, StringValue, StructValue, UnionValue, Value};
 use crate::var_len_int;
 use crate::rust_function_ctx::{RustValue, RustFunctionCtx};
+use crate::builtin_functions;
 
 pub trait Printer {
     fn print(&mut self, s: &str);
@@ -341,6 +342,7 @@ impl<'printer> VM<'printer> {
                 opcode::READ_INPUT => self.read_input(&mut frame_stack.top),
                 opcode::CALL => self.call(&mut frame_stack),
                 opcode::CALL_INTERFACE => self.call_interface(&mut frame_stack),
+                opcode::CALL_BUILTIN => self.call_builtin(&mut frame_stack),
                 opcode::RETURN => self.do_return(&mut frame_stack),
                 _ => {
                     panic!("Unknown instruction: {} @ {}", op, frame_stack.top.pc - 1)
@@ -745,7 +747,7 @@ impl<'printer> VM<'printer> {
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
             Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
             Value::Struct(s) => format!("struct<0x{:x}>", s.as_ptr() as usize),
-            Value::RustFunction(f) => format!("rust_function"),
+            Value::RustFunction(_) => format!("rust_function"),
             Value::Union(u) => format!("union<0x{:x}> {:?}", u.as_ptr() as usize, unsafe {
                 u.as_ref()
             }),
@@ -984,6 +986,41 @@ impl<'printer> VM<'printer> {
         frame_stack.push(function);
         frame_stack.top.locals = self.value_stack.drain(len - arity..).collect();
         frame_stack.top.locals[0] = interface.members[0]; // switch 'self' into first local slot
+    }
+
+    fn call_builtin(&mut self, frame_stack: &mut FrameStack) {
+        let builtin_id = frame_stack.top.next_code().unwrap();
+
+        match self.value_stack.pop().unwrap() {
+            Value::Vector(v) => {
+                match builtin_id {
+                    builtin_functions::vector::LEN => {
+                        self.value_stack.push(Value::Integer(unsafe { v.as_ref() }.len() as i32));
+                    }
+                    _ => panic!(
+                        "Expected vector builtin id {}",
+                        builtin_id
+                    ),
+                }
+            },
+            Value::Str(s) => {
+                match builtin_id {
+                    builtin_functions::string::LEN => {
+                        self.value_stack.push(Value::Integer(unsafe { s.as_ref() }.val.len() as i32));
+                    }
+                    builtin_functions::string::TO_INTEGER => {
+                        self.value_stack.push(Value::Integer(unsafe { s.as_ref() }.val.parse::<i32>().unwrap_or(0)));
+                    }
+                    _ => panic!(
+                        "Expected string builtin id {}",
+                        builtin_id
+                    ),
+                }
+            },
+            _ => panic!(
+                "Must be a vector or string"
+            )
+        };
     }
 
     fn do_return(&mut self, frame_stack: &mut FrameStack) {
@@ -2589,5 +2626,45 @@ mod test {
         assert_eq!(printer.strings[0], "2.14");
         assert_eq!(printer.strings[1], "4321");
         assert_eq!(printer.strings[2], "kyx");
+    }
+
+    #[test]
+    fn test_vector_builtin() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let v: [int] = vec<int>{1,2,3,4,5};
+            print(v.len());
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "5");
+    }
+
+    #[test]
+    fn test_string_builtin() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut s: string = \"hello\";
+            print(s.len());
+
+            print(\"-10\".to_integer());
+            print(\"10\".to_integer());
+
+            let a: int = \"2\".to_integer();
+            let b: int = \"5\".to_integer();
+            print(a + b);
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "5");
+        assert_eq!(printer.strings[1], "-10");
+        assert_eq!(printer.strings[2], "10");
+        assert_eq!(printer.strings[3], "7");
     }
 }

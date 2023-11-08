@@ -42,7 +42,8 @@ pub const JMP_IF_DETERMINANT_MISMATCH: u8 = 39;
 pub const READ_INPUT: u8 = 40;
 pub const CALL: u8 = 41;
 pub const CALL_INTERFACE: u8 = 42;
-pub const RETURN: u8 = 43;
+pub const CALL_BUILTIN: u8 = 43;
+pub const RETURN: u8 = 44;
 // OP CODE END
 
 #[allow(dead_code)]
@@ -91,7 +92,8 @@ pub fn to_string(code: u8) -> String {
         40 => "READ_INPUT".to_owned(),
         41 => "CALL".to_owned(),
         42 => "CALL_INTERFACE".to_owned(),
-        43 => "RETURN".to_owned(),
+        43 => "CALL_BUILTIN".to_owned(),
+        44 => "RETURN".to_owned(),
         _ => "UNKNOWN".to_owned(),
     }
 }

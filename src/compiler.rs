@@ -3,6 +3,7 @@ use crate::float;
 use crate::opcode;
 use crate::scanner::{Scanner, Token, TokenLocation};
 use crate::var_len_int;
+use crate::builtin_functions;
 
 use itertools::Itertools;
 use std::cell::RefCell;
@@ -1390,6 +1391,77 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     self.consume(Token::LeftParen)?;
                     self.interface_method(i, &member_name, &member_name_location, chunk)?;
                     continue;
+                }
+                ValueType::Vector(_) => {
+                    let (member_name, member_name_location) = self.match_identifier()?;
+                    match member_name.as_str() {
+                        "len" => { 
+                            self.consume(Token::LeftParen)?;
+                            self.consume(Token::RightParen)?;
+
+                            self.type_stack.pop();
+                            chunk.write_byte(opcode::CALL_BUILTIN);
+                            chunk.write_byte(builtin_functions::vector::LEN);
+
+                            self.type_stack.push(
+                                Variable {
+                                    value_type: ValueType::Integer,
+                                    read_only: true,
+                                }
+                            );
+                        }
+                        _ => {
+                            return Err(self.make_error_msg(
+                                &format!("Vector does not have method '{}'", member_name),
+                                &member_name_location
+                            ));
+                        }
+                    };
+
+                    return Ok(false);
+                }
+                ValueType::Str => {
+                    let (member_name, member_name_location) = self.match_identifier()?;
+                    match member_name.as_str() {
+                        "len" => { 
+                            self.consume(Token::LeftParen)?;
+                            self.consume(Token::RightParen)?;
+
+                            self.type_stack.pop();
+                            chunk.write_byte(opcode::CALL_BUILTIN);
+                            chunk.write_byte(builtin_functions::string::LEN);
+
+                            self.type_stack.push(
+                                Variable {
+                                    value_type: ValueType::Integer,
+                                    read_only: true,
+                                }
+                            );
+                        }
+                        "to_integer" => { 
+                            self.consume(Token::LeftParen)?;
+                            self.consume(Token::RightParen)?;
+
+                            self.type_stack.pop();
+                            chunk.write_byte(opcode::CALL_BUILTIN);
+                            chunk.write_byte(builtin_functions::string::TO_INTEGER);
+
+                            self.type_stack.push(
+                                Variable {
+                                    value_type: ValueType::Integer,
+                                    read_only: true,
+                                }
+                            );
+                        }
+                        _ => {
+                            return Err(self.make_error_msg(
+                                &format!("Vector does not have method '{}'", member_name),
+                                &member_name_location
+                            ));
+                        }
+                    };
+
+                    return Ok(false);
                 }
                 x => return Err(format!("Only structs have members, got {}", x)),
             };
@@ -4211,6 +4283,47 @@ mod test {
                 let it: Interface = S {};
                 it.call(10);
                 it.call2(3.142);
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_vector_builtin() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                let v: [int] = vec<int>{};
+                let len: int = v.len();
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_string_builtin() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                let s: string = \"hello\";
+                let len: int = s.len();
+                print(len);
+
+                print(\"-10\".to_integer());
                 ",
                 )
                 .unwrap();

@@ -72,6 +72,7 @@ impl<'a> Disassembler<'a> {
             opcode::READ_INPUT => self.read_instruction(),
             opcode::CALL => self.call(),
             opcode::CALL_INTERFACE => self.call_interface(),
+            opcode::CALL_BUILTIN => self.call_builtin(),
             opcode::RETURN => self.simple_instruction("return"),
             code => {
                 panic!("Unknown instruction {}", code);
@@ -264,5 +265,12 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("CALL INTERFACE: arity({}) idx({})", arity, method_idx);
+    }
+
+    fn call_builtin(&mut self) {
+        let builtin_id = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CALL BUILTIN: id({})", builtin_id);
     }
 }
