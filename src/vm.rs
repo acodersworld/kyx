@@ -78,6 +78,34 @@ impl RustFunctionCtx for RustFunctionCtxImpl<'_> {
         }
     }
 
+    fn get_parameter_float(&self, idx: usize) -> Option<f32> {
+        match self.parameters.get(idx) {
+            Some(RustValue::Float(f)) => Some(*f),
+            _ => None
+        }
+    }
+
+    fn get_parameter_integer(&self, idx: usize) -> Option<i32> {
+        match self.parameters.get(idx) {
+            Some(RustValue::Integer(i)) => Some(*i),
+            _ => None
+        }
+    }
+
+    fn get_parameter_bool(&self, idx: usize) -> Option<bool> {
+        match self.parameters.get(idx) {
+            Some(RustValue::Bool(b)) => Some(*b),
+            _ => None
+        }
+    }
+
+    fn get_parameter_string(&self, idx: usize) -> Option<String> {
+        match self.parameters.get(idx) {
+            Some(RustValue::Str(s)) => Some(s.clone()),
+            _ => None
+        }
+    }
+
     fn set_result(&mut self, value: RustValue) {
         self.result = Some(value);
     }
@@ -842,8 +870,23 @@ impl<'printer> VM<'printer> {
 
         let top = self.value_stack.pop().unwrap();
         if let Value::RustFunction(f) = top {
+            let mut parameters = vec![];
+            
+            let len = self.value_stack.len();
+            for p in self.value_stack.drain(len - arity..) {
+                parameters.push(
+                    match p {
+                        Value::Float(f) => RustValue::Float(f.into_inner()),
+                        Value::Integer(i) => RustValue::Integer(i),
+                        Value::Str(s) => RustValue::Str(unsafe { s.as_ref() }.val.clone()),
+                        Value::Bool(b) => RustValue::Bool(b),
+                        _ => panic!("Invalid parameter type in rust function")
+                    }
+                );
+            }
+            
             let mut ctx = RustFunctionCtxImpl{
-                parameters: vec![],
+                parameters,
                 result: None,
                 printer: self.printer
             };
@@ -2486,12 +2529,12 @@ mod test {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
 
-        if let Err(e) = vm.create_function("fn open() -> [string]", &test_call_return_vector_function) {
+        if let Err(e) = vm.create_function("fn test() -> [string]", &test_call_return_vector_function) {
             panic!("{}", e);
         }
 
         let src = "
-            let s: [string] = open();
+            let s: [string] = test();
             print(s[0]);
             print(s[1]);
             print(s[2]);
@@ -2502,5 +2545,35 @@ mod test {
         assert_eq!(printer.strings[0], "Hello");
         assert_eq!(printer.strings[1], "World");
         assert_eq!(printer.strings[2], "Kyx");
+    }
+
+    fn test_call_parameters_function(ctx: &mut dyn RustFunctionCtx) {
+        let f = ctx.get_parameter_float(0).unwrap();
+        let i = ctx.get_parameter_integer(1).unwrap();
+        let s = ctx.get_parameter_string(2).unwrap();
+
+        ctx.print(&f.to_string());
+        ctx.print(&i.to_string());
+        ctx.print(&s);
+    }
+
+    #[test]
+    fn test_call_parameters() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        if let Err(e) = vm.create_function("fn test(float, int, string)", &test_call_parameters_function) {
+            panic!("{}", e);
+        }
+
+        let src = "
+            test(2.14, 4321, \"kyx\");
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "2.14");
+        assert_eq!(printer.strings[1], "4321");
+        assert_eq!(printer.strings[2], "kyx");
     }
 }

@@ -392,11 +392,11 @@ impl Compiler {
         }
     }
 
-    fn define_rust_function(&mut self, name: &str, return_type: ValueType) {
+    fn define_rust_function(&mut self, name: &str, parameters: Vec<ValueType>, return_type: ValueType) {
         self.globals.insert(name.to_string(), Variable {
             value_type: ValueType::Function(Rc::new(FunctionType {
                 return_type,
-                parameters: vec![]
+                parameters
             })),
             read_only: true
         });
@@ -440,6 +440,7 @@ impl Compiler {
     pub fn create_function<'a, T: DataSection>(&mut self, data_section: &'a mut T, signature: &'a str) -> Result<String, String> {
         let mut return_type = ValueType::Unit;
         let name: String;
+        let mut parameter_types: Vec<ValueType> = vec![];
 
         {
             let mut compiler = self.new_src_compiler(data_section, signature);
@@ -456,16 +457,17 @@ impl Compiler {
                 return Err("Expected '('".to_owned());
             }
 
-            if !compiler.scanner.match_token(Token::RightParen)? {
-                return Err("Expected ')'".to_owned());
-            }
+            compiler.parse_commas_separate_list(Token::RightParen, |cm, _| {
+                parameter_types.push(cm.parse_type()?);
+                Ok(())
+            })?;
 
             if compiler.scanner.match_token(Token::ThinArrow)? {
                 return_type = compiler.parse_type()?;
             }
         }
 
-        self.define_rust_function(&name, return_type);
+        self.define_rust_function(&name, parameter_types, return_type);
         Ok(name.to_string())
     }
 }
