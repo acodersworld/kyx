@@ -10,7 +10,7 @@ mod var_len_int;
 mod vm;
 mod rust_function_ctx;
 
-use rust_function_ctx::RustFunctionCtx;
+use rust_function_ctx::{RustValue, RustFunctionCtx};
 use rustyline::DefaultEditor;
 use std::env;
 use std::io::Read;
@@ -21,6 +21,37 @@ impl vm::Printer for DefaultPrinter {
     fn print(&mut self, s: &str) {
         println!("{}", s);
     }
+}
+
+fn readlines(ctx: &mut dyn RustFunctionCtx) {
+    let filename = ctx.get_parameter_string(0).unwrap();
+
+    let mut file = match std::fs::File::open(&filename) {
+        Result::Ok(f) => f,
+        Result::Err(x) => {
+            eprintln!("Failed to open file {}: {}", filename, x);
+            ctx.set_result(rust_function_ctx::RustValue::StringVector(vec![]));
+            return;
+        }
+    };
+
+    let mut buf = String::new();
+    if let Result::Err(e) = file.read_to_string(&mut buf) {
+        eprintln!("Failed to read file {}: {}", filename, e);
+        ctx.set_result(rust_function_ctx::RustValue::StringVector(vec![]));
+        return;
+    }
+
+    let mut lines = vec![];
+    for line in buf.split("\n") {
+        lines.push(line.to_string());
+    }
+
+    ctx.set_result(RustValue::StringVector(lines));
+}
+
+fn register_buildin_functions(machine: &mut vm::VM) {
+    machine.create_function("fn readlines(string) -> [string]", &readlines).expect("Failed to register readlines");
 }
 
 fn repl() {
@@ -36,6 +67,7 @@ fn repl() {
 
     let mut printer = DefaultPrinter {};
     let mut machine = vm::VM::new(&mut printer);
+    register_buildin_functions(&mut machine);
     loop {
         let line = rl.readline(">> ");
         match line {
@@ -50,10 +82,6 @@ fn repl() {
             }
         }
     }
-}
-
-fn test(ctx: &mut dyn RustFunctionCtx) {
-    println!("TEST FUNCTION");
 }
 
 fn run_file(filename: &str) {
@@ -77,8 +105,7 @@ fn run_file(filename: &str) {
     println!("{}", contents);
     let mut printer = DefaultPrinter {};
     let mut machine = vm::VM::new(&mut printer);
-
-    machine.create_function("fn open()", &test);
+    register_buildin_functions(&mut machine);
 
     if let Err(e) = machine.interpret(&contents) {
         println!("Error: {}", e);

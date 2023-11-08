@@ -125,6 +125,8 @@ pub struct VM<'printer> {
 
     compiler: Compiler,
     printer: &'printer mut dyn Printer,
+
+    disassemble: bool
 }
 
 struct VMDataSection<'a> {
@@ -238,6 +240,7 @@ impl<'printer> VM<'printer> {
             break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
+            disassemble: false
         }
     }
 
@@ -284,11 +287,13 @@ impl<'printer> VM<'printer> {
 
         let mut pc = 0;
         while let Some(op) = frame_stack.top.next_code() {
-            let mut ds = disassembler::Disassembler::new(unsafe {
-                &frame_stack.top.function.as_ref().chunk.code
-            });
-            ds.set_offset(pc);
-            ds.disassemble_one();
+            if self.disassemble {
+                let mut ds = disassembler::Disassembler::new(unsafe {
+                    &frame_stack.top.function.as_ref().chunk.code
+                });
+                ds.set_offset(pc);
+                ds.disassemble_one();
+            }
 
             match op {
                 opcode::CONSTANT_INTEGER => self.push_integer(&mut frame_stack.top),
@@ -342,7 +347,10 @@ impl<'printer> VM<'printer> {
                 }
             }
             pc = frame_stack.top.pc;
-            println!("STACK ({}): {:?}", pc, self.value_stack);
+
+            if self.disassemble {
+                println!("STACK ({}): {:?}", pc, self.value_stack);
+            }
         }
     }
 
@@ -364,9 +372,11 @@ impl<'printer> VM<'printer> {
             self.compiler.compile(&mut data_section, src)?;
 
         for (fname, fchunk) in global_functions {
-            let mut ds = disassembler::Disassembler::new(&fchunk.code);
-            println!("-- Function: {} --", fname);
-            ds.disassemble_all();
+            if self.disassemble {
+                let mut ds = disassembler::Disassembler::new(&fchunk.code);
+                println!("-- Function: {} --", fname);
+                ds.disassemble_all();
+            }
 
             let function_value = self.function(fchunk);
             let mut data_section = VMDataSection {
@@ -381,18 +391,22 @@ impl<'printer> VM<'printer> {
         }
 
         for (fidx, fchunk) in method_functions {
-            let mut ds = disassembler::Disassembler::new(&fchunk.code);
-            println!("-- Function: {} --", fidx);
-            ds.disassemble_all();
+            if self.disassemble {
+                let mut ds = disassembler::Disassembler::new(&fchunk.code);
+                println!("-- Function: {} --", fidx);
+                ds.disassemble_all();
+            }
 
             let function_value = self.function(fchunk);
             self.method_functions.insert(fidx, function_value);
         }
 
-        println!("-- Main --");
-        let mut ds = disassembler::Disassembler::new(&chunk.code);
-        ds.disassemble_all();
-        println!("\n\n");
+        if self.disassemble {
+            println!("-- Main --");
+            let mut ds = disassembler::Disassembler::new(&chunk.code);
+            ds.disassemble_all();
+            println!("\n\n");
+        }
 
         self.run(chunk);
 
