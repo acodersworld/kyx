@@ -6,6 +6,7 @@ const OPCODES: &[&str] = &[
     "CONSTANT_FLOAT",
     "CONSTANT_STRING",
     "CONSTANT_BOOL",
+    "CONSTANT_CHAR",
     //
     "CREATE_VEC",
     "CREATE_HASH_MAP",

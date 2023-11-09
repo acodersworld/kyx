@@ -44,7 +44,7 @@ fn readlines(ctx: &mut dyn RustFunctionCtx) {
     }
 
     let mut lines = vec![];
-    for line in buf.split("\n") {
+    for line in buf.lines() {
         lines.push(line.to_string());
     }
 

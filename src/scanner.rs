@@ -33,6 +33,7 @@ pub enum Token<'a> {
     Integer(i32),
     Float(f32),
     Str(&'a str),
+    Char(char),
 
     Plus,
     Minus,
@@ -107,6 +108,7 @@ impl Token<'_> {
             Self::Integer(i) => return i.to_string(),
             Self::Float(f) => return f.to_string(),
             Self::Str(s) => s,
+            Self::Char(c) => return c.to_string(),
 
             Self::Plus => "+",
             Self::Minus => "-",
@@ -323,6 +325,29 @@ impl<'a> Scanner<'a> {
         })
     }
 
+    fn character(&mut self) -> Result<TokenWithLocation<'a>, String> {
+        if self.at_eof() {
+            return Err("Expected character but found EOF".to_string());
+        }
+
+        let c = self.advance();
+        let tok = TokenWithLocation {
+            token: Token::Char(c),
+            location: self.get_location(),
+        };
+
+        if self.at_eof() {
+            return Err("Expected ' but found EOF".to_string());
+        }
+
+        let c = self.advance();
+        if c != '\'' {
+            return Err(format!("Expected ' but found {}", c));
+        }
+
+        Ok(tok)
+    }
+
     fn number(&mut self) -> Result<TokenWithLocation<'a>, String> {
         while !self.at_eof() && self.peek().is_numeric() {
             self.advance();
@@ -502,6 +527,7 @@ impl<'a> Scanner<'a> {
                 }
             }
             '"' => return self.string(),
+            '\'' => return self.character(),
             _ => return Err(format!("Unexpected token '{}'", c)),
         };
 
@@ -745,6 +771,23 @@ mod tests {
 
         {
             let src = "\"".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert!(scanner.scan_token().is_err());
+        }
+    }
+
+
+    #[test]
+    fn test_character() {
+        {
+            let src = "'a'".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::Char('a'));
+            assert_eq!(scanner.scan_token().unwrap().token, Token::Eof);
+        }
+
+        {
+            let src = "''".to_owned();
             let mut scanner = Scanner::new(&src);
             assert!(scanner.scan_token().is_err());
         }

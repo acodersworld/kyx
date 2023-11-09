@@ -275,6 +275,7 @@ enum ValueType {
     Float,
     Str,
     Bool,
+    Char,
     Vector(Rc<ValueType>),
     HashMap(Rc<(ValueType, ValueType)>),
     Function(Rc<FunctionType>),
@@ -311,6 +312,7 @@ impl fmt::Display for ValueType {
             Self::Float => "float".to_owned(),
             Self::Str => "string".to_owned(),
             Self::Bool => "bool".to_owned(),
+            Self::Char => "char".to_owned(),
             Self::Vector(tp) => format!("[{}]", tp),
             Self::HashMap(tp) => format!("[{}: {}]", tp.0, tp.1),
             Self::Function(f) => {
@@ -1134,6 +1136,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ValueType::Float => todo!(),
             ValueType::Str => todo!(),
             ValueType::Bool => todo!(),
+            ValueType::Char => todo!(),
             ValueType::Vector(_) => todo!(),
             ValueType::HashMap(_) => todo!(),
             ValueType::Function(_) => todo!(),
@@ -1402,6 +1405,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             self.type_stack.pop();
                             chunk.write_byte(opcode::CALL_BUILTIN);
                             chunk.write_byte(builtin_functions::vector::LEN);
+                            chunk.write_byte(0);
 
                             self.type_stack.push(
                                 Variable {
@@ -1430,6 +1434,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             self.type_stack.pop();
                             chunk.write_byte(opcode::CALL_BUILTIN);
                             chunk.write_byte(builtin_functions::string::LEN);
+                            chunk.write_byte(0);
 
                             self.type_stack.push(
                                 Variable {
@@ -1445,6 +1450,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             self.type_stack.pop();
                             chunk.write_byte(opcode::CALL_BUILTIN);
                             chunk.write_byte(builtin_functions::string::TO_INTEGER);
+                            chunk.write_byte(0);
 
                             self.type_stack.push(
                                 Variable {
@@ -1455,7 +1461,46 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         }
                         _ => {
                             return Err(self.make_error_msg(
-                                &format!("Vector does not have method '{}'", member_name),
+                                &format!("String does not have method '{}'", member_name),
+                                &member_name_location
+                            ));
+                        }
+                    };
+
+                    return Ok(false);
+                }
+                ValueType::HashMap(h) => {
+                    let (member_name, member_name_location) = self.match_identifier()?;
+                    match member_name.as_str() {
+                        "contains_key" => { 
+                            self.consume(Token::LeftParen)?;
+                            self.expression(chunk)?;
+                            self.consume(Token::RightParen)?;
+
+                            let index_type = self.type_stack.pop().unwrap();
+                            self.type_stack.pop();
+
+                            if index_type.value_type != h.0 {
+                                return Err(self.make_error_msg(
+                                    &format!("HashMap index is type {}, but got {}", index_type.value_type, h.0),
+                                    &member_name_location
+                                ));
+                            }
+
+                            chunk.write_byte(opcode::CALL_BUILTIN);
+                            chunk.write_byte(builtin_functions::hashmap::CONTAINS_KEY);
+                            chunk.write_byte(1);
+
+                            self.type_stack.push(
+                                Variable {
+                                    value_type: ValueType::Bool,
+                                    read_only: true,
+                                }
+                            );
+                        }
+                        _ => {
+                            return Err(self.make_error_msg(
+                                &format!("HashMap does not have method '{}'", member_name),
                                 &member_name_location
                             ));
                         }
@@ -2715,7 +2760,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         } else {
             match left_type {
                 ValueType::Unit => todo!(),
-                ValueType::Integer | ValueType::Float => chunk.write_byte(op),
+                ValueType::Integer | ValueType::Float | ValueType::Char => chunk.write_byte(op),
                 ValueType::Str => return Err("Cannot use comparison with string".to_owned()),
                 ValueType::Bool => return Err("Cannot use comparison with bool".to_owned()),
                 ValueType::Vector(_) => return Err("Cannot use comparison with vector".to_owned()),
@@ -2913,6 +2958,36 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn index_str(
+        &mut self,
+        chunk: &mut Chunk,
+        read_only: bool
+    ) -> Result<(), String> {
+        self.expression(chunk)?;
+        let index_type = self.type_stack.pop().unwrap();
+        if index_type.value_type != ValueType::Integer {
+            return Err(format!(
+                "Can only index using Integer. Got {}",
+                index_type.value_type
+            ));
+        }
+
+        self.consume(Token::RightBracket)?;
+
+        if self.scanner.match_token(Token::Equal)? {
+            return Err("Cannot assign to string".to_owned());
+        } else {
+            chunk.write_byte(opcode::GET_INDEX);
+        }
+
+        self.type_stack.push(Variable {
+            value_type: ValueType::Char,
+            read_only,
+        });
+
+        Ok(())
+    }
+
     fn index(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         self.primary(chunk)?;
 
@@ -2923,6 +2998,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::HashMap(kv) => {
                     self.index_hash_map(chunk, indexable.read_only, &kv.0, &kv.1)?
                 }
+                ValueType::Str => self.index_str(chunk, indexable.read_only)?,
                 t => return Err(format!("Cannot index type {}", t)),
             }
         }
@@ -3091,6 +3167,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
+    fn character(&mut self, chunk: &mut Chunk, c: char) {
+        chunk.write_byte(opcode::CONSTANT_CHAR);
+
+        let mut buf: [u8; 4] = [0; 4];
+        let bytes = c.encode_utf8(&mut buf).as_bytes();
+        chunk.write_byte(bytes.len() as u8);
+        for b in bytes {
+            chunk.write_byte(*b);
+        }
+
+        self.type_stack.push(Variable {
+            value_type: ValueType::Char,
+            read_only: true,
+        });
+    }
+
     fn boolean(&mut self, chunk: &mut Chunk, b: bool) {
         let value = if b { 1 } else { 0 };
 
@@ -3232,6 +3324,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
             Token::Str(s) => {
                 self.string(chunk, s);
+            }
+            Token::Char(c) => {
+                self.character(chunk, c);
             }
             Token::True => {
                 self.boolean(chunk, true);
@@ -3380,6 +3475,21 @@ mod test {
             let src = "
                 let v: [int] = vec<int>{1,2,3};
                 print v[0];
+            ";
+
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
+        }
+    }
+
+    #[test]
+    fn test_string_index() {
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let s: string = \"Hello\";
+                print s[1];
             ";
 
             assert_eq!(compiler.compile(&mut table, src).err(), None);
@@ -4324,6 +4434,26 @@ mod test {
                 print(len);
 
                 print(\"-10\".to_integer());
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_hashmap_builtin() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                let h: [int: int] = hash_map<int, int>{};
+
+                print(h.contains_key(0));
                 ",
                 )
                 .unwrap();

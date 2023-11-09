@@ -163,6 +163,7 @@ fn is_truthy(value: &Value) -> bool {
         Value::Float(f) => *f != 0.0,
         Value::Str(s) => unsafe { !s.as_ref().val.is_empty() },
         Value::Bool(b) => *b,
+        Value::Char(_) => true,
         Value::Vector(v) => unsafe { v.as_ref().len() > 0 },
         Value::HashMap(h) => unsafe { h.as_ref().len() > 0 },
         Value::Function(_) => true,
@@ -301,6 +302,7 @@ impl<'printer> VM<'printer> {
                 opcode::CONSTANT_FLOAT => self.push_float(&mut frame_stack.top),
                 opcode::CONSTANT_STRING => self.push_constant_string(&mut frame_stack.top),
                 opcode::CONSTANT_BOOL => self.push_constant_bool(&mut frame_stack.top),
+                opcode::CONSTANT_CHAR => self.push_constant_char(&mut frame_stack.top),
                 opcode::CREATE_VEC => self.create_vec(&mut frame_stack.top),
                 opcode::CREATE_HASH_MAP => self.create_hash_map(&mut frame_stack.top),
                 opcode::CREATE_TUPLE => self.create_tuple(&mut frame_stack.top),
@@ -483,6 +485,20 @@ impl<'printer> VM<'printer> {
         self.value_stack.push(Value::Bool(value));
     }
 
+    fn push_constant_char(&mut self, frame: &mut Frame) {
+        let len = frame.next_code().unwrap() as usize;
+
+        let mut buf: [u8; 4] = [0; 4];
+        for i in 0..len {
+            buf[i] = frame.next_code().unwrap();
+        }
+
+        let c = std::str::from_utf8(&buf)
+            .expect("Invalid character encoding!")
+            .chars().next().expect("Invalid character encoding!");
+        self.value_stack.push(Value::Char(c));
+    }
+
     fn create_vec(&mut self, frame: &mut Frame) {
         let arg_count = frame.next_code().unwrap() as usize;
 
@@ -515,6 +531,17 @@ impl<'printer> VM<'printer> {
                     _ => panic!("Bad index value"),
                 };
                 self.value_stack.push(vector[index]);
+            }
+            Value::Str(s) => {
+                let string = &unsafe { s.as_ref() }.val;
+                let index = match index {
+                    Value::Integer(i) => i as usize,
+                    _ => panic!("Bad index value"),
+                };
+
+
+                // Really slow! Just getting this working
+                self.value_stack.push(Value::Char(string.chars().nth(index).unwrap()));
             }
             _ => panic!("Not a hash map"),
         };
@@ -743,6 +770,7 @@ impl<'printer> VM<'printer> {
             Value::Integer(i) => format!("{}", i),
             Value::Str(s) => unsafe { &s.as_ref().val }.to_string(),
             Value::Bool(b) => format!("{}", b),
+            Value::Char(c) => format!("{}", c),
             Value::Vector(v) => Self::format_vec(unsafe { v.as_ref() }),
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
             Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
@@ -990,8 +1018,14 @@ impl<'printer> VM<'printer> {
 
     fn call_builtin(&mut self, frame_stack: &mut FrameStack) {
         let builtin_id = frame_stack.top.next_code().unwrap();
+        let arg_count = frame_stack.top.next_code().unwrap() as usize;
 
-        match self.value_stack.pop().unwrap() {
+        let obj = {
+            let len = self.value_stack.len();
+            self.value_stack.remove(len - arg_count - 1)
+        };
+
+        match obj {
             Value::Vector(v) => {
                 match builtin_id {
                     builtin_functions::vector::LEN => {
@@ -1017,9 +1051,19 @@ impl<'printer> VM<'printer> {
                     ),
                 }
             },
-            _ => panic!(
-                "Must be a vector or string"
-            )
+            Value::HashMap(h) => {
+                match builtin_id {
+                    builtin_functions::hashmap::CONTAINS_KEY => {
+                        let key = self.value_stack.pop().unwrap();
+                        self.value_stack.push(Value::Bool(unsafe { h.as_ref() }.contains_key(&key)));
+                    }
+                    _ => panic!(
+                        "Expected hash_map builtin id {}",
+                        builtin_id
+                    ),
+                }
+            },
+            x => panic!("Must be a vector, hash_map string. Got {:?}", x)
         };
     }
 
@@ -1086,6 +1130,31 @@ mod test {
             assert_eq!(printer.strings.len(), 1);
             assert_eq!(printer.strings[0], "-3.142");
         }
+    }
+
+    #[test]
+    fn print_char() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+        let src = "
+            let s: string = \"hello\";
+            print(s[0]);
+            print(s[3]);
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings[0], "h");
+        assert_eq!(printer.strings[1], "l");
+    }
+
+    #[test]
+    fn string_index() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+        assert_eq!(vm.interpret("print 'a';"), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "a");
     }
 
     // Once an api is set in place, it should be used instead of print
@@ -2666,5 +2735,24 @@ mod test {
         assert_eq!(printer.strings[1], "-10");
         assert_eq!(printer.strings[2], "10");
         assert_eq!(printer.strings[3], "7");
+    }
+
+    #[test]
+    fn test_hashmap_builtin() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut h: [int: int] = hash_map<int, int>{};
+
+            print(h.contains_key(10));
+            h[10] = 1;
+            print(h.contains_key(10));
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings[0], "false");
+        assert_eq!(printer.strings[1], "true");
     }
 }
