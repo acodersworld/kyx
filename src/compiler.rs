@@ -1498,6 +1498,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                                 }
                             );
                         }
+                        "keys" => {
+                            self.consume(Token::LeftParen)?;
+                            self.consume(Token::RightParen)?;
+
+                            self.type_stack.pop();
+                            chunk.write_byte(opcode::CALL_BUILTIN);
+                            chunk.write_byte(builtin_functions::hashmap::KEYS);
+                            chunk.write_byte(0);
+
+                            self.type_stack.push(
+                                Variable {
+                                    value_type: ValueType::Vector(Rc::new(h.0.clone())),
+                                    read_only: true,
+                                }
+                            );
+                        }
                         _ => {
                             return Err(self.make_error_msg(
                                 &format!("HashMap does not have method '{}'", member_name),
@@ -1921,6 +1937,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::TypeInt => ValueType::Integer,
             Token::TypeFloat => ValueType::Float,
             Token::TypeString => ValueType::Str,
+            Token::TypeChar => ValueType::Char,
             Token::LeftBracket => self.parse_type_vec_or_map()?,
             Token::LeftParen => self.parse_tuple()?,
             Token::Fn => self.parse_type_function()?,
@@ -4454,6 +4471,8 @@ mod test {
                 let h: [int: int] = hash_map<int, int>{};
 
                 print(h.contains_key(0));
+
+                let k: [int] = h.keys();
                 ",
                 )
                 .unwrap();

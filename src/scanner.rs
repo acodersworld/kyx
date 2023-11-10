@@ -23,6 +23,7 @@ pub enum Token<'a> {
     TypeInt,
     TypeFloat,
     TypeString,
+    TypeChar,
     TypeAlias,
 
     Vector,
@@ -98,6 +99,7 @@ impl Token<'_> {
             Self::TypeInt => "int",
             Self::TypeFloat => "float",
             Self::TypeString => "string",
+            Self::TypeChar => "char",
             Self::TypeAlias => "type_alias",
 
             Self::Vector => "vec",
@@ -276,6 +278,7 @@ impl<'a> Scanner<'a> {
             "int" => Token::TypeInt,
             "float" => Token::TypeFloat,
             "string" => Token::TypeString,
+            "char" => Token::TypeChar,
             "type_alias" => Token::TypeAlias,
             "vec" => Token::Vector,
             "hash_map" => Token::HashMap,

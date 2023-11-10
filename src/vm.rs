@@ -1057,8 +1057,21 @@ impl<'printer> VM<'printer> {
                         let key = self.value_stack.pop().unwrap();
                         self.value_stack.push(Value::Bool(unsafe { h.as_ref() }.contains_key(&key)));
                     }
+                    builtin_functions::hashmap::KEYS => {
+                        let mut vector = vec![];
+
+                        for k in unsafe { h.as_ref() }.keys() {
+                            vector.push(*k);
+                        }
+
+                        let mut vec_val = Box::new(vector);
+                        let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                        self.objects.push(GcValue::Vector(vec_val));
+
+                        self.value_stack.push(Value::Vector(ptr));
+                    }
                     _ => panic!(
-                        "Expected hash_map builtin id {}",
+                        "Unexpected hash_map builtin id {}",
                         builtin_id
                     ),
                 }
@@ -2731,11 +2744,27 @@ mod test {
             print(h.contains_key(10));
             h[10] = 1;
             print(h.contains_key(10));
+
+            h[20] = 3;
+            h[21] = 4;
+
+            let k: [int] = h.keys();
+            let n: int = k.len();
+            let mut i: int = 0;
+
+            while i < n {
+                print(k[i]);
+                i = i + 1;
+            }
         ";
 
         assert_eq!(vm.interpret(src), Ok(()));
-        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings.len(), 5);
         assert_eq!(printer.strings[0], "false");
         assert_eq!(printer.strings[1], "true");
+
+        assert_eq!(printer.strings[2], "10");
+        assert_eq!(printer.strings[3], "20");
+        assert_eq!(printer.strings[4], "21");
     }
 }
