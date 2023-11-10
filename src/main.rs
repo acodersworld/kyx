@@ -10,6 +10,7 @@ mod var_len_int;
 mod vm;
 mod rust_function_ctx;
 mod builtin_functions;
+mod test;
 
 use rust_function_ctx::{RustValue, RustFunctionCtx};
 use rustyline::DefaultEditor;
