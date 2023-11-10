@@ -2,24 +2,7 @@
 mod day1 {
     use crate::vm;
     use crate::rust_function_ctx::{RustValue, RustFunctionCtx};
-
-    struct TestPrinter {
-        strings: Vec<String>,
-    }
-
-    impl TestPrinter {
-        fn new() -> TestPrinter {
-            TestPrinter {
-                strings: Vec::new(),
-            }
-        }
-    }
-
-    impl vm::Printer for TestPrinter {
-        fn print(&mut self, s: &str) {
-            self.strings.push(s.to_string());
-        }
-    }
+    use crate::test::utils;
 
     fn input(ctx: &mut dyn RustFunctionCtx) {
 
@@ -34,7 +17,7 @@ mod day1 {
 
     #[test]
     fn part1() {
-        let mut printer = TestPrinter::new();
+        let mut printer = utils::TestPrinter::new();
         let mut vm = vm::VM::new(&mut printer);
 
         vm.create_function("fn readinput() -> [string]", &input).expect("Failed to create function");
@@ -63,7 +46,7 @@ mod day1 {
 
     #[test]
     fn part2() {
-        let mut printer = TestPrinter::new();
+        let mut printer = utils::TestPrinter::new();
         let mut vm = vm::VM::new(&mut printer);
 
         vm.create_function("fn readinput() -> [string]", &input).expect("Failed to create function");

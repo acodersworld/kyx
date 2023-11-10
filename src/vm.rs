@@ -1074,25 +1074,8 @@ impl<'printer> VM<'printer> {
 
 #[cfg(test)]
 mod test {
+    use crate::test::utils::TestPrinter;
     use super::*;
-
-    struct TestPrinter {
-        strings: Vec<String>,
-    }
-
-    impl TestPrinter {
-        fn new() -> TestPrinter {
-            TestPrinter {
-                strings: Vec::new(),
-            }
-        }
-    }
-
-    impl Printer for TestPrinter {
-        fn print(&mut self, s: &str) {
-            self.strings.push(s.to_string());
-        }
-    }
 
     #[test]
     fn print_integer() {
