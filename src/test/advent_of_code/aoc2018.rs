@@ -88,3 +88,100 @@ mod day1 {
     }
 }
 
+mod day2 {
+    use crate::vm;
+    use crate::rust_function_ctx::{RustValue, RustFunctionCtx};
+    use crate::test::utils;
+
+    fn input(ctx: &mut dyn RustFunctionCtx) {
+
+        let mut v = vec![];
+        
+        for l in include_str!("aoc2018/day2-input.txt").lines() {
+            v.push(l.to_string());
+        }
+
+        ctx.set_result(RustValue::StringVector(v));
+    }
+
+    #[test]
+    fn part1() {
+        let mut printer = utils::TestPrinter::new();
+        let mut vm = vm::VM::new(&mut printer);
+
+        vm.create_function("fn readinput() -> [string]", &input).expect("Failed to create function");
+
+        let src = "
+            let lines: [string] = readinput();
+
+            let nlines: int = lines.len();
+            let mut ilines: int = 0;
+            while ilines < nlines {
+                ilines = ilines + 1;
+            }
+            ilines = 0;
+
+            let mut count_two: int = 0;
+            let mut count_three: int = 0;
+
+            while ilines < nlines {
+
+                let h: [char: int] = hash_map<char, int>{};
+
+                let word: string = lines[ilines];
+                ilines = ilines + 1;
+                let word_len: int = word.len();
+
+                let mut i: int = 0;
+                while i < word_len {
+                    let c: char = word[i];
+                    i = i + 1;
+
+                    if h.contains_key(c) {
+                        h[c] = h[c] + 1;
+                    }
+                    else {
+                        h[c] = 1;
+                    }
+                }
+
+                let mut has_two: int = 0;
+                let mut has_three: int = 0;
+
+                let keys: [char] = h.keys();
+                let kl: int = keys.len();
+                i = 0;
+                while i < kl {
+                    let count: int = h[keys[i]];
+                    if count == 2 {
+                        has_two = 1;
+                    }
+                    if count == 3 {
+                        has_three = 1;
+                    }
+
+                    i = i + 1;
+                }
+
+                if has_two == 1 {
+                    count_two = count_two + 1;
+                }
+                if has_three == 1 {
+                    count_three = count_three + 1;
+                }
+            }
+
+            print(count_two);
+            print(count_three);
+            print(count_two * count_three);
+
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "245");
+        assert_eq!(printer.strings[1], "29");
+        assert_eq!(printer.strings[2], "7105");
+    }
+}
+
