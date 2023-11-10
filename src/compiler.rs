@@ -341,7 +341,7 @@ impl fmt::Display for ValueType {
 }
 
 pub trait DataSection {
-    fn create_constant_str(&mut self, s: &str) -> u8;
+    fn create_constant_str(&mut self, s: &str) -> u16;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -2197,7 +2197,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             );
 
             chunk.write_byte(opcode::DEFINE_GLOBAL);
-            chunk.write_byte(self.data_section.create_constant_str(&identifier_name));
+            let v = self.data_section.create_constant_str(&identifier_name) as i32;
+            self.write_var_len_int(chunk, v);
         } else {
             let frame = self.stack_frames.last_mut().unwrap();
             let found = frame
@@ -2304,7 +2305,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             match symbol {
                 Identifier::Global => {
                     chunk.write_byte(opcode::SET_GLOBAL);
-                    chunk.write_byte(self.data_section.create_constant_str(name));
+                    let v = self.data_section.create_constant_str(name) as i32;
+                    self.write_var_len_int(chunk, v);
                 }
                 Identifier::Local(idx) => {
                     chunk.write_byte(opcode::SET_LOCAL);
@@ -2320,7 +2322,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             match symbol {
                 Identifier::Global => {
                     chunk.write_byte(opcode::PUSH_GLOBAL);
-                    chunk.write_byte(self.data_section.create_constant_str(name));
+                    let v = self.data_section.create_constant_str(name) as i32;
+                    self.write_var_len_int(chunk, v);
                 }
                 Identifier::Local(idx) => {
                     chunk.write_byte(opcode::PUSH_LOCAL);
@@ -3028,7 +3031,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let (function_type, func_opcode_1, func_opcode_2) =
             if let Some((local, idx)) = self.find_local(name) {
-                (local.value_type, opcode::PUSH_LOCAL, idx as u8)
+                (local.value_type, opcode::PUSH_LOCAL, idx as u16)
             } else {
                 (
                     self.find_global(name)?.value_type,
@@ -3102,7 +3105,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
 
         chunk.write_byte(func_opcode_1);
-        chunk.write_byte(func_opcode_2);
+        self.write_var_len_int(chunk, func_opcode_2 as i32);
 
         chunk.write_byte(opcode::CALL);
         chunk.write_byte(argument_count as u8);
@@ -3147,8 +3150,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn integer(&mut self, chunk: &mut Chunk, i: i32) {
-        chunk.write_byte(opcode::CONSTANT_INTEGER);
+    fn write_var_len_int(&mut self, chunk: &mut Chunk, i: i32) {
         let mut encoder = var_len_int::Encoder::new(i);
         loop {
             let (byte, complete) = encoder.step_encode();
@@ -3158,6 +3160,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 break;
             }
         }
+    }
+
+    fn integer(&mut self, chunk: &mut Chunk, i: i32) {
+        chunk.write_byte(opcode::CONSTANT_INTEGER);
+        self.write_var_len_int(chunk, i);
         self.type_stack.push(Variable {
             value_type: ValueType::Integer,
             read_only: true,
@@ -3177,7 +3184,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn string(&mut self, chunk: &mut Chunk, s: &str) {
         chunk.write_byte(opcode::CONSTANT_STRING);
-        chunk.write_byte(self.data_section.create_constant_str(s));
+        let v = self.data_section.create_constant_str(s) as i32;
+        self.write_var_len_int(chunk, v);
         self.type_stack.push(Variable {
             value_type: ValueType::Str,
             read_only: true,
@@ -3375,7 +3383,7 @@ mod test {
     }
 
     impl DataSection for TestDataSection {
-        fn create_constant_str(&mut self, _s: &str) -> u8 {
+        fn create_constant_str(&mut self, _s: &str) -> u16 {
             return 0;
         }
     }

@@ -136,11 +136,11 @@ struct VMDataSection<'a> {
 }
 
 impl DataSection for VMDataSection<'_> {
-    fn create_constant_str(&mut self, s: &str) -> u8 {
+    fn create_constant_str(&mut self, s: &str) -> u16 {
         for (idx, string) in self.constant_strs.iter().enumerate() {
             let val = unsafe { &string.as_ref().val };
             if val == s {
-                return idx as u8;
+                return idx as u16;
             }
         }
 
@@ -151,7 +151,7 @@ impl DataSection for VMDataSection<'_> {
         let ptr = unsafe { NonNull::new_unchecked(str_val.as_mut() as *mut _) };
         self.objects.push(GcValue::Str(str_val));
 
-        let idx = self.constant_strs.len() as u8;
+        let idx = self.constant_strs.len() as u16;
         self.constant_strs.push(ptr);
         idx
     }
@@ -474,9 +474,10 @@ impl<'printer> VM<'printer> {
     }
 
     fn push_constant_string(&mut self, frame: &mut Frame) {
-        let idx = frame.next_code().unwrap() as usize;
+        let mut decoder = var_len_int::Decoder::new();
+        while !decoder.step_decode(frame.next_code().unwrap()) {}
 
-        self.value_stack.push(Value::Str(self.constant_strs[idx]));
+        self.value_stack.push(Value::Str(self.constant_strs[decoder.val() as usize]));
     }
 
     fn push_constant_bool(&mut self, frame: &mut Frame) {
