@@ -2822,6 +2822,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn equality_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
+        let location = self.scanner.peek_token()?.location;
+
         self.comparison(chunk)?;
 
         let len = self.type_stack.len();
@@ -2836,10 +2838,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 | ValueType::Float
                 | ValueType::Str
                 | ValueType::Bool
+                | ValueType::Char
                 | ValueType::Vector(_)
                 | ValueType::HashMap(_)
                 | ValueType::Enum(_) => chunk.write_byte(op),
-                _ => return Err("Cannot compare functions".to_owned()),
+                _ => return Err(self.make_error_msg("Cannot compare functions", &location)),
             };
         }
 

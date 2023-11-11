@@ -204,6 +204,7 @@ macro_rules! bin_op_equality {
                 (Value::Integer(l), Value::Integer(r)) => Value::Bool(l $op r),
                 (Value::Float(l), Value::Float(r)) => Value::Bool(l $op r),
                 (Value::Str(l), Value::Str(r)) => Value::Bool(l $op r),
+                (Value::Char(l), Value::Char(r)) => Value::Bool(l $op r),
                 _ => panic!("")
             };
 
@@ -2764,6 +2765,8 @@ mod test {
         assert_eq!(printer.strings[0], "false");
         assert_eq!(printer.strings[1], "true");
 
+        // Keys can be in any order
+        printer.strings[2..5].sort();
         assert_eq!(printer.strings[2], "10");
         assert_eq!(printer.strings[3], "20");
         assert_eq!(printer.strings[4], "21");
