@@ -1,18 +1,18 @@
+mod builtin_functions;
 mod chunk;
 mod compiler;
 mod disassembler;
 mod float;
 mod opcode;
 mod read_input_type;
+mod rust_function_ctx;
 mod scanner;
+mod test;
 mod value;
 mod var_len_int;
 mod vm;
-mod rust_function_ctx;
-mod builtin_functions;
-mod test;
 
-use rust_function_ctx::{RustValue, RustFunctionCtx};
+use rust_function_ctx::{RustFunctionCtx, RustValue};
 use rustyline::DefaultEditor;
 use std::env;
 use std::io::Read;
@@ -53,7 +53,9 @@ fn readlines(ctx: &mut dyn RustFunctionCtx) {
 }
 
 fn register_builtin_functions(machine: &mut vm::VM) {
-    machine.create_function("fn readlines(string) -> [string]", &readlines).expect("Failed to register readlines");
+    machine
+        .create_function("fn readlines(string) -> [string]", &readlines)
+        .expect("Failed to register readlines");
 }
 
 fn repl() {

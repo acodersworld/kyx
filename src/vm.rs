@@ -5,15 +5,17 @@ use std::vec::Vec;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 
+use crate::builtin_functions;
 use crate::chunk::Chunk;
 use crate::compiler::{Compiler, DataSection};
 use crate::disassembler;
 use crate::float;
 use crate::opcode;
-use crate::value::{RustFunctionValue, FunctionValue, GcValue, StringValue, StructValue, UnionValue, Value};
+use crate::rust_function_ctx::{RustFunctionCtx, RustValue};
+use crate::value::{
+    FunctionValue, GcValue, RustFunctionValue, StringValue, StructValue, UnionValue, Value,
+};
 use crate::var_len_int;
-use crate::rust_function_ctx::{RustValue, RustFunctionCtx};
-use crate::builtin_functions;
 
 pub trait Printer {
     fn print(&mut self, s: &str);
@@ -75,35 +77,35 @@ impl RustFunctionCtx for RustFunctionCtxImpl<'_> {
     fn get_parameter(&self, idx: usize) -> Option<RustValue> {
         match self.parameters.get(idx) {
             Some(x) => Some(x.clone()),
-            None => None
+            None => None,
         }
     }
 
     fn get_parameter_float(&self, idx: usize) -> Option<f32> {
         match self.parameters.get(idx) {
             Some(RustValue::Float(f)) => Some(*f),
-            _ => None
+            _ => None,
         }
     }
 
     fn get_parameter_integer(&self, idx: usize) -> Option<i32> {
         match self.parameters.get(idx) {
             Some(RustValue::Integer(i)) => Some(*i),
-            _ => None
+            _ => None,
         }
     }
 
     fn get_parameter_bool(&self, idx: usize) -> Option<bool> {
         match self.parameters.get(idx) {
             Some(RustValue::Bool(b)) => Some(*b),
-            _ => None
+            _ => None,
         }
     }
 
     fn get_parameter_string(&self, idx: usize) -> Option<String> {
         match self.parameters.get(idx) {
             Some(RustValue::Str(s)) => Some(s.clone()),
-            _ => None
+            _ => None,
         }
     }
 
@@ -127,7 +129,7 @@ pub struct VM<'printer> {
     compiler: Compiler,
     printer: &'printer mut dyn Printer,
 
-    disassemble: bool
+    disassemble: bool,
 }
 
 struct VMDataSection<'a> {
@@ -243,14 +245,16 @@ impl<'printer> VM<'printer> {
             break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
-            disassemble: false
+            disassemble: false,
         }
     }
 
-    pub fn create_function(&mut self, signature: &str, func: &'static dyn Fn(&mut dyn RustFunctionCtx)) -> Result<(), String> {
-        let mut f = Box::new(RustFunctionValue {
-            func
-        });
+    pub fn create_function(
+        &mut self,
+        signature: &str,
+        func: &'static dyn Fn(&mut dyn RustFunctionCtx),
+    ) -> Result<(), String> {
+        let mut f = Box::new(RustFunctionValue { func });
         let ptr = unsafe { NonNull::new_unchecked(f.as_mut() as *mut _) };
         self.objects.push(GcValue::RustFunction(f));
 
@@ -259,7 +263,9 @@ impl<'printer> VM<'printer> {
             constant_strs: &mut self.constant_strs,
         };
 
-        let name = self.compiler.create_function(&mut data_section, signature)?;
+        let name = self
+            .compiler
+            .create_function(&mut data_section, signature)?;
 
         let v = Value::RustFunction(ptr);
 
@@ -478,7 +484,8 @@ impl<'printer> VM<'printer> {
         let mut decoder = var_len_int::Decoder::new();
         while !decoder.step_decode(frame.next_code().unwrap()) {}
 
-        self.value_stack.push(Value::Str(self.constant_strs[decoder.val() as usize]));
+        self.value_stack
+            .push(Value::Str(self.constant_strs[decoder.val() as usize]));
     }
 
     fn push_constant_bool(&mut self, frame: &mut Frame) {
@@ -497,7 +504,9 @@ impl<'printer> VM<'printer> {
 
         let c = std::str::from_utf8(&buf)
             .expect("Invalid character encoding!")
-            .chars().next().expect("Invalid character encoding!");
+            .chars()
+            .next()
+            .expect("Invalid character encoding!");
         self.value_stack.push(Value::Char(c));
     }
 
@@ -541,9 +550,9 @@ impl<'printer> VM<'printer> {
                     _ => panic!("Bad index value"),
                 };
 
-
                 // Really slow! Just getting this working
-                self.value_stack.push(Value::Char(string.chars().nth(index).unwrap()));
+                self.value_stack
+                    .push(Value::Char(string.chars().nth(index).unwrap()));
             }
             _ => panic!("Not a hash map"),
         };
@@ -917,26 +926,24 @@ impl<'printer> VM<'printer> {
         let top = self.value_stack.pop().unwrap();
         if let Value::RustFunction(f) = top {
             let mut parameters = vec![];
-            
+
             let len = self.value_stack.len();
             for p in self.value_stack.drain(len - arity..) {
-                parameters.push(
-                    match p {
-                        Value::Float(f) => RustValue::Float(f.into_inner()),
-                        Value::Integer(i) => RustValue::Integer(i),
-                        Value::Str(s) => RustValue::Str(unsafe { s.as_ref() }.val.clone()),
-                        Value::Bool(b) => RustValue::Bool(b),
-                        _ => panic!("Invalid parameter type in rust function")
-                    }
-                );
+                parameters.push(match p {
+                    Value::Float(f) => RustValue::Float(f.into_inner()),
+                    Value::Integer(i) => RustValue::Integer(i),
+                    Value::Str(s) => RustValue::Str(unsafe { s.as_ref() }.val.clone()),
+                    Value::Bool(b) => RustValue::Bool(b),
+                    _ => panic!("Invalid parameter type in rust function"),
+                });
             }
-            
-            let mut ctx = RustFunctionCtxImpl{
+
+            let mut ctx = RustFunctionCtxImpl {
                 parameters,
                 result: None,
-                printer: self.printer
+                printer: self.printer,
             };
-            unsafe{ f.as_ref() }.call(&mut ctx);
+            unsafe { f.as_ref() }.call(&mut ctx);
 
             if let Some(r) = ctx.result {
                 match r {
@@ -950,7 +957,7 @@ impl<'printer> VM<'printer> {
 
                         let idx = data_section.create_constant_str(&s) as usize;
                         self.value_stack.push(Value::Str(self.constant_strs[idx]));
-                    },
+                    }
                     RustValue::Bool(b) => self.value_stack.push(Value::Bool(b)),
                     RustValue::StringVector(v) => {
                         let mut vector: Vec<Value> = vec![];
@@ -975,8 +982,7 @@ impl<'printer> VM<'printer> {
                     }
                 }
             }
-        }
-        else {
+        } else {
             let function = match top {
                 Value::Function(f) => f,
                 x => panic!("Top of stack is not a function! Got {:?}", x),
@@ -1028,57 +1034,47 @@ impl<'printer> VM<'printer> {
         };
 
         match obj {
-            Value::Vector(v) => {
-                match builtin_id {
-                    builtin_functions::vector::LEN => {
-                        self.value_stack.push(Value::Integer(unsafe { v.as_ref() }.len() as i32));
-                    }
-                    _ => panic!(
-                        "Expected vector builtin id {}",
-                        builtin_id
-                    ),
+            Value::Vector(v) => match builtin_id {
+                builtin_functions::vector::LEN => {
+                    self.value_stack
+                        .push(Value::Integer(unsafe { v.as_ref() }.len() as i32));
                 }
+                _ => panic!("Expected vector builtin id {}", builtin_id),
             },
-            Value::Str(s) => {
-                match builtin_id {
-                    builtin_functions::string::LEN => {
-                        self.value_stack.push(Value::Integer(unsafe { s.as_ref() }.val.len() as i32));
-                    }
-                    builtin_functions::string::TO_INTEGER => {
-                        self.value_stack.push(Value::Integer(unsafe { s.as_ref() }.val.parse::<i32>().unwrap_or(0)));
-                    }
-                    _ => panic!(
-                        "Expected string builtin id {}",
-                        builtin_id
-                    ),
+            Value::Str(s) => match builtin_id {
+                builtin_functions::string::LEN => {
+                    self.value_stack
+                        .push(Value::Integer(unsafe { s.as_ref() }.val.len() as i32));
                 }
-            },
-            Value::HashMap(h) => {
-                match builtin_id {
-                    builtin_functions::hashmap::CONTAINS_KEY => {
-                        let key = self.value_stack.pop().unwrap();
-                        self.value_stack.push(Value::Bool(unsafe { h.as_ref() }.contains_key(&key)));
-                    }
-                    builtin_functions::hashmap::KEYS => {
-                        let mut vector = vec![];
-
-                        for k in unsafe { h.as_ref() }.keys() {
-                            vector.push(*k);
-                        }
-
-                        let mut vec_val = Box::new(vector);
-                        let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
-                        self.objects.push(GcValue::Vector(vec_val));
-
-                        self.value_stack.push(Value::Vector(ptr));
-                    }
-                    _ => panic!(
-                        "Unexpected hash_map builtin id {}",
-                        builtin_id
-                    ),
+                builtin_functions::string::TO_INTEGER => {
+                    self.value_stack.push(Value::Integer(
+                        unsafe { s.as_ref() }.val.parse::<i32>().unwrap_or(0),
+                    ));
                 }
+                _ => panic!("Expected string builtin id {}", builtin_id),
             },
-            x => panic!("Must be a vector, hash_map string. Got {:?}", x)
+            Value::HashMap(h) => match builtin_id {
+                builtin_functions::hashmap::CONTAINS_KEY => {
+                    let key = self.value_stack.pop().unwrap();
+                    self.value_stack
+                        .push(Value::Bool(unsafe { h.as_ref() }.contains_key(&key)));
+                }
+                builtin_functions::hashmap::KEYS => {
+                    let mut vector = vec![];
+
+                    for k in unsafe { h.as_ref() }.keys() {
+                        vector.push(*k);
+                    }
+
+                    let mut vec_val = Box::new(vector);
+                    let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                    self.objects.push(GcValue::Vector(vec_val));
+
+                    self.value_stack.push(Value::Vector(ptr));
+                }
+                _ => panic!("Unexpected hash_map builtin id {}", builtin_id),
+            },
+            x => panic!("Must be a vector, hash_map string. Got {:?}", x),
         };
     }
 
@@ -1089,8 +1085,8 @@ impl<'printer> VM<'printer> {
 
 #[cfg(test)]
 mod test {
-    use crate::test::utils::TestPrinter;
     use super::*;
+    use crate::test::utils::TestPrinter;
 
     #[test]
     fn print_integer() {
@@ -2608,15 +2604,23 @@ mod test {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
 
-        if let Err(e) = vm.create_function("fn test_string() -> string", &test_call_return_function_string) {
+        if let Err(e) = vm.create_function(
+            "fn test_string() -> string",
+            &test_call_return_function_string,
+        ) {
             panic!("{}", e);
         }
 
-        if let Err(e) = vm.create_function("fn test_float() -> float", &test_call_return_function_float) {
+        if let Err(e) =
+            vm.create_function("fn test_float() -> float", &test_call_return_function_float)
+        {
             panic!("{}", e);
         }
 
-        if let Err(e) = vm.create_function("fn test_integer() -> int", &test_call_return_function_integer) {
+        if let Err(e) = vm.create_function(
+            "fn test_integer() -> int",
+            &test_call_return_function_integer,
+        ) {
             panic!("{}", e);
         }
 
@@ -2647,7 +2651,9 @@ mod test {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
 
-        if let Err(e) = vm.create_function("fn test() -> [string]", &test_call_return_vector_function) {
+        if let Err(e) =
+            vm.create_function("fn test() -> [string]", &test_call_return_vector_function)
+        {
             panic!("{}", e);
         }
 
@@ -2680,7 +2686,10 @@ mod test {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
 
-        if let Err(e) = vm.create_function("fn test(float, int, string)", &test_call_parameters_function) {
+        if let Err(e) = vm.create_function(
+            "fn test(float, int, string)",
+            &test_call_parameters_function,
+        ) {
             panic!("{}", e);
         }
 

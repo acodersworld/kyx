@@ -1,13 +1,12 @@
 #[cfg(test)]
 mod day1 {
-    use crate::vm;
-    use crate::rust_function_ctx::{RustValue, RustFunctionCtx};
+    use crate::rust_function_ctx::{RustFunctionCtx, RustValue};
     use crate::test::utils;
+    use crate::vm;
 
     fn input(ctx: &mut dyn RustFunctionCtx) {
-
         let mut v = vec![];
-        
+
         for l in include_str!("aoc2018/day1-input.txt").lines() {
             v.push(l.to_string());
         }
@@ -20,7 +19,8 @@ mod day1 {
         let mut printer = utils::TestPrinter::new();
         let mut vm = vm::VM::new(&mut printer);
 
-        vm.create_function("fn readinput() -> [string]", &input).expect("Failed to create function");
+        vm.create_function("fn readinput() -> [string]", &input)
+            .expect("Failed to create function");
 
         let src = "
             let lines: [string] = readinput();
@@ -49,7 +49,8 @@ mod day1 {
         let mut printer = utils::TestPrinter::new();
         let mut vm = vm::VM::new(&mut printer);
 
-        vm.create_function("fn readinput() -> [string]", &input).expect("Failed to create function");
+        vm.create_function("fn readinput() -> [string]", &input)
+            .expect("Failed to create function");
 
         let src = "
             let lines: [string] = readinput();
@@ -89,14 +90,13 @@ mod day1 {
 }
 
 mod day2 {
-    use crate::vm;
-    use crate::rust_function_ctx::{RustValue, RustFunctionCtx};
+    use crate::rust_function_ctx::{RustFunctionCtx, RustValue};
     use crate::test::utils;
+    use crate::vm;
 
     fn input(ctx: &mut dyn RustFunctionCtx) {
-
         let mut v = vec![];
-        
+
         for l in include_str!("aoc2018/day2-input.txt").lines() {
             v.push(l.to_string());
         }
@@ -109,7 +109,8 @@ mod day2 {
         let mut printer = utils::TestPrinter::new();
         let mut vm = vm::VM::new(&mut printer);
 
-        vm.create_function("fn readinput() -> [string]", &input).expect("Failed to create function");
+        vm.create_function("fn readinput() -> [string]", &input)
+            .expect("Failed to create function");
 
         let src = "
             let lines: [string] = readinput();
@@ -189,7 +190,8 @@ mod day2 {
         let mut printer = utils::TestPrinter::new();
         let mut vm = vm::VM::new(&mut printer);
 
-        vm.create_function("fn readinput() -> [string]", &input).expect("Failed to create function");
+        vm.create_function("fn readinput() -> [string]", &input)
+            .expect("Failed to create function");
 
         let src = "
             fn find_pair() {
@@ -245,6 +247,4 @@ mod day2 {
         assert_eq!(printer.strings[1], "omlvgdokxfncvqyersasjwziup");
         assert_eq!(printer.strings[2], "omlvgdokxfncvqyersasjlziup");
     }
-
 }
-

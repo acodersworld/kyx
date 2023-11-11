@@ -28,7 +28,7 @@ impl fmt::Debug for FunctionValue {
 }
 
 pub struct RustFunctionValue {
-    pub func: &'static dyn Fn(&mut dyn RustFunctionCtx)
+    pub func: &'static dyn Fn(&mut dyn RustFunctionCtx),
 }
 
 impl RustFunctionValue {
@@ -39,8 +39,7 @@ impl RustFunctionValue {
 
 impl fmt::Debug for RustFunctionValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RustFunctionValue")
-            .finish()
+        f.debug_struct("RustFunctionValue").finish()
     }
 }
 

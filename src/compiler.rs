@@ -1,9 +1,9 @@
+use crate::builtin_functions;
 use crate::chunk::Chunk;
 use crate::float;
 use crate::opcode;
 use crate::scanner::{Scanner, Token, TokenLocation};
 use crate::var_len_int;
-use crate::builtin_functions;
 
 use itertools::Itertools;
 use std::cell::RefCell;
@@ -117,13 +117,13 @@ struct EnumType {
 struct Method {
     name: String,
     function_type: FunctionType,
-    method_idx: usize
+    method_idx: usize,
 }
 
 #[derive(Debug, PartialEq)]
 struct StructType {
     members: Vec<(String, ValueType)>,
-    methods: Vec<Method>
+    methods: Vec<Method>,
 }
 
 impl StructType {
@@ -395,17 +395,29 @@ impl Compiler {
         }
     }
 
-    fn define_rust_function(&mut self, name: &str, parameters: Vec<ValueType>, return_type: ValueType) {
-        self.globals.insert(name.to_string(), Variable {
-            value_type: ValueType::Function(Rc::new(FunctionType {
-                return_type,
-                parameters
-            })),
-            read_only: true
-        });
+    fn define_rust_function(
+        &mut self,
+        name: &str,
+        parameters: Vec<ValueType>,
+        return_type: ValueType,
+    ) {
+        self.globals.insert(
+            name.to_string(),
+            Variable {
+                value_type: ValueType::Function(Rc::new(FunctionType {
+                    return_type,
+                    parameters,
+                })),
+                read_only: true,
+            },
+        );
     }
 
-    fn new_src_compiler<'a, T: DataSection>(&'a mut self, data_section: &'a mut T, src: &'a str) -> SrcCompiler::<'a, T> {
+    fn new_src_compiler<'a, T: DataSection>(
+        &'a mut self,
+        data_section: &'a mut T,
+        src: &'a str,
+    ) -> SrcCompiler<'a, T> {
         SrcCompiler::<'a, T> {
             src,
             globals: &mut self.globals,
@@ -440,7 +452,11 @@ impl Compiler {
         Ok((chunk, compiler.function_chunks, compiler.method_chunks))
     }
 
-    pub fn create_function<'a, T: DataSection>(&mut self, data_section: &'a mut T, signature: &'a str) -> Result<String, String> {
+    pub fn create_function<'a, T: DataSection>(
+        &mut self,
+        data_section: &'a mut T,
+        signature: &'a str,
+    ) -> Result<String, String> {
         let mut return_type = ValueType::Unit;
         let name: String;
         let mut parameter_types: Vec<ValueType> = vec![];
@@ -453,7 +469,7 @@ impl Compiler {
 
             name = match compiler.scanner.scan_token()?.token {
                 Token::Identifier(i) => i.to_string(),
-                _ => return Err("Expected identifier".to_owned())
+                _ => return Err("Expected identifier".to_owned()),
             };
 
             if !compiler.scanner.match_token(Token::LeftParen)? {
@@ -821,7 +837,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let methods = method_map
             .into_iter()
-            .map(|(name, function_type)| Method { name, function_type, method_idx: self.alloc_method_idx() })
+            .map(|(name, function_type)| Method {
+                name,
+                function_type,
+                method_idx: self.alloc_method_idx(),
+            })
             .collect::<Vec<Method>>();
 
         let has_methods = !methods.is_empty();
@@ -1398,7 +1418,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Vector(_) => {
                     let (member_name, member_name_location) = self.match_identifier()?;
                     match member_name.as_str() {
-                        "len" => { 
+                        "len" => {
                             self.consume(Token::LeftParen)?;
                             self.consume(Token::RightParen)?;
 
@@ -1407,17 +1427,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             chunk.write_byte(builtin_functions::vector::LEN);
                             chunk.write_byte(0);
 
-                            self.type_stack.push(
-                                Variable {
-                                    value_type: ValueType::Integer,
-                                    read_only: true,
-                                }
-                            );
+                            self.type_stack.push(Variable {
+                                value_type: ValueType::Integer,
+                                read_only: true,
+                            });
                         }
                         _ => {
                             return Err(self.make_error_msg(
                                 &format!("Vector does not have method '{}'", member_name),
-                                &member_name_location
+                                &member_name_location,
                             ));
                         }
                     };
@@ -1427,7 +1445,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::Str => {
                     let (member_name, member_name_location) = self.match_identifier()?;
                     match member_name.as_str() {
-                        "len" => { 
+                        "len" => {
                             self.consume(Token::LeftParen)?;
                             self.consume(Token::RightParen)?;
 
@@ -1436,14 +1454,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             chunk.write_byte(builtin_functions::string::LEN);
                             chunk.write_byte(0);
 
-                            self.type_stack.push(
-                                Variable {
-                                    value_type: ValueType::Integer,
-                                    read_only: true,
-                                }
-                            );
+                            self.type_stack.push(Variable {
+                                value_type: ValueType::Integer,
+                                read_only: true,
+                            });
                         }
-                        "to_integer" => { 
+                        "to_integer" => {
                             self.consume(Token::LeftParen)?;
                             self.consume(Token::RightParen)?;
 
@@ -1452,17 +1468,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             chunk.write_byte(builtin_functions::string::TO_INTEGER);
                             chunk.write_byte(0);
 
-                            self.type_stack.push(
-                                Variable {
-                                    value_type: ValueType::Integer,
-                                    read_only: true,
-                                }
-                            );
+                            self.type_stack.push(Variable {
+                                value_type: ValueType::Integer,
+                                read_only: true,
+                            });
                         }
                         _ => {
                             return Err(self.make_error_msg(
                                 &format!("String does not have method '{}'", member_name),
-                                &member_name_location
+                                &member_name_location,
                             ));
                         }
                     };
@@ -1472,7 +1486,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ValueType::HashMap(h) => {
                     let (member_name, member_name_location) = self.match_identifier()?;
                     match member_name.as_str() {
-                        "contains_key" => { 
+                        "contains_key" => {
                             self.consume(Token::LeftParen)?;
                             self.expression(chunk)?;
                             self.consume(Token::RightParen)?;
@@ -1482,8 +1496,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                             if index_type.value_type != h.0 {
                                 return Err(self.make_error_msg(
-                                    &format!("HashMap index is type {}, but got {}", index_type.value_type, h.0),
-                                    &member_name_location
+                                    &format!(
+                                        "HashMap index is type {}, but got {}",
+                                        index_type.value_type, h.0
+                                    ),
+                                    &member_name_location,
                                 ));
                             }
 
@@ -1491,12 +1508,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             chunk.write_byte(builtin_functions::hashmap::CONTAINS_KEY);
                             chunk.write_byte(1);
 
-                            self.type_stack.push(
-                                Variable {
-                                    value_type: ValueType::Bool,
-                                    read_only: true,
-                                }
-                            );
+                            self.type_stack.push(Variable {
+                                value_type: ValueType::Bool,
+                                read_only: true,
+                            });
                         }
                         "keys" => {
                             self.consume(Token::LeftParen)?;
@@ -1507,17 +1522,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             chunk.write_byte(builtin_functions::hashmap::KEYS);
                             chunk.write_byte(0);
 
-                            self.type_stack.push(
-                                Variable {
-                                    value_type: ValueType::Vector(Rc::new(h.0.clone())),
-                                    read_only: true,
-                                }
-                            );
+                            self.type_stack.push(Variable {
+                                value_type: ValueType::Vector(Rc::new(h.0.clone())),
+                                read_only: true,
+                            });
                         }
                         _ => {
                             return Err(self.make_error_msg(
                                 &format!("HashMap does not have method '{}'", member_name),
-                                &member_name_location
+                                &member_name_location,
                             ));
                         }
                     };
@@ -1604,12 +1617,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         if i.does_struct_satisfy_interface(s) {
                             cm.create_interface_object_for_struct(i, s, chunk);
                             true
-                        }
-                        else {
+                        } else {
                             false
                         }
-                    },
-                    _ => false
+                    }
+                    _ => false,
                 };
 
                 if !interface_satisfied {
@@ -2981,11 +2993,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn index_str(
-        &mut self,
-        chunk: &mut Chunk,
-        read_only: bool
-    ) -> Result<(), String> {
+    fn index_str(&mut self, chunk: &mut Chunk, read_only: bool) -> Result<(), String> {
         self.expression(chunk)?;
         let index_type = self.type_stack.pop().unwrap();
         if index_type.value_type != ValueType::Integer {
