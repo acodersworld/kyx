@@ -183,5 +183,68 @@ mod day2 {
         assert_eq!(printer.strings[1], "29");
         assert_eq!(printer.strings[2], "7105");
     }
+
+    #[test]
+    fn part2() {
+        let mut printer = utils::TestPrinter::new();
+        let mut vm = vm::VM::new(&mut printer);
+
+        vm.create_function("fn readinput() -> [string]", &input).expect("Failed to create function");
+
+        let src = "
+            fn find_pair() {
+                let lines: [string] = readinput();
+
+                let nlines: int = lines.len();
+                let mut ilines: int = 0;
+                let mut jlines: int = 0;
+
+                let mut count_two: int = 0;
+                let mut count_three: int = 0;
+
+                while ilines < nlines {
+                    jlines = 0;
+                    while jlines < nlines {
+                        let iword: string = lines[ilines];
+                        let jword: string = lines[jlines];
+
+                        let len: int = iword.len();
+                        let mut iw: int = 0;
+
+                        let mut differences: int = 0;
+                        while iw < len {
+                            if iword[iw] != jword[iw] {
+                                differences = differences + 1;
+                                if differences > 1 {
+                                    break;
+                                }
+                            }
+                            iw = iw + 1;
+                        }
+
+                        if differences == 1 {
+                            print(\"Pair found!\");
+                            print(iword);
+                            print(jword);
+                            return;		
+                        }
+                        jlines = jlines + 1;
+                    }
+                    ilines = ilines + 1;
+                }
+
+                print(\"No pair found!\");
+            }
+
+            find_pair();
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "Pair found!");
+        assert_eq!(printer.strings[1], "omlvgdokxfncvqyersasjwziup");
+        assert_eq!(printer.strings[2], "omlvgdokxfncvqyersasjlziup");
+    }
+
 }
 
