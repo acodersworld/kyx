@@ -770,24 +770,23 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 let mut parameter_names = vec![];
                 let mut parameter_types = vec![];
 
-                let parameter_count =
-                    self.parse_commas_separate_list(Token::RightParen, |cm, parameter_idx| {
-                        let (name, name_location) = cm.match_identifier()?;
+                self.parse_commas_separate_list(Token::RightParen, |cm, _parameter_idx| {
+                    let (name, name_location) = cm.match_identifier()?;
 
-                        if parameter_names.contains(&name) {
-                            return Err(cm.make_error_msg(
-                                &format!("Parameter {} redefined", name),
-                                &name_location,
-                            ));
-                        }
+                    if parameter_names.contains(&name) {
+                        return Err(cm.make_error_msg(
+                            &format!("Parameter {} redefined", name),
+                            &name_location,
+                        ));
+                    }
 
-                        parameter_names.push(name);
+                    parameter_names.push(name);
 
-                        cm.consume(Token::Colon)?;
-                        parameter_types.push(cm.parse_type()?);
+                    cm.consume(Token::Colon)?;
+                    parameter_types.push(cm.parse_type()?);
 
-                        Ok(())
-                    })?;
+                    Ok(())
+                })?;
 
                 let mut return_type = ValueType::Unit;
                 if self.scanner.match_token(Token::ThinArrow)? {
@@ -3025,6 +3024,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn index_str(&mut self, chunk: &mut Chunk, read_only: bool) -> Result<(), String> {
+
+        let from_begin = self.scanner.match_token(Token::DotDot)?;
+
         self.expression(chunk)?;
         let index_type = self.type_stack.pop().unwrap();
         if index_type.value_type != ValueType::Integer {
@@ -3034,18 +3036,64 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ));
         }
 
-        self.consume(Token::RightBracket)?;
+        if from_begin {
+            self.consume(Token::RightBracket)?;
 
-        if self.scanner.match_token(Token::Equal)? {
-            return Err("Cannot assign to string".to_owned());
-        } else {
-            chunk.write_byte(opcode::GET_INDEX);
+            chunk.write_byte(opcode::CALL_BUILTIN);
+            chunk.write_byte(builtin_functions::string::SUBSTR_FROM_START);
+            chunk.write_byte(1);
+
+            self.type_stack.push(Variable {
+                value_type: ValueType::Str,
+                read_only,
+            });
         }
+        else if self.scanner.match_token(Token::DotDot)? {
+            if self.scanner.match_token(Token::RightBracket)? {
+                chunk.write_byte(opcode::CALL_BUILTIN);
+                chunk.write_byte(builtin_functions::string::SUBSTR_TO_END);
+                chunk.write_byte(1);
 
-        self.type_stack.push(Variable {
-            value_type: ValueType::Char,
-            read_only,
-        });
+                self.type_stack.push(Variable {
+                    value_type: ValueType::Str,
+                    read_only,
+                });
+            }
+            else {
+                self.expression(chunk)?;
+                let end_index_type = self.type_stack.pop().unwrap();
+                if end_index_type.value_type != ValueType::Integer {
+                    return Err(format!(
+                        "Can only index using Integer. Got {}",
+                        index_type.value_type
+                    ));
+                }
+                self.consume(Token::RightBracket)?;
+
+                chunk.write_byte(opcode::CALL_BUILTIN);
+                chunk.write_byte(builtin_functions::string::SUBSTR);
+                chunk.write_byte(2);
+
+                self.type_stack.push(Variable {
+                    value_type: ValueType::Str,
+                    read_only,
+                });
+            }
+        }
+        else {
+            self.consume(Token::RightBracket)?;
+
+            if self.scanner.match_token(Token::Equal)? {
+                return Err("Cannot assign to string".to_owned());
+            } else {
+                chunk.write_byte(opcode::GET_INDEX);
+            }
+
+            self.type_stack.push(Variable {
+                value_type: ValueType::Char,
+                read_only,
+            });
+        }
 
         Ok(())
     }
@@ -3535,28 +3583,66 @@ mod test {
 
     #[test]
     fn test_vector_index() {
-        {
-            let mut table = TestDataSection::new();
-            let mut compiler = Compiler::new();
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
 
-            let src = "
-                let v: [int] = vec<int>{1,2,3};
-                print v[0];
-            ";
+        let src = "
+            let v: [int] = vec<int>{1,2,3};
+            print v[0];
+        ";
 
-            assert_eq!(compiler.compile(&mut table, src).err(), None);
-        }
+        assert_eq!(compiler.compile(&mut table, src).err(), None);
     }
 
     #[test]
     fn test_string_index() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        let src = "
+            let s: string = \"Hello\";
+            print s[1];
+        ";
+
+        assert_eq!(compiler.compile(&mut table, src).err(), None);
+    }
+
+    #[test]
+    fn test_string_index_range() {
         {
             let mut table = TestDataSection::new();
             let mut compiler = Compiler::new();
 
             let src = "
                 let s: string = \"Hello\";
-                print s[1];
+                let r: string = s[1..3];
+                print r;
+            ";
+
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let s: string = \"Hello\";
+                let r: string = s[..3];
+                print r;
+            ";
+
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let s: string = \"Hello\";
+                let r: string = s[1..];
+                print r;
             ";
 
             assert_eq!(compiler.compile(&mut table, src).err(), None);

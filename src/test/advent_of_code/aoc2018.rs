@@ -89,6 +89,7 @@ mod day1 {
     }
 }
 
+#[cfg(test)]
 mod day2 {
     use crate::rust_function_ctx::{RustFunctionCtx, RustValue};
     use crate::test::utils;

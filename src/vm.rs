@@ -1039,7 +1039,7 @@ impl<'printer> VM<'printer> {
                     self.value_stack
                         .push(Value::Integer(unsafe { v.as_ref() }.len() as i32));
                 }
-                _ => panic!("Expected vector builtin id {}", builtin_id),
+                _ => panic!("Unexpected vector builtin id {}", builtin_id),
             },
             Value::Str(s) => match builtin_id {
                 builtin_functions::string::LEN => {
@@ -1051,7 +1051,50 @@ impl<'printer> VM<'printer> {
                         unsafe { s.as_ref() }.val.parse::<i32>().unwrap_or(0),
                     ));
                 }
-                _ => panic!("Expected string builtin id {}", builtin_id),
+                builtin_functions::string::SUBSTR |
+                builtin_functions::string::SUBSTR_FROM_START |
+                builtin_functions::string::SUBSTR_TO_END => {
+                    let s = &unsafe { s.as_ref() }.val;
+
+                    let pop_index = |value_stack: &mut Vec<Value>| {
+                        match value_stack.pop().unwrap() {
+                            Value::Integer(i) => {
+                                if i < 0 {
+                                    panic!("Index less than 0");
+                                }
+                                i as usize
+                            },
+                            x => panic!("Expected integer, got {:?}", x)
+                        }
+                    };
+
+                    // TODO: Optimise indexing
+                    let substr = match builtin_id {
+                        builtin_functions::string::SUBSTR => {
+                            let iend = s.chars().enumerate().nth(pop_index(&mut self.value_stack)).unwrap().0;
+                            let istart = s.chars().enumerate().nth(pop_index(&mut self.value_stack)).unwrap().0;
+                            &s[istart..iend]
+                        }
+                        builtin_functions::string::SUBSTR_FROM_START => {
+                            let iend = s.chars().enumerate().nth(pop_index(&mut self.value_stack)).unwrap().0;
+                            &s[..iend]
+                        }
+                        builtin_functions::string::SUBSTR_TO_END => {
+                            let istart = s.chars().enumerate().nth(pop_index(&mut self.value_stack)).unwrap().0;
+                            &s[istart..]
+                        }
+                        x => panic!("Unexpected SUBSTR builtin id: {}", x)
+                    };
+
+                    let mut data_section = VMDataSection {
+                        objects: &mut self.objects,
+                        constant_strs: &mut self.constant_strs,
+                    };
+
+                    let idx = data_section.create_constant_str(substr);
+                    self.value_stack.push(Value::Str(self.constant_strs[idx as usize]));
+                }
+                _ => panic!("Unexpected string builtin id {}", builtin_id),
             },
             Value::HashMap(h) => match builtin_id {
                 builtin_functions::hashmap::CONTAINS_KEY => {
@@ -1127,7 +1170,7 @@ mod test {
     }
 
     #[test]
-    fn print_char() {
+    fn string_index() {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
         let src = "
@@ -1143,7 +1186,52 @@ mod test {
     }
 
     #[test]
-    fn string_index() {
+    fn string_index_range() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let s: string = \"hello\";
+                let r: string = s[1..4];
+                print(r);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "ell");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let s: string = \"hello\";
+                let r: string = s[1..];
+                print(r);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "ello");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let s: string = \"hello\";
+                let r: string = s[..4];
+                print(r);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "hell");
+        }
+    }
+
+    #[test]
+    fn print_char() {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
         assert_eq!(vm.interpret("print 'a';"), Ok(()));
