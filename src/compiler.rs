@@ -37,7 +37,7 @@ use std::vec::Vec;
            print_stmt -> print expression ";"
            while_stmt -> "while" expression block_expression
            break_stmt -> "break" ";"
-           for_stmt "for" identifier ":" NUMBER (".." | "..=") NUMBER block_expression
+           for_stmt "for" identifier ":" (NUMBER | expression) (".." | "..=") (NUMBER | expression) block_expression
            function_definition -> "fn" identifier "(" parameter_list ")" -> type block
            function_prototype -> "fn" identifier "(" parameter_list ")" -> type
                 parameter_list -> parameter? ("," parameter)*
@@ -2652,7 +2652,30 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let (identifier_name, _) = cm.match_identifier()?;
 
             cm.consume(Token::Colon)?;
-            let (start, _) = cm.match_integer()?;
+
+            let start_loc = cm.scanner.peek_token()?.location;
+            cm.expression(ch)?;
+            if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
+                return Err(cm
+                    .make_error_msg("Expected integer value", &start_loc))
+            }
+
+            let var_idx;
+            {
+                let frame = cm.stack_frames.last_mut().unwrap();
+                var_idx = frame.locals.len() as u8;
+                ch.write_byte(opcode::DEFINE_LOCAL);
+                cm.type_stack.pop();
+
+                frame.locals.push(LocalVariable {
+                    name: identifier_name.to_string(),
+                    v: Variable {
+                        read_only: true,
+                        value_type: ValueType::Integer,
+                    },
+                    scope: frame.current_scope,
+                });
+            }
 
             let is_inclusive = {
                 let t = cm.scanner.scan_token()?;
@@ -2666,19 +2689,27 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
             };
 
-            let (end, _) = cm.match_integer()?;
+            let end_idx;
+            {
+                let end_loc = cm.scanner.peek_token()?.location;
+                cm.expression(ch)?;
+                if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
+                    return Err(cm
+                        .make_error_msg("Expected integer value", &end_loc))
+                }
 
-            let frame = cm.stack_frames.last_mut().unwrap();
-            let var_idx = frame.locals.len() as u8;
-            frame.locals.push(LocalVariable {
-                name: identifier_name,
-                v: Variable {
-                    read_only: true,
-                    value_type: ValueType::Integer,
-                },
-                scope: frame.current_scope,
-            });
-            cm.integer(ch, start);
+                let frame = cm.stack_frames.last_mut().unwrap();
+                end_idx = frame.locals.len() as u8;
+                frame.locals.push(LocalVariable {
+                    name: "#".to_string(),
+                    v: Variable {
+                        read_only: true,
+                        value_type: ValueType::Integer,
+                    },
+                    scope: frame.current_scope,
+                });
+            }
+
             ch.write_byte(opcode::DEFINE_LOCAL);
             cm.type_stack.pop();
 
@@ -2686,7 +2717,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             cm.scoped_block(ch, |cm, ch| {
                 let loop_begin_idx = ch.write_byte(opcode::PUSH_LOCAL);
                 ch.write_byte(var_idx);
-                cm.integer(ch, end);
+                ch.write_byte(opcode::PUSH_LOCAL);
+                ch.write_byte(end_idx);
                 if is_inclusive {
                     ch.write_byte(opcode::LESS_EQUAL);
                 } else {
@@ -2694,7 +2726,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 ch.write_byte(opcode::JMP_IF_FALSE);
-                cm.type_stack.pop();
                 let cond_break_idx = ch.write_byte(0);
 
                 cm.for_block(ch)?;

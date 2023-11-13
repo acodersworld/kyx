@@ -245,7 +245,7 @@ impl<'printer> VM<'printer> {
             break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
-            disassemble: false,
+            disassemble: true,
         }
     }
 
@@ -1611,6 +1611,25 @@ mod test {
             assert_eq!(printer.strings[2], "2");
             assert_eq!(printer.strings[3], "3");
             assert_eq!(printer.strings[4], "4");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                let start: int = 1;
+                let s: string = \"hello\";
+                for i : start..s.len() {
+                    print s[i];
+                }
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 4);
+            assert_eq!(printer.strings[0], "e");
+            assert_eq!(printer.strings[1], "l");
+            assert_eq!(printer.strings[2], "l");
+            assert_eq!(printer.strings[3], "o");
         }
     }
 

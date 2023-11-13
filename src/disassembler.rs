@@ -33,6 +33,7 @@ impl<'a> Disassembler<'a> {
             opcode::CONSTANT_FLOAT => self.constant_float_instruction(),
             opcode::CONSTANT_STRING => self.constant_string_instruction(),
             opcode::CONSTANT_BOOL => self.constant_bool_instruction(),
+            opcode::CONSTANT_CHAR => self.constant_char_instruction(),
             opcode::CREATE_VEC => self.create_vec(),
             opcode::CREATE_HASH_MAP => self.create_hash_map(),
             opcode::CREATE_TUPLE => self.create_tuple(),
@@ -150,6 +151,26 @@ impl<'a> Disassembler<'a> {
         self.offset += 1;
 
         println!("CONSTANT BOOL: {}", if value != 0 { true } else { false });
+    }
+
+    fn constant_char_instruction(&mut self) {
+        let len = self.code[self.offset] as usize;
+        self.offset += 1;
+
+        assert!(len <= 4);
+        let mut buf: [u8; 4] = [0; 4];
+        for i in 0..len {
+            buf[i] = self.code[self.offset];
+            self.offset += 1;
+        }
+
+        let c = std::str::from_utf8(&buf)
+            .expect("Invalid character encoding!")
+            .chars()
+            .next()
+            .expect("Invalid character encoding!");
+
+        println!("CONSTANT CHAR: {}", c);
     }
 
     fn create_vec(&mut self) {
@@ -271,6 +292,9 @@ impl<'a> Disassembler<'a> {
         let builtin_id = self.code[self.offset];
         self.offset += 1;
 
-        println!("CALL BUILTIN: id({})", builtin_id);
+        let arg_count = self.code[self.offset];
+        self.offset += 1;
+
+        println!("CALL BUILTIN: arity({}) id({})", arg_count, builtin_id);
     }
 }
