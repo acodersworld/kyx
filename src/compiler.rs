@@ -1472,6 +1472,34 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                                 read_only: true,
                             });
                         }
+                        "split" => {
+                            self.consume(Token::LeftParen)?;
+                            let char_loc = self.scanner.peek_token()?.location;
+                            self.expression(chunk)?;
+                            self.consume(Token::RightParen)?;
+
+                            let delimiter_type = self.type_stack.pop().unwrap();
+
+                            if delimiter_type.value_type != ValueType::Char {
+                                return Err(self.make_error_msg(
+                                    &format!(
+                                        "String delimiter is type char, but got {}",
+                                        delimiter_type.value_type
+                                    ),
+                                    &char_loc,
+                                ));
+                            }
+
+                            self.type_stack.pop(); // pop string
+                            chunk.write_byte(opcode::CALL_BUILTIN);
+                            chunk.write_byte(builtin_functions::string::SPLIT);
+                            chunk.write_byte(1);
+
+                            self.type_stack.push(Variable {
+                                value_type: ValueType::Vector(Rc::new(ValueType::Str)),
+                                read_only: false,
+                            });
+                        }
                         _ => {
                             return Err(self.make_error_msg(
                                 &format!("String does not have method '{}'", member_name),
@@ -4581,6 +4609,8 @@ mod test {
                 print(len);
 
                 print(\"-10\".to_integer());
+
+                let split: [string] = s.split('e');
                 ",
                 )
                 .unwrap();

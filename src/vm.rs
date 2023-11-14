@@ -1114,6 +1114,31 @@ impl<'printer> VM<'printer> {
                     self.value_stack
                         .push(Value::Str(self.constant_strs[idx as usize]));
                 }
+                builtin_functions::string::SPLIT => {
+                    let s = &unsafe { s.as_ref() }.val;
+
+                    let delimiter = match self.value_stack.pop().unwrap() {
+                        Value::Char(c) => c,
+                        _ => panic!("Expected char")
+                    };
+
+                    let mut vector = vec![];
+                    for substr in s.split(delimiter) {
+                        let mut data_section = VMDataSection {
+                            objects: &mut self.objects,
+                            constant_strs: &mut self.constant_strs,
+                        };
+
+                        let idx = data_section.create_constant_str(substr);
+                        vector.push(Value::Str(self.constant_strs[idx as usize]));
+                    }
+
+                    let mut vec_val = Box::new(vector);
+                    let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                    self.objects.push(GcValue::Vector(vec_val));
+
+                    self.value_stack.push(Value::Vector(ptr));
+                }
                 _ => panic!("Unexpected string builtin id {}", builtin_id),
             },
             Value::HashMap(h) => match builtin_id {
@@ -2844,7 +2869,7 @@ mod test {
     }
 
     #[test]
-    fn test_string_builtin() {
+    fn test_string_to_string() {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
 
@@ -2866,6 +2891,32 @@ mod test {
         assert_eq!(printer.strings[1], "-10");
         assert_eq!(printer.strings[2], "10");
         assert_eq!(printer.strings[3], "7");
+    }
+
+    #[test]
+    fn test_string_split() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut s: string = \"hello, world pipe-a|pipe-b|pipe-c\";
+            let v: [string] = s.split(',');
+            print(v[0]);
+            print(v[1]);
+
+            let v2: [string] = v[1].split('|');
+            print(v2[0]);
+            print(v2[1]);
+            print(v2[2]);
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings[0], "hello");
+        assert_eq!(printer.strings[1], " world pipe-a|pipe-b|pipe-c");
+        assert_eq!(printer.strings[2], " world pipe-a");
+        assert_eq!(printer.strings[3], "pipe-b");
+        assert_eq!(printer.strings[4], "pipe-c");
     }
 
     #[test]
