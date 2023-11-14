@@ -2655,8 +2655,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let start_loc = cm.scanner.peek_token()?.location;
             cm.expression(ch)?;
             if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
-                return Err(cm
-                    .make_error_msg("Expected integer value", &start_loc))
+                return Err(cm.make_error_msg("Expected integer value", &start_loc));
             }
 
             let var_idx;
@@ -2693,8 +2692,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 let end_loc = cm.scanner.peek_token()?.location;
                 cm.expression(ch)?;
                 if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
-                    return Err(cm
-                        .make_error_msg("Expected integer value", &end_loc))
+                    return Err(cm.make_error_msg("Expected integer value", &end_loc));
                 }
 
                 let frame = cm.stack_frames.last_mut().unwrap();
@@ -3024,7 +3022,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn index_str(&mut self, chunk: &mut Chunk, read_only: bool) -> Result<(), String> {
-
         let from_begin = self.scanner.match_token(Token::DotDot)?;
 
         self.expression(chunk)?;
@@ -3047,8 +3044,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 value_type: ValueType::Str,
                 read_only,
             });
-        }
-        else if self.scanner.match_token(Token::DotDot)? {
+        } else if self.scanner.match_token(Token::DotDot)? {
             if self.scanner.match_token(Token::RightBracket)? {
                 chunk.write_byte(opcode::CALL_BUILTIN);
                 chunk.write_byte(builtin_functions::string::SUBSTR_TO_END);
@@ -3058,8 +3054,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     value_type: ValueType::Str,
                     read_only,
                 });
-            }
-            else {
+            } else {
                 self.expression(chunk)?;
                 let end_index_type = self.type_stack.pop().unwrap();
                 if end_index_type.value_type != ValueType::Integer {
@@ -3079,8 +3074,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     read_only,
                 });
             }
-        }
-        else {
+        } else {
             self.consume(Token::RightBracket)?;
 
             if self.scanner.match_token(Token::Equal)? {
