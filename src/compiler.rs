@@ -445,7 +445,6 @@ impl Compiler {
         let mut chunk = Chunk::new();
         //compiler.compile(&mut chunk)?;
         if let Err(e) = compiler.compile(&mut chunk) {
-            eprintln!("{}", e);
             return Err(e);
         }
 
@@ -492,8 +491,11 @@ impl Compiler {
 }
 
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
-    fn clear_stack(&mut self, chunk: &mut Chunk) {
-        let pop_count = self.type_stack.len();
+    fn clear_stack(&mut self, chunk: &mut Chunk, pop_count: usize) {
+        if pop_count == 0 {
+            return;
+        }
+
         if pop_count == 1 && self.type_stack.pop().unwrap().value_type == ValueType::Unit {
             // This will happen when a function returns no values. Since it does not return any values
             // no pop instruction should be emitted.
@@ -556,6 +558,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             if self.scanner.match_token(Token::Return)? {
                 self.return_statement(chunk)?;
             } else {
+                let stack_top = self.type_stack.len();
                 let is_block = self.expression(chunk)?;
 
                 // only times an expression doesn't have to be followed by a ';'
@@ -564,11 +567,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 if peeked_token != Token::RightBrace && peeked_token != Token::Eof {
                     if is_block {
                         if self.scanner.match_token(Token::SemiColon)? {
-                            self.clear_stack(chunk);
+                            self.clear_stack(chunk, self.type_stack.len() - stack_top);
                         }
                     } else {
                         self.consume(Token::SemiColon)?;
-                        self.clear_stack(chunk);
+                        self.clear_stack(chunk, self.type_stack.len() - stack_top);
                     }
                 }
             }
@@ -1292,10 +1295,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let stack_len = self.type_stack.len();
         assert!(stack_len >= argument_count);
         chunk.write_byte(opcode::PUSH_METHOD);
-        chunk.write_byte((method_idx & 0xFF) as u8);
-        chunk.write_byte(((method_idx >> 8) & 0xFF) as u8);
+        let method_idx_16: u16 = method_idx.try_into().unwrap();
+        chunk.write_byte((method_idx_16 & 0xFF) as u8);
+        chunk.write_byte(((method_idx_16 >> 8) & 0xFF) as u8);
         chunk.write_byte(opcode::CALL);
-        chunk.write_byte(argument_count as u8);
+        chunk.write_byte(argument_count.try_into().unwrap());
 
         self.type_stack.drain(stack_len - argument_count..stack_len);
         self.type_stack.push(Variable {
@@ -1344,8 +1348,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let stack_len = self.type_stack.len();
         assert!(stack_len >= argument_count);
         chunk.write_byte(opcode::CALL_INTERFACE);
-        chunk.write_byte(argument_count as u8);
-        chunk.write_byte((method_slot_idx + 1) as u8); // object 'self' is at index 0
+        chunk.write_byte(argument_count.try_into().unwrap());
+        chunk.write_byte((method_slot_idx + 1).try_into().unwrap()); // object 'self' is at index 0
 
         self.type_stack.drain(stack_len - argument_count..stack_len);
         self.type_stack.push(Variable {
@@ -1500,6 +1504,27 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                                 read_only: false,
                             });
                         }
+                        "trim" | "trim_start" | "trim_end" => {
+                            self.consume(Token::LeftParen)?;
+                            self.consume(Token::RightParen)?;
+
+                            self.type_stack.pop();
+                            chunk.write_byte(opcode::CALL_BUILTIN);
+                            chunk.write_byte(
+                                match member_name.as_str() {
+                                    "trim" => builtin_functions::string::TRIM,
+                                    "trim_start" => builtin_functions::string::TRIM_START,
+                                    "trim_end" => builtin_functions::string::TRIM_END,
+                                    _ => unreachable!()
+                                }
+                            );
+                            chunk.write_byte(0);
+
+                            self.type_stack.push(Variable {
+                                value_type: ValueType::Str,
+                                read_only: false,
+                            });
+                        }
                         _ => {
                             return Err(self.make_error_msg(
                                 &format!("String does not have method '{}'", member_name),
@@ -1580,13 +1605,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 chunk.write_byte(opcode::SET_FIELD);
-                chunk.write_byte(member_idx as u8);
+                chunk.write_byte(member_idx.try_into().unwrap());
                 self.type_stack.drain(self.type_stack.len() - 2..);
                 break;
             } else {
                 self.type_stack.pop();
                 chunk.write_byte(opcode::GET_FIELD);
-                chunk.write_byte(member_idx as u8);
+                chunk.write_byte(member_idx.try_into().unwrap());
                 self.type_stack.push(Variable {
                     value_type: member_type,
                     read_only: variable.read_only,
@@ -1662,7 +1687,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })?;
 
         chunk.write_byte(opcode::CREATE_VEC);
-        chunk.write_byte(arg_count as u8);
+        chunk.write_byte(arg_count.try_into().unwrap());
         self.type_stack.push(Variable {
             value_type: ValueType::Vector(Rc::new(elem_type)),
             read_only: false,
@@ -1702,7 +1727,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.consume(Token::Equal)?;
             self.expression(chunk)?;
             self.consume(Token::Comma)?;
-            member_indices.push(member_index as u8);
+            member_indices.push(member_index.try_into().unwrap());
 
             unset_members.remove(&member_name);
         }
@@ -1712,7 +1737,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         chunk.write_byte(opcode::CREATE_STRUCT);
-        chunk.write_byte(struct_type.members.len() as u8);
+        chunk.write_byte(struct_type.members.len().try_into().unwrap());
         for idx in member_indices.iter().rev() {
             chunk.write_byte(*idx);
         }
@@ -1773,8 +1798,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         chunk.write_byte(opcode::CREATE_UNION);
-        chunk.write_byte(member.1.len() as u8);
-        chunk.write_byte(determinant as u8);
+        chunk.write_byte(member.1.len().try_into().unwrap());
+        chunk.write_byte(determinant.try_into().unwrap());
 
         self.type_stack.push(Variable {
             value_type: ValueType::Union(union_type),
@@ -1866,7 +1891,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
 
         chunk.write_byte(opcode::CREATE_TUPLE);
-        chunk.write_byte(type_list.len() as u8);
+        chunk.write_byte(type_list.len().try_into().unwrap());
 
         Ok(())
     }
@@ -2177,12 +2202,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             chunk.write_byte(opcode::PUSH_METHOD);
 
             let idx = struct_type.get_method_call_idx(&m.0).unwrap();
-            chunk.write_byte((idx & 0xFF) as u8);
-            chunk.write_byte(((idx >> 8) & 0xFF) as u8);
+            let idx_16: u16 = idx.try_into().unwrap();
+            chunk.write_byte((idx_16 & 0xFF) as u8);
+            chunk.write_byte(((idx_16 >> 8) & 0xFF) as u8);
         }
 
         chunk.write_byte(opcode::CREATE_TUPLE);
-        chunk.write_byte((interface_type.methods.len() + 1) as u8);
+        chunk.write_byte((interface_type.methods.len() + 1).try_into().unwrap());
     }
 
     fn let_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
@@ -2302,7 +2328,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let (variable, symbol, type_str) = {
             if let Some((local, idx)) = self.find_local(name) {
-                (local, Identifier::Local(idx as u8), "Local")
+                (local, Identifier::Local(idx.try_into().unwrap()), "Local")
             } else {
                 (self.find_global(name)?, Identifier::Global, "Global")
             }
@@ -2475,8 +2501,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let (determinant, variable_names, union_type) = self.parse_if_let_expression(chunk)?;
 
             chunk.write_byte(opcode::JMP_IF_DETERMINANT_MISMATCH);
-            chunk.write_byte(determinant as u8);
+            chunk.write_byte(determinant.try_into().unwrap());
             if_jmp_idx = chunk.write_byte(0);
+            chunk.write_byte(0);
 
             let frame = self.stack_frames.last_mut().unwrap();
 
@@ -2515,6 +2542,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             chunk.write_byte(opcode::JMP_IF_FALSE);
             self.type_stack.pop();
             if_jmp_idx = chunk.write_byte(0);
+            chunk.write_byte(0);
         }
 
         let stack_top = self.type_stack.len();
@@ -2537,8 +2565,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             chunk.write_byte(opcode::JMP);
             let jmp_skip_else_idx = chunk.write_byte(0);
+            chunk.write_byte(0);
 
-            chunk.code[if_jmp_idx] = (chunk.code.len() - if_jmp_idx) as u8;
+            let if_jmp_distance: u16 = (chunk.code.len() - if_jmp_idx).try_into().unwrap();
+            chunk.code[if_jmp_idx    ] = if_jmp_distance as u8;
+            chunk.code[if_jmp_idx + 1] = (if_jmp_distance >> 8) as u8;
 
             self.consume(Token::LeftBrace)?;
             self.block_expression(chunk)?;
@@ -2566,14 +2597,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
             }
 
-            chunk.code[jmp_skip_else_idx] = (chunk.code.len() - jmp_skip_else_idx) as u8;
+            let jmp_skip_else_distance: u16 = (chunk.code.len() - jmp_skip_else_idx).try_into().unwrap();
+            chunk.code[jmp_skip_else_idx    ] = jmp_skip_else_distance as u8;
+            chunk.code[jmp_skip_else_idx + 1] = (jmp_skip_else_distance >> 8) as u8;
         } else {
             // If there is no else, this cannot always return a value.
+            println!("{} / {}", self.type_stack.len(), stack_top);
             assert!(self.type_stack.len() >= stack_top);
             unsafe {
                 self.type_stack.set_len(stack_top);
             }
-            chunk.code[if_jmp_idx] = (chunk.code.len() - if_jmp_idx) as u8;
+            chunk.code[if_jmp_idx] = (chunk.code.len() - if_jmp_idx).try_into().unwrap();
         }
 
         Ok(())
@@ -2582,7 +2616,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn patch_break(&mut self, chunk: &mut Chunk, start_idx: usize, jmp_idx: usize) {
         self.unpatched_break_offsets.retain(|&idx| {
             if idx > start_idx {
-                chunk.code[idx] = (jmp_idx - idx) as u8;
+                let distance_16: u16 = (jmp_idx - idx).try_into().unwrap();
+                chunk.code[idx    ] = distance_16 as u8;
+                chunk.code[idx + 1] = (distance_16 >> 8) as u8;
                 false
             } else {
                 true
@@ -2600,6 +2636,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         chunk.write_byte(opcode::JMP_IF_FALSE);
         self.type_stack.pop();
         let cond_break_idx = chunk.write_byte(0);
+        chunk.write_byte(0);
 
         self.scoped_block(chunk, |cm, ch| {
             while !cm.scanner.match_token(Token::RightBrace)? {
@@ -2611,8 +2648,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })?;
 
         chunk.write_byte(opcode::LOOP);
-        chunk.write_byte((chunk.code.len() - loop_begin_idx + 1) as u8);
-        chunk.code[cond_break_idx] = (chunk.code.len() - cond_break_idx) as u8;
+        let jmp_distance: u16 = (chunk.code.len() - loop_begin_idx + 1).try_into().unwrap();
+        chunk.write_byte((jmp_distance >> 8) as u8);
+        chunk.write_byte((jmp_distance & 0xFF) as u8);
+        let cond_break_distance: u16 = (chunk.code.len() - cond_break_idx).try_into().unwrap();
+        chunk.code[cond_break_idx    ] = (cond_break_distance & 0xFF) as u8;
+        chunk.code[cond_break_idx + 1] = ((cond_break_distance >> 8) & 0xFF) as u8;
 
         self.is_in_loop = prev_in_loop;
         Ok(())
@@ -2689,7 +2730,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let var_idx;
             {
                 let frame = cm.stack_frames.last_mut().unwrap();
-                var_idx = frame.locals.len() as u8;
+                var_idx = frame.locals.len().try_into().unwrap();
                 ch.write_byte(opcode::DEFINE_LOCAL);
                 cm.type_stack.pop();
 
@@ -2724,7 +2765,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 let frame = cm.stack_frames.last_mut().unwrap();
-                end_idx = frame.locals.len() as u8;
+                end_idx = frame.locals.len().try_into().unwrap();
                 frame.locals.push(LocalVariable {
                     name: "#".to_string(),
                     v: Variable {
@@ -2752,6 +2793,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 ch.write_byte(opcode::JMP_IF_FALSE);
                 let cond_break_idx = ch.write_byte(0);
+                ch.write_byte(0);
 
                 cm.for_block(ch)?;
 
@@ -2764,8 +2806,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ch.write_byte(var_idx);
 
                 ch.write_byte(opcode::LOOP);
-                ch.write_byte((ch.code.len() - loop_begin_idx) as u8);
-                ch.code[cond_break_idx] = (ch.code.len() - cond_break_idx) as u8;
+                let jmp_distance: u16 = (ch.code.len() - loop_begin_idx).try_into().unwrap();
+                ch.write_byte((jmp_distance >> 8) as u8);
+                ch.write_byte((jmp_distance & 0xFF) as u8);
+                let cond_break_distance: u16 = (ch.code.len() - cond_break_idx).try_into().unwrap();
+                ch.code[cond_break_idx    ] = cond_break_distance as u8;
+                ch.code[cond_break_idx + 1] = (cond_break_distance >> 8) as u8;
 
                 Ok(())
             })?;
@@ -2785,6 +2831,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         chunk.write_byte(opcode::BREAK);
         let idx = chunk.write_byte(0);
+        chunk.write_byte(0);
         self.unpatched_break_offsets.push(idx);
 
         Ok(())
@@ -2799,6 +2846,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         chunk.write_byte(opcode::JMP);
         let idx = chunk.write_byte(0);
+        chunk.write_byte(0);
         self.unpatched_break_offsets.push(idx);
 
         Ok(())
@@ -3220,7 +3268,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.write_var_len_int(chunk, func_opcode_2 as i32);
 
         chunk.write_byte(opcode::CALL);
-        chunk.write_byte(argument_count as u8);
+        chunk.write_byte(argument_count.try_into().unwrap());
 
         Ok(())
     }
@@ -3309,7 +3357,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut buf: [u8; 4] = [0; 4];
         let bytes = c.encode_utf8(&mut buf).as_bytes();
-        chunk.write_byte(bytes.len() as u8);
+        chunk.write_byte(bytes.len().try_into().unwrap());
         for b in bytes {
             chunk.write_byte(*b);
         }
@@ -3429,7 +3477,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::SmallSelf => {
                 if let Some((local, idx)) = self.find_local("self") {
                     chunk.write_byte(opcode::PUSH_LOCAL);
-                    chunk.write_byte(idx as u8);
+                    chunk.write_byte(idx.try_into().unwrap());
                     self.type_stack.push(local);
                 } else {
                     panic!("self not found in locals!");
@@ -4611,6 +4659,9 @@ mod test {
                 print(\"-10\".to_integer());
 
                 let split: [string] = s.split('e');
+                let trim: string = s.trim();
+                let trim_start: string = s.trim_start();
+                let trim_end: string = s.trim_end();
                 ",
                 )
                 .unwrap();

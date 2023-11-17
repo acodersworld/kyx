@@ -86,26 +86,30 @@ impl<'a> Disassembler<'a> {
     }
 
     fn jmp_instruction(&mut self, name: &str, sign: i64) {
-        let jmp_offset = self.code[self.offset] as i64 * sign;
+        let mut jmp_offset = self.code[self.offset] as i64;
+        jmp_offset |= (self.code[self.offset + 1] as i64) << 8;
+        jmp_offset *= sign;
+
         println!(
             "{}: {} -> {}",
             name,
             jmp_offset,
             self.offset as i64 + jmp_offset
         );
-        self.offset += 1;
+        self.offset += 2;
     }
 
     fn jmp_if_determinant_mismatch(&mut self) {
         let member_idx = self.code[self.offset] as i64;
-        let jmp_offset = self.code[self.offset + 1] as i64;
+        let mut jmp_offset = self.code[self.offset + 1] as i64;
+        jmp_offset |= (self.code[self.offset + 2] as i64) << 8;
         println!(
             "jmp if determinant mismatch ({}): {} -> {}",
             member_idx,
             jmp_offset,
             self.offset as i64 + jmp_offset
         );
-        self.offset += 2;
+        self.offset += 3;
     }
 
     fn read_instruction(&mut self) {

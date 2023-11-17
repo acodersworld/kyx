@@ -245,7 +245,7 @@ impl<'printer> VM<'printer> {
             break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
-            disassemble: true,
+            disassemble: false,
         }
     }
 
@@ -296,6 +296,7 @@ impl<'printer> VM<'printer> {
 
         let mut pc = 0;
         while let Some(op) = frame_stack.top.next_code() {
+            //println!("PC: {}", pc);
             if self.disassemble {
                 let mut ds = disassembler::Disassembler::new(unsafe {
                     &frame_stack.top.function.as_ref().chunk.code
@@ -361,6 +362,7 @@ impl<'printer> VM<'printer> {
 
             if self.disassemble {
                 println!("STACK ({}): {:?}", pc, self.value_stack);
+                println!("LOCALS: {:?}", frame_stack.top.locals);
             }
         }
     }
@@ -412,7 +414,7 @@ impl<'printer> VM<'printer> {
             self.method_functions.insert(fidx, function_value);
         }
 
-        if self.disassemble {
+        if true || self.disassemble {
             println!("-- Main --");
             let mut ds = disassembler::Disassembler::new(&chunk.code);
             ds.disassemble_all();
@@ -834,10 +836,11 @@ impl<'printer> VM<'printer> {
         self.break_loop_flag = false;
         if do_loop {
             let code = unsafe { &frame.function.as_ref().chunk.code };
-            let offset = code[frame.pc] as usize;
+            let mut offset = (code[frame.pc] as usize) << 8;
+            offset |= code[frame.pc + 1] as usize;
             frame.pc -= offset;
         } else {
-            frame.pc += 1;
+            frame.pc += 2;
         }
     }
 
@@ -861,12 +864,13 @@ impl<'printer> VM<'printer> {
         let cond = self.value_stack.pop().unwrap();
 
         let code = unsafe { &frame.function.as_ref().chunk.code };
-        let offset = code[frame.pc] as usize;
+        let mut offset = code[frame.pc] as usize;
+        offset |= (code[frame.pc + 1] as usize) << 8;
 
         if !is_truthy(&cond) {
             frame.pc += offset as usize;
         } else {
-            frame.pc += 1;
+            frame.pc += 2;
         }
     }
 
@@ -883,12 +887,13 @@ impl<'printer> VM<'printer> {
             x => panic!("Unexpected non-union! {:?}", x),
         };
 
-        let offset = code[frame.pc] as usize;
+        let mut offset = code[frame.pc] as usize;
+        offset |= (code[frame.pc + 1] as usize) << 8;
         if union_value.determinant == check_determinant {
             for m in &union_value.members {
                 self.value_stack.push(*m);
             }
-            frame.pc += 1;
+            frame.pc += 2;
         } else {
             self.value_stack.pop();
             frame.pc += offset;
@@ -1138,6 +1143,27 @@ impl<'printer> VM<'printer> {
                     self.objects.push(GcValue::Vector(vec_val));
 
                     self.value_stack.push(Value::Vector(ptr));
+                }
+                builtin_functions::string::TRIM |
+                builtin_functions::string::TRIM_START |
+                builtin_functions::string::TRIM_END => {
+                    let s = &unsafe { s.as_ref() }.val;
+
+                    let mut data_section = VMDataSection {
+                        objects: &mut self.objects,
+                        constant_strs: &mut self.constant_strs,
+                    };
+
+                    let idx = data_section.create_constant_str(
+                        match builtin_id {
+                            builtin_functions::string::TRIM => s.trim(),
+                            builtin_functions::string::TRIM_START => s.trim_start(),
+                            builtin_functions::string::TRIM_END => s.trim_end(),
+                            _ => unreachable!()
+                        });
+
+                    self.value_stack
+                        .push(Value::Str(self.constant_strs[idx as usize]));
                 }
                 _ => panic!("Unexpected string builtin id {}", builtin_id),
             },
@@ -2899,7 +2925,7 @@ mod test {
         let mut vm = VM::new(&mut printer);
 
         let src = "
-            let mut s: string = \"hello, world pipe-a|pipe-b|pipe-c\";
+            let s: string = \"hello, world pipe-a|pipe-b|pipe-c\";
             let v: [string] = s.split(',');
             print(v[0]);
             print(v[1]);
@@ -2917,6 +2943,25 @@ mod test {
         assert_eq!(printer.strings[2], " world pipe-a");
         assert_eq!(printer.strings[3], "pipe-b");
         assert_eq!(printer.strings[4], "pipe-c");
+    }
+
+    #[test]
+    fn test_string_trim() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let s: string = \"  hello, world  \";
+            print(s.trim());
+            print(s.trim_start());
+            print(s.trim_end());
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "hello, world");
+        assert_eq!(printer.strings[1], "hello, world  ");
+        assert_eq!(printer.strings[2], "  hello, world");
     }
 
     #[test]
