@@ -23,7 +23,7 @@ impl Chunk {
 
     pub fn write_short_at(&mut self, idx: usize, short: u16) {
         let bytes = short.to_be_bytes();
-        self.code[idx    ] = bytes[0];
+        self.code[idx] = bytes[0];
         self.code[idx + 1] = bytes[1];
     }
 }

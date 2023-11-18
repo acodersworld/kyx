@@ -1,6 +1,9 @@
-#[cfg(test)] use crate::rust_function_ctx::{RustFunctionCtx, RustValue};
-#[cfg(test)] use crate::test::utils;
-#[cfg(test)] use crate::vm;
+#[cfg(test)]
+use crate::rust_function_ctx::{RustFunctionCtx, RustValue};
+#[cfg(test)]
+use crate::test::utils;
+#[cfg(test)]
+use crate::vm;
 
 #[cfg(test)]
 mod day1 {
@@ -248,7 +251,6 @@ mod day2 {
         assert_eq!(printer.strings[1], "omlvgdokxfncvqyersasjwziup");
         assert_eq!(printer.strings[2], "omlvgdokxfncvqyersasjlziup");
     }
-
 }
 
 #[cfg(test)]
@@ -384,5 +386,4 @@ mod day3 {
         assert_eq!(printer.strings[0], "113576");
         assert_eq!(printer.strings[1], "825");
     }
-
 }

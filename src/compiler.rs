@@ -1508,14 +1508,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                             self.type_stack.pop();
                             chunk.write_byte(opcode::CALL_BUILTIN);
-                            chunk.write_byte(
-                                match member_name.as_str() {
-                                    "trim" => builtin_functions::string::TRIM,
-                                    "trim_start" => builtin_functions::string::TRIM_START,
-                                    "trim_end" => builtin_functions::string::TRIM_END,
-                                    _ => unreachable!()
-                                }
-                            );
+                            chunk.write_byte(match member_name.as_str() {
+                                "trim" => builtin_functions::string::TRIM,
+                                "trim_start" => builtin_functions::string::TRIM_START,
+                                "trim_end" => builtin_functions::string::TRIM_END,
+                                _ => unreachable!(),
+                            });
                             chunk.write_byte(0);
 
                             self.type_stack.push(Variable {
@@ -2561,7 +2559,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             chunk.write_byte(opcode::JMP);
             let jmp_skip_else_idx = chunk.write_short(0);
 
-            chunk.write_short_at(if_jmp_idx, (chunk.code.len() - if_jmp_idx).try_into().unwrap());
+            chunk.write_short_at(
+                if_jmp_idx,
+                (chunk.code.len() - if_jmp_idx).try_into().unwrap(),
+            );
 
             self.consume(Token::LeftBrace)?;
             self.block_expression(chunk)?;
@@ -2589,7 +2590,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
             }
 
-            chunk.write_short_at(jmp_skip_else_idx, (chunk.code.len() - jmp_skip_else_idx).try_into().unwrap());
+            chunk.write_short_at(
+                jmp_skip_else_idx,
+                (chunk.code.len() - jmp_skip_else_idx).try_into().unwrap(),
+            );
         } else {
             // If there is no else, this cannot always return a value.
             println!("{} / {}", self.type_stack.len(), stack_top);
@@ -2597,7 +2601,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             unsafe {
                 self.type_stack.set_len(stack_top);
             }
-            chunk.write_short_at(if_jmp_idx, (chunk.code.len() - if_jmp_idx).try_into().unwrap());
+            chunk.write_short_at(
+                if_jmp_idx,
+                (chunk.code.len() - if_jmp_idx).try_into().unwrap(),
+            );
         }
 
         Ok(())
@@ -2636,7 +2643,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         chunk.write_byte(opcode::LOOP);
         chunk.write_short((chunk.code.len() - loop_begin_idx + 1).try_into().unwrap());
-        chunk.write_short_at(cond_break_idx, (chunk.code.len() - cond_break_idx).try_into().unwrap());
+        chunk.write_short_at(
+            cond_break_idx,
+            (chunk.code.len() - cond_break_idx).try_into().unwrap(),
+        );
 
         self.is_in_loop = prev_in_loop;
         Ok(())
@@ -2789,7 +2799,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 ch.write_byte(opcode::LOOP);
                 ch.write_short((ch.code.len() - loop_begin_idx).try_into().unwrap());
-                ch.write_short_at(cond_break_idx, (ch.code.len() - cond_break_idx).try_into().unwrap());
+                ch.write_short_at(
+                    cond_break_idx,
+                    (ch.code.len() - cond_break_idx).try_into().unwrap(),
+                );
 
                 Ok(())
             })?;

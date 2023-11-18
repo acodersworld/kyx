@@ -51,7 +51,7 @@ impl Frame {
         if pc < (code.len() + 1) {
             self.pc += 2;
             let mut bytes: [u8; 2] = Default::default();
-            bytes.copy_from_slice(&code[pc..pc+2]);
+            bytes.copy_from_slice(&code[pc..pc + 2]);
             Some(u16::from_be_bytes(bytes))
         } else {
             None
@@ -851,7 +851,8 @@ impl<'printer> VM<'printer> {
         self.break_loop_flag = false;
         if do_loop {
             let code = unsafe { &frame.function.as_ref().chunk.code };
-            let offset = u16::from_be_bytes(code[frame.pc..frame.pc+2].try_into().unwrap()) as usize;
+            let offset =
+                u16::from_be_bytes(code[frame.pc..frame.pc + 2].try_into().unwrap()) as usize;
             frame.pc -= offset;
         } else {
             frame.pc += 2;
@@ -860,7 +861,7 @@ impl<'printer> VM<'printer> {
 
     fn break_loop(&mut self, frame: &mut Frame) {
         let code = unsafe { &frame.function.as_ref().chunk.code };
-        let offset = u16::from_be_bytes(code[frame.pc..frame.pc+2].try_into().unwrap()) as usize;
+        let offset = u16::from_be_bytes(code[frame.pc..frame.pc + 2].try_into().unwrap()) as usize;
 
         frame.pc += offset;
         self.break_loop_flag = true;
@@ -868,7 +869,7 @@ impl<'printer> VM<'printer> {
 
     fn jmp(&mut self, frame: &mut Frame) {
         let code = unsafe { &frame.function.as_ref().chunk.code };
-        let offset = u16::from_be_bytes(code[frame.pc..frame.pc+2].try_into().unwrap()) as usize;
+        let offset = u16::from_be_bytes(code[frame.pc..frame.pc + 2].try_into().unwrap()) as usize;
 
         frame.pc += offset;
     }
@@ -878,7 +879,7 @@ impl<'printer> VM<'printer> {
         let cond = self.value_stack.pop().unwrap();
 
         let code = unsafe { &frame.function.as_ref().chunk.code };
-        let offset = u16::from_be_bytes(code[frame.pc..frame.pc+2].try_into().unwrap()) as usize;
+        let offset = u16::from_be_bytes(code[frame.pc..frame.pc + 2].try_into().unwrap()) as usize;
 
         if !is_truthy(&cond) {
             frame.pc += offset as usize;
@@ -900,7 +901,7 @@ impl<'printer> VM<'printer> {
             x => panic!("Unexpected non-union! {:?}", x),
         };
 
-        let offset = u16::from_be_bytes(code[frame.pc..frame.pc+2].try_into().unwrap()) as usize;
+        let offset = u16::from_be_bytes(code[frame.pc..frame.pc + 2].try_into().unwrap()) as usize;
         if union_value.determinant == check_determinant {
             for m in &union_value.members {
                 self.value_stack.push(*m);
@@ -1136,7 +1137,7 @@ impl<'printer> VM<'printer> {
 
                     let delimiter = match self.value_stack.pop().unwrap() {
                         Value::Char(c) => c,
-                        _ => panic!("Expected char")
+                        _ => panic!("Expected char"),
                     };
 
                     let mut vector = vec![];
@@ -1156,9 +1157,9 @@ impl<'printer> VM<'printer> {
 
                     self.value_stack.push(Value::Vector(ptr));
                 }
-                builtin_functions::string::TRIM |
-                builtin_functions::string::TRIM_START |
-                builtin_functions::string::TRIM_END => {
+                builtin_functions::string::TRIM
+                | builtin_functions::string::TRIM_START
+                | builtin_functions::string::TRIM_END => {
                     let s = &unsafe { s.as_ref() }.val;
 
                     let mut data_section = VMDataSection {
@@ -1166,13 +1167,12 @@ impl<'printer> VM<'printer> {
                         constant_strs: &mut self.constant_strs,
                     };
 
-                    let idx = data_section.create_constant_str(
-                        match builtin_id {
-                            builtin_functions::string::TRIM => s.trim(),
-                            builtin_functions::string::TRIM_START => s.trim_start(),
-                            builtin_functions::string::TRIM_END => s.trim_end(),
-                            _ => unreachable!()
-                        });
+                    let idx = data_section.create_constant_str(match builtin_id {
+                        builtin_functions::string::TRIM => s.trim(),
+                        builtin_functions::string::TRIM_START => s.trim_start(),
+                        builtin_functions::string::TRIM_END => s.trim_end(),
+                        _ => unreachable!(),
+                    });
 
                     self.value_stack
                         .push(Value::Str(self.constant_strs[idx as usize]));

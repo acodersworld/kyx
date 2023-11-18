@@ -87,7 +87,7 @@ impl<'a> Disassembler<'a> {
 
     fn jmp_instruction(&mut self, name: &str, sign: i64) {
         let mut bytes: [u8; 2] = Default::default();
-        bytes.copy_from_slice(&self.code[self.offset..self.offset+2]);
+        bytes.copy_from_slice(&self.code[self.offset..self.offset + 2]);
         let jmp_offset = u16::from_be_bytes(bytes) as i64 * sign;
 
         println!(
@@ -102,7 +102,7 @@ impl<'a> Disassembler<'a> {
     fn jmp_if_determinant_mismatch(&mut self) {
         let member_idx = self.code[self.offset] as i64;
         let mut bytes: [u8; 2] = Default::default();
-        bytes.copy_from_slice(&self.code[self.offset+1..self.offset+3]);
+        bytes.copy_from_slice(&self.code[self.offset + 1..self.offset + 3]);
         let jmp_offset = u16::from_be_bytes(bytes) as i64;
         println!(
             "jmp if determinant mismatch ({}): {} -> {}",
