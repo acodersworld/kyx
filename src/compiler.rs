@@ -1295,9 +1295,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let stack_len = self.type_stack.len();
         assert!(stack_len >= argument_count);
         chunk.write_byte(opcode::PUSH_METHOD);
-        let method_idx_16: u16 = method_idx.try_into().unwrap();
-        chunk.write_byte((method_idx_16 & 0xFF) as u8);
-        chunk.write_byte(((method_idx_16 >> 8) & 0xFF) as u8);
+        chunk.write_short(method_idx.try_into().unwrap());
         chunk.write_byte(opcode::CALL);
         chunk.write_byte(argument_count.try_into().unwrap());
 
@@ -2202,9 +2200,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             chunk.write_byte(opcode::PUSH_METHOD);
 
             let idx = struct_type.get_method_call_idx(&m.0).unwrap();
-            let idx_16: u16 = idx.try_into().unwrap();
-            chunk.write_byte((idx_16 & 0xFF) as u8);
-            chunk.write_byte(((idx_16 >> 8) & 0xFF) as u8);
+            chunk.write_short(idx.try_into().unwrap());
         }
 
         chunk.write_byte(opcode::CREATE_TUPLE);
@@ -2541,8 +2537,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.consume(Token::LeftBrace)?;
             chunk.write_byte(opcode::JMP_IF_FALSE);
             self.type_stack.pop();
-            if_jmp_idx = chunk.write_byte(0);
-            chunk.write_byte(0);
+            if_jmp_idx = chunk.write_short(0);
         }
 
         let stack_top = self.type_stack.len();
@@ -2564,12 +2559,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             };
 
             chunk.write_byte(opcode::JMP);
-            let jmp_skip_else_idx = chunk.write_byte(0);
-            chunk.write_byte(0);
+            let jmp_skip_else_idx = chunk.write_short(0);
 
-            let if_jmp_distance: u16 = (chunk.code.len() - if_jmp_idx).try_into().unwrap();
-            chunk.code[if_jmp_idx    ] = if_jmp_distance as u8;
-            chunk.code[if_jmp_idx + 1] = (if_jmp_distance >> 8) as u8;
+            chunk.write_short_at(if_jmp_idx, (chunk.code.len() - if_jmp_idx).try_into().unwrap());
 
             self.consume(Token::LeftBrace)?;
             self.block_expression(chunk)?;
@@ -2597,9 +2589,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
             }
 
-            let jmp_skip_else_distance: u16 = (chunk.code.len() - jmp_skip_else_idx).try_into().unwrap();
-            chunk.code[jmp_skip_else_idx    ] = jmp_skip_else_distance as u8;
-            chunk.code[jmp_skip_else_idx + 1] = (jmp_skip_else_distance >> 8) as u8;
+            chunk.write_short_at(jmp_skip_else_idx, (chunk.code.len() - jmp_skip_else_idx).try_into().unwrap());
         } else {
             // If there is no else, this cannot always return a value.
             println!("{} / {}", self.type_stack.len(), stack_top);
@@ -2607,7 +2597,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             unsafe {
                 self.type_stack.set_len(stack_top);
             }
-            chunk.code[if_jmp_idx] = (chunk.code.len() - if_jmp_idx).try_into().unwrap();
+            chunk.write_short_at(if_jmp_idx, (chunk.code.len() - if_jmp_idx).try_into().unwrap());
         }
 
         Ok(())
@@ -2616,9 +2606,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn patch_break(&mut self, chunk: &mut Chunk, start_idx: usize, jmp_idx: usize) {
         self.unpatched_break_offsets.retain(|&idx| {
             if idx > start_idx {
-                let distance_16: u16 = (jmp_idx - idx).try_into().unwrap();
-                chunk.code[idx    ] = distance_16 as u8;
-                chunk.code[idx + 1] = (distance_16 >> 8) as u8;
+                chunk.write_short_at(idx, (jmp_idx - idx).try_into().unwrap());
                 false
             } else {
                 true
@@ -2635,8 +2623,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::LeftBrace)?;
         chunk.write_byte(opcode::JMP_IF_FALSE);
         self.type_stack.pop();
-        let cond_break_idx = chunk.write_byte(0);
-        chunk.write_byte(0);
+        let cond_break_idx = chunk.write_short(0);
 
         self.scoped_block(chunk, |cm, ch| {
             while !cm.scanner.match_token(Token::RightBrace)? {
@@ -2648,12 +2635,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })?;
 
         chunk.write_byte(opcode::LOOP);
-        let jmp_distance: u16 = (chunk.code.len() - loop_begin_idx + 1).try_into().unwrap();
-        chunk.write_byte((jmp_distance >> 8) as u8);
-        chunk.write_byte((jmp_distance & 0xFF) as u8);
-        let cond_break_distance: u16 = (chunk.code.len() - cond_break_idx).try_into().unwrap();
-        chunk.code[cond_break_idx    ] = (cond_break_distance & 0xFF) as u8;
-        chunk.code[cond_break_idx + 1] = ((cond_break_distance >> 8) & 0xFF) as u8;
+        chunk.write_short((chunk.code.len() - loop_begin_idx + 1).try_into().unwrap());
+        chunk.write_short_at(cond_break_idx, (chunk.code.len() - cond_break_idx).try_into().unwrap());
 
         self.is_in_loop = prev_in_loop;
         Ok(())
@@ -2792,8 +2775,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
 
                 ch.write_byte(opcode::JMP_IF_FALSE);
-                let cond_break_idx = ch.write_byte(0);
-                ch.write_byte(0);
+                let cond_break_idx = ch.write_short(0);
 
                 cm.for_block(ch)?;
 
@@ -2806,12 +2788,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ch.write_byte(var_idx);
 
                 ch.write_byte(opcode::LOOP);
-                let jmp_distance: u16 = (ch.code.len() - loop_begin_idx).try_into().unwrap();
-                ch.write_byte((jmp_distance >> 8) as u8);
-                ch.write_byte((jmp_distance & 0xFF) as u8);
-                let cond_break_distance: u16 = (ch.code.len() - cond_break_idx).try_into().unwrap();
-                ch.code[cond_break_idx    ] = cond_break_distance as u8;
-                ch.code[cond_break_idx + 1] = (cond_break_distance >> 8) as u8;
+                ch.write_short((ch.code.len() - loop_begin_idx).try_into().unwrap());
+                ch.write_short_at(cond_break_idx, (ch.code.len() - cond_break_idx).try_into().unwrap());
 
                 Ok(())
             })?;
@@ -2830,8 +2808,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::SemiColon)?;
 
         chunk.write_byte(opcode::BREAK);
-        let idx = chunk.write_byte(0);
-        chunk.write_byte(0);
+        let idx = chunk.write_short(0);
         self.unpatched_break_offsets.push(idx);
 
         Ok(())
@@ -2845,8 +2822,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.consume(Token::SemiColon)?;
 
         chunk.write_byte(opcode::JMP);
-        let idx = chunk.write_byte(0);
-        chunk.write_byte(0);
+        let idx = chunk.write_short(0);
         self.unpatched_break_offsets.push(idx);
 
         Ok(())
