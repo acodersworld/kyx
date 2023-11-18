@@ -103,8 +103,8 @@ struct FunctionType {
 #[derive(Debug, PartialEq)]
 enum EnumValue {
     Str(String),
-    Integer(i32),
-    Float(f32),
+    Integer(i64),
+    Float(f64),
 }
 
 #[derive(Debug, PartialEq)]
@@ -1249,7 +1249,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         ))
     }
 
-    pub fn match_integer(&mut self) -> Result<(i32, TokenLocation), String> {
+    pub fn match_integer(&mut self) -> Result<(i64, TokenLocation), String> {
         let t = self.scanner.peek_token()?;
         if let Token::Integer(i) = t.token {
             self.scanner.scan_token()?; // eat identifier name
@@ -2256,7 +2256,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             );
 
             chunk.write_byte(opcode::DEFINE_GLOBAL);
-            let v = self.data_section.create_constant_str(&identifier_name) as i32;
+            let v = self
+                .data_section
+                .create_constant_str(&identifier_name)
+                .try_into()
+                .unwrap();
             self.write_var_len_int(chunk, v);
         } else {
             let frame = self.stack_frames.last_mut().unwrap();
@@ -2364,7 +2368,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             match symbol {
                 Identifier::Global => {
                     chunk.write_byte(opcode::SET_GLOBAL);
-                    let v = self.data_section.create_constant_str(name) as i32;
+                    let v = self
+                        .data_section
+                        .create_constant_str(name)
+                        .try_into()
+                        .unwrap();
                     self.write_var_len_int(chunk, v);
                 }
                 Identifier::Local(idx) => {
@@ -2381,7 +2389,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             match symbol {
                 Identifier::Global => {
                     chunk.write_byte(opcode::PUSH_GLOBAL);
-                    let v = self.data_section.create_constant_str(name) as i32;
+                    let v = self
+                        .data_section
+                        .create_constant_str(name)
+                        .try_into()
+                        .unwrap();
                     self.write_var_len_int(chunk, v);
                 }
                 Identifier::Local(idx) => {
@@ -3254,7 +3266,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
 
         chunk.write_byte(func_opcode_1);
-        self.write_var_len_int(chunk, func_opcode_2 as i32);
+        self.write_var_len_int(chunk, func_opcode_2.try_into().unwrap());
 
         chunk.write_byte(opcode::CALL);
         chunk.write_byte(argument_count.try_into().unwrap());
@@ -3299,7 +3311,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn write_var_len_int(&mut self, chunk: &mut Chunk, i: i32) {
+    fn write_var_len_int(&mut self, chunk: &mut Chunk, i: i64) {
         let mut encoder = var_len_int::Encoder::new(i);
         loop {
             let (byte, complete) = encoder.step_encode();
@@ -3311,7 +3323,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
     }
 
-    fn integer(&mut self, chunk: &mut Chunk, i: i32) {
+    fn integer(&mut self, chunk: &mut Chunk, i: i64) {
         chunk.write_byte(opcode::CONSTANT_INTEGER);
         self.write_var_len_int(chunk, i);
         self.type_stack.push(Variable {
@@ -3320,7 +3332,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         });
     }
 
-    fn float(&mut self, chunk: &mut Chunk, f: f32) {
+    fn float(&mut self, chunk: &mut Chunk, f: f64) {
         chunk.write_byte(opcode::CONSTANT_FLOAT);
         for byte in float::encode(f) {
             chunk.write_byte(byte);
@@ -3333,7 +3345,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn string(&mut self, chunk: &mut Chunk, s: &str) {
         chunk.write_byte(opcode::CONSTANT_STRING);
-        let v = self.data_section.create_constant_str(s) as i32;
+        let v = self.data_section.create_constant_str(s).try_into().unwrap();
         self.write_var_len_int(chunk, v);
         self.type_stack.push(Variable {
             value_type: ValueType::Str,

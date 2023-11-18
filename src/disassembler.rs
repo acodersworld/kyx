@@ -138,8 +138,12 @@ impl<'a> Disassembler<'a> {
     }
 
     fn constant_float_instruction(&mut self) {
-        let value = float::decode(&self.code[self.offset..self.offset + 4].try_into().unwrap());
-        self.offset += 4;
+        let value = float::decode(
+            &self.code[self.offset..self.offset + std::mem::size_of::<f64>()]
+                .try_into()
+                .unwrap(),
+        );
+        self.offset += std::mem::size_of::<f64>();
 
         println!("CONSTANT FLOAT: {}", value);
     }

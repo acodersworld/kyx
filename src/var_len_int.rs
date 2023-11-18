@@ -1,13 +1,14 @@
 pub struct Encoder {
-    val: i32,
-    shift: u32,
+    val: i64,
+    shift: u64,
 }
 
 impl Encoder {
-    pub fn new(val: i32) -> Encoder {
+    pub fn new(val: i64) -> Encoder {
         let mut shift = 0;
         if val != 0 {
-            shift = 4 * 7;
+            const NUM_BITS: u64 = (std::mem::size_of::<i64>() * 8) as u64;
+            shift = ((NUM_BITS / 7) * 7) as u64;
             while (val & (0x7f << shift)) == 0 {
                 shift -= 7;
             }
@@ -32,7 +33,7 @@ impl Encoder {
 }
 
 pub struct Decoder {
-    val: i32,
+    val: i64,
 }
 
 impl Decoder {
@@ -44,12 +45,12 @@ impl Decoder {
         let is_last = (byte & 0x80) == 0;
 
         self.val <<= 7;
-        self.val |= (byte & 0x7f) as i32;
+        self.val |= (byte & 0x7f) as i64;
 
         is_last
     }
 
-    pub fn val(&self) -> i32 {
+    pub fn val(&self) -> i64 {
         self.val
     }
 }
@@ -58,7 +59,7 @@ impl Decoder {
 mod test {
     use super::*;
 
-    fn encode(val: i32) -> std::vec::Vec<u8> {
+    fn encode(val: i64) -> std::vec::Vec<u8> {
         let mut bytes = std::vec::Vec::new();
         let mut encoder = Encoder::new(val);
         loop {
@@ -72,7 +73,7 @@ mod test {
         bytes
     }
 
-    fn decode(bytes: std::vec::Vec<u8>) -> i32 {
+    fn decode(bytes: std::vec::Vec<u8>) -> i64 {
         let mut found_last = false;
         let mut decoder = Decoder::new();
         for byte in bytes {
@@ -146,5 +147,15 @@ mod test {
     #[test]
     fn test_n7fffffff() {
         assert_eq!(-0x7fffffff, decode(encode(-0x7fffffff)));
+    }
+
+    #[test]
+    fn test_max() {
+        assert_eq!(i64::max_value(), decode(encode(i64::max_value())));
+    }
+
+    #[test]
+    fn test_min() {
+        assert_eq!(i64::min_value(), decode(encode(i64::min_value())));
     }
 }

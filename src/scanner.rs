@@ -31,8 +31,8 @@ pub enum Token<'a> {
     Tuple,
 
     Identifier(&'a str),
-    Integer(i32),
-    Float(f32),
+    Integer(i64),
+    Float(f64),
     Str(&'a str),
     Char(char),
 
@@ -368,14 +368,14 @@ impl<'a> Scanner<'a> {
 
             let number_str = &self.src_head[..self.current_idx];
             return Ok(TokenWithLocation {
-                token: Token::Float(str::parse::<f32>(number_str).unwrap()),
+                token: Token::Float(str::parse::<f64>(number_str).unwrap()),
                 location: self.get_location(),
             });
         }
 
         let number_str = &self.src_head[..self.current_idx];
         return Ok(TokenWithLocation {
-            token: Token::Integer(str::parse::<i32>(number_str).unwrap()),
+            token: Token::Integer(str::parse::<i64>(number_str).unwrap()),
             location: self.get_location(),
         });
     }

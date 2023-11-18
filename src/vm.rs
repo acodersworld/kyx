@@ -97,14 +97,14 @@ impl RustFunctionCtx for RustFunctionCtxImpl<'_> {
         }
     }
 
-    fn get_parameter_float(&self, idx: usize) -> Option<f32> {
+    fn get_parameter_float(&self, idx: usize) -> Option<f64> {
         match self.parameters.get(idx) {
             Some(RustValue::Float(f)) => Some(*f),
             _ => None,
         }
     }
 
-    fn get_parameter_integer(&self, idx: usize) -> Option<i32> {
+    fn get_parameter_integer(&self, idx: usize) -> Option<i64> {
         match self.parameters.get(idx) {
             Some(RustValue::Integer(i)) => Some(*i),
             _ => None,
@@ -492,8 +492,12 @@ impl<'printer> VM<'printer> {
     fn push_float(&mut self, frame: &mut Frame) {
         let code = unsafe { &frame.function.as_ref().chunk.code };
 
-        let value = float::decode(&code[frame.pc..frame.pc + 4].try_into().unwrap());
-        frame.pc += 4;
+        let value = float::decode(
+            &code[frame.pc..frame.pc + std::mem::size_of::<f64>()]
+                .try_into()
+                .unwrap(),
+        );
+        frame.pc += std::mem::size_of::<f64>();
 
         self.value_stack.push(Value::Float(OrderedFloat(value)));
     }
@@ -920,10 +924,10 @@ impl<'printer> VM<'printer> {
         std::io::stdin().read_line(&mut line).unwrap();
 
         if read_type == 0 {
-            let val = line.trim().parse::<i32>().unwrap_or(0);
+            let val = line.trim().parse::<i64>().unwrap_or(0);
             self.value_stack.push(Value::Integer(val));
         } else if read_type == 1 {
-            let val = line.trim().parse::<f32>().unwrap_or(0.0);
+            let val = line.trim().parse::<f64>().unwrap_or(0.0);
             self.value_stack.push(Value::Float(OrderedFloat(val)));
         } else {
             let mut data_section = VMDataSection {
@@ -1055,18 +1059,18 @@ impl<'printer> VM<'printer> {
             Value::Vector(v) => match builtin_id {
                 builtin_functions::vector::LEN => {
                     self.value_stack
-                        .push(Value::Integer(unsafe { v.as_ref() }.len() as i32));
+                        .push(Value::Integer(unsafe { v.as_ref() }.len() as i64));
                 }
                 _ => panic!("Unexpected vector builtin id {}", builtin_id),
             },
             Value::Str(s) => match builtin_id {
                 builtin_functions::string::LEN => {
                     self.value_stack
-                        .push(Value::Integer(unsafe { s.as_ref() }.val.len() as i32));
+                        .push(Value::Integer(unsafe { s.as_ref() }.val.len() as i64));
                 }
                 builtin_functions::string::TO_INTEGER => {
                     self.value_stack.push(Value::Integer(
-                        unsafe { s.as_ref() }.val.parse::<i32>().unwrap_or(0),
+                        unsafe { s.as_ref() }.val.parse::<i64>().unwrap_or(0),
                     ));
                 }
                 builtin_functions::string::SUBSTR
@@ -1378,7 +1382,7 @@ mod test {
             let mut vm = VM::new(&mut printer);
             assert_eq!(vm.interpret("print 1.5+-2.6;"), Ok(()));
             assert_eq!(printer.strings.len(), 1);
-            assert_eq!(printer.strings[0], "-1.0999999");
+            assert_eq!(printer.strings[0], "-1.1");
         }
 
         {
@@ -1386,7 +1390,7 @@ mod test {
             let mut vm = VM::new(&mut printer);
             assert_eq!(vm.interpret("print 1.5-2.6;"), Ok(()));
             assert_eq!(printer.strings.len(), 1);
-            assert_eq!(printer.strings[0], "-1.0999999");
+            assert_eq!(printer.strings[0], "-1.1");
         }
 
         {

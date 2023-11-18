@@ -59,8 +59,8 @@ pub struct UnionValue {
 
 #[derive(Debug)]
 pub enum GcValue {
-    //    Float(f32),
-    //    Integer(i32),
+    //    Float(f64),
+    //    Integer(i64),
     Str(Box<StringValue>),
     Vector(Box<VectorValue>),
     HashMap(Box<HashMapValue>),
@@ -72,8 +72,8 @@ pub enum GcValue {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Value {
-    Float(OrderedFloat<f32>),
-    Integer(i32),
+    Float(OrderedFloat<f64>),
+    Integer(i64),
     Str(NonNull<StringValue>),
     Bool(bool),
     Char(char),

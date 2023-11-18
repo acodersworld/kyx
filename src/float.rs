@@ -1,15 +1,15 @@
 #[repr(C)]
 union Float {
-    f: f32,
-    a: [u8; 4],
+    f: f64,
+    a: [u8; 8],
 }
 
-pub fn encode(value: f32) -> [u8; 4] {
+pub fn encode(value: f64) -> [u8; 8] {
     let flt = Float { f: value };
     unsafe { flt.a }
 }
 
-pub fn decode(bytes: &[u8; 4]) -> f32 {
+pub fn decode(bytes: &[u8; 8]) -> f64 {
     let flt = Float { a: *bytes };
     unsafe { flt.f }
 }
