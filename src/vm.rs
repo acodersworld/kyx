@@ -343,6 +343,7 @@ impl<'printer> VM<'printer> {
                 opcode::PUSH_METHOD => self.push_method(&mut frame_stack.top),
                 opcode::DEFINE_GLOBAL => self.define_global(&mut frame_stack.top),
                 opcode::DEFINE_LOCAL => self.define_local(&mut frame_stack.top),
+                opcode::NOT => self.not(),
                 opcode::ADD => self.add(),
                 opcode::SUB => self.sub(),
                 opcode::MUL => self.mul(),
@@ -440,6 +441,15 @@ impl<'printer> VM<'printer> {
         self.run(chunk);
 
         Ok(())
+    }
+
+    fn not(&mut self) {
+        let v = match self.value_stack.last_mut().unwrap() {
+            Value::Bool(b) => b,
+            _ => panic!("Expected boolean value for '!'")
+        };
+
+        *v = !(*v);
     }
 
     fn add(&mut self) {
@@ -1254,6 +1264,25 @@ mod test {
             assert_eq!(printer.strings.len(), 1);
             assert_eq!(printer.strings[0], "-3.142");
         }
+    }
+
+    #[test]
+    fn test_not() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+        let src = "
+            let init: bool = false;
+            let not: bool = !init;
+            print(not);
+
+            let not2: bool = !not;
+            print(not2);
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings[0], "true");
+        assert_eq!(printer.strings[1], "false");
     }
 
     #[test]

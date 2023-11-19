@@ -3003,7 +3003,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn factor(&mut self, chunk: &mut Chunk) -> Result<(), String> {
-        self.index(chunk)?;
+        self.unary(chunk)?;
 
         loop {
             if self.scanner.match_token(Token::Star)? {
@@ -3015,6 +3015,23 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         }
 
+        Ok(())
+    }
+
+    fn unary(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        let do_not = self.scanner.match_token(Token::Bang)?;
+        let loc = self.scanner.peek_token()?.location;
+
+        self.index(chunk)?;
+
+        if do_not {
+            match self.type_stack.last().unwrap().value_type {
+                ValueType::Bool => {},
+                _ => return Err(self.make_error_msg("Must be a boolean value", &loc))
+            }
+
+            chunk.write_byte(opcode::NOT);
+        }
         Ok(())
     }
 
@@ -3580,6 +3597,22 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!(compiler.compile(&mut table, "print -\"hello\";").is_err());
+    }
+
+    #[test]
+    fn test_not() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        let src = "
+        let cond: bool = false;
+        let not: bool = !cond;
+        ";
+
+        assert!({
+            compiler.compile(&mut table, src).unwrap();
+            true
+        });
     }
 
     #[test]

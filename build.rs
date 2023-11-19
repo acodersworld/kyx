@@ -19,6 +19,8 @@ const OPCODES: &[&str] = &[
     "GET_FIELD",
     "SET_FIELD",
     //
+    "NOT",
+    //
     "ADD",
     "SUB",
     "MUL",

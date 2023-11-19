@@ -50,6 +50,7 @@ impl<'a> Disassembler<'a> {
             opcode::PUSH_METHOD => self.push_method(),
             opcode::DEFINE_GLOBAL => self.define_global(),
             opcode::DEFINE_LOCAL => self.define_local(),
+            opcode::NOT => self.simple_instruction("not"),
             opcode::ADD => self.simple_instruction("add"),
             opcode::SUB => self.simple_instruction("sub"),
             opcode::MUL => self.simple_instruction("mul"),
