@@ -1357,265 +1357,259 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn try_field(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
-        let mut is_field = false;
-        while self.scanner.match_token(Token::Dot)? {
-            is_field = true;
-
-            let variable = self.type_stack.last().unwrap().clone();
-            let (member_idx, member_name, member_type) = match &variable.value_type {
-                ValueType::Struct(s) => {
-                    let (member_name, member_name_location) = self.match_identifier()?;
-                    if self.scanner.match_token(Token::LeftParen)? {
-                        self.struct_method(s, &member_name, &member_name_location, chunk)?;
-                        continue;
-                    }
-
-                    let member_idx = match s.get_member_idx(&member_name) {
-                        Some(i) => i,
-                        None => {
-                            return Err(self.make_error_msg(
-                                &format!("Struct does not have member named '{}'", member_name),
-                                &member_name_location,
-                            ))
-                        }
-                    };
-
-                    (member_idx, member_name, s.members[member_idx].1.clone())
+    fn field(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        let variable = self.type_stack.last().unwrap().clone();
+        let (member_idx, member_name, member_type) = match &variable.value_type {
+            ValueType::Struct(s) => {
+                let (member_name, member_name_location) = self.match_identifier()?;
+                if self.scanner.match_token(Token::LeftParen)? {
+                    self.struct_method(s, &member_name, &member_name_location, chunk)?;
+                    return Ok(());
                 }
-                ValueType::Tuple(t) => {
-                    let (member_idx, member_idx_location) = self.match_integer()?;
 
-                    if member_idx < 0 {
+                let member_idx = match s.get_member_idx(&member_name) {
+                    Some(i) => i,
+                    None => {
                         return Err(self.make_error_msg(
-                            &format!("Negative tuple fields are not allowed, fot {}", member_idx),
-                            &member_idx_location,
-                        ));
+                            &format!("Struct does not have member named '{}'", member_name),
+                            &member_name_location,
+                        ))
                     }
+                };
 
-                    let member_idx = member_idx as usize;
-                    let elem_count = t.element_types.len();
-
-                    if member_idx >= elem_count {
-                        return Err(format!(
-                            "Tuple index is too high. Must be less than {}, got {}",
-                            elem_count, member_idx
-                        ));
-                    }
-
-                    (
-                        member_idx,
-                        member_idx.to_string(),
-                        t.element_types[member_idx].clone(),
-                    )
-                }
-                ValueType::Interface(i) => {
-                    let (member_name, member_name_location) = self.match_identifier()?;
-
-                    self.consume(Token::LeftParen)?;
-                    self.interface_method(i, &member_name, &member_name_location, chunk)?;
-                    continue;
-                }
-                ValueType::Vector(_) => {
-                    let (member_name, member_name_location) = self.match_identifier()?;
-                    match member_name.as_str() {
-                        "len" => {
-                            self.consume(Token::LeftParen)?;
-                            self.consume(Token::RightParen)?;
-
-                            self.type_stack.pop();
-                            chunk.write_byte(opcode::CALL_BUILTIN);
-                            chunk.write_byte(builtin_functions::vector::LEN);
-                            chunk.write_byte(0);
-
-                            self.type_stack.push(Variable {
-                                value_type: ValueType::Integer,
-                                read_only: true,
-                            });
-                        }
-                        _ => {
-                            return Err(self.make_error_msg(
-                                &format!("Vector does not have method '{}'", member_name),
-                                &member_name_location,
-                            ));
-                        }
-                    };
-
-                    return Ok(false);
-                }
-                ValueType::Str => {
-                    let (member_name, member_name_location) = self.match_identifier()?;
-                    match member_name.as_str() {
-                        "len" => {
-                            self.consume(Token::LeftParen)?;
-                            self.consume(Token::RightParen)?;
-
-                            self.type_stack.pop();
-                            chunk.write_byte(opcode::CALL_BUILTIN);
-                            chunk.write_byte(builtin_functions::string::LEN);
-                            chunk.write_byte(0);
-
-                            self.type_stack.push(Variable {
-                                value_type: ValueType::Integer,
-                                read_only: true,
-                            });
-                        }
-                        "to_integer" => {
-                            self.consume(Token::LeftParen)?;
-                            self.consume(Token::RightParen)?;
-
-                            self.type_stack.pop();
-                            chunk.write_byte(opcode::CALL_BUILTIN);
-                            chunk.write_byte(builtin_functions::string::TO_INTEGER);
-                            chunk.write_byte(0);
-
-                            self.type_stack.push(Variable {
-                                value_type: ValueType::Integer,
-                                read_only: true,
-                            });
-                        }
-                        "split" => {
-                            self.consume(Token::LeftParen)?;
-                            let char_loc = self.scanner.peek_token()?.location;
-                            self.expression(chunk)?;
-                            self.consume(Token::RightParen)?;
-
-                            let delimiter_type = self.type_stack.pop().unwrap();
-
-                            if delimiter_type.value_type != ValueType::Char {
-                                return Err(self.make_error_msg(
-                                    &format!(
-                                        "String delimiter is type char, but got {}",
-                                        delimiter_type.value_type
-                                    ),
-                                    &char_loc,
-                                ));
-                            }
-
-                            self.type_stack.pop(); // pop string
-                            chunk.write_byte(opcode::CALL_BUILTIN);
-                            chunk.write_byte(builtin_functions::string::SPLIT);
-                            chunk.write_byte(1);
-
-                            self.type_stack.push(Variable {
-                                value_type: ValueType::Vector(Rc::new(ValueType::Str)),
-                                read_only: false,
-                            });
-                        }
-                        "trim" | "trim_start" | "trim_end" => {
-                            self.consume(Token::LeftParen)?;
-                            self.consume(Token::RightParen)?;
-
-                            self.type_stack.pop();
-                            chunk.write_byte(opcode::CALL_BUILTIN);
-                            chunk.write_byte(match member_name.as_str() {
-                                "trim" => builtin_functions::string::TRIM,
-                                "trim_start" => builtin_functions::string::TRIM_START,
-                                "trim_end" => builtin_functions::string::TRIM_END,
-                                _ => unreachable!(),
-                            });
-                            chunk.write_byte(0);
-
-                            self.type_stack.push(Variable {
-                                value_type: ValueType::Str,
-                                read_only: false,
-                            });
-                        }
-                        _ => {
-                            return Err(self.make_error_msg(
-                                &format!("String does not have method '{}'", member_name),
-                                &member_name_location,
-                            ));
-                        }
-                    };
-
-                    return Ok(false);
-                }
-                ValueType::HashMap(h) => {
-                    let (member_name, member_name_location) = self.match_identifier()?;
-                    match member_name.as_str() {
-                        "contains_key" => {
-                            self.consume(Token::LeftParen)?;
-                            self.expression(chunk)?;
-                            self.consume(Token::RightParen)?;
-
-                            let index_type = self.type_stack.pop().unwrap();
-                            self.type_stack.pop();
-
-                            if index_type.value_type != h.0 {
-                                return Err(self.make_error_msg(
-                                    &format!(
-                                        "HashMap index is type {}, but got {}",
-                                        index_type.value_type, h.0
-                                    ),
-                                    &member_name_location,
-                                ));
-                            }
-
-                            chunk.write_byte(opcode::CALL_BUILTIN);
-                            chunk.write_byte(builtin_functions::hashmap::CONTAINS_KEY);
-                            chunk.write_byte(1);
-
-                            self.type_stack.push(Variable {
-                                value_type: ValueType::Bool,
-                                read_only: true,
-                            });
-                        }
-                        "keys" => {
-                            self.consume(Token::LeftParen)?;
-                            self.consume(Token::RightParen)?;
-
-                            self.type_stack.pop();
-                            chunk.write_byte(opcode::CALL_BUILTIN);
-                            chunk.write_byte(builtin_functions::hashmap::KEYS);
-                            chunk.write_byte(0);
-
-                            self.type_stack.push(Variable {
-                                value_type: ValueType::Vector(Rc::new(h.0.clone())),
-                                read_only: true,
-                            });
-                        }
-                        _ => {
-                            return Err(self.make_error_msg(
-                                &format!("HashMap does not have method '{}'", member_name),
-                                &member_name_location,
-                            ));
-                        }
-                    };
-
-                    return Ok(false);
-                }
-                x => return Err(format!("Only structs have members, got {}", x)),
-            };
-
-            if self.scanner.match_token(Token::Equal)? {
-                if variable.read_only {
-                    return Err(format!("Cannot set read only field {}", member_name));
-                }
-
-                self.expression(chunk)?;
-
-                let expr_type = &self.type_stack.last().unwrap().value_type;
-                if !member_type.can_assign(&expr_type) {
-                    return Err(format!("Expected type {}, got {}", member_type, expr_type));
-                }
-
-                chunk.write_byte(opcode::SET_FIELD);
-                chunk.write_byte(member_idx.try_into().unwrap());
-                self.type_stack.drain(self.type_stack.len() - 2..);
-                break;
-            } else {
-                self.type_stack.pop();
-                chunk.write_byte(opcode::GET_FIELD);
-                chunk.write_byte(member_idx.try_into().unwrap());
-                self.type_stack.push(Variable {
-                    value_type: member_type,
-                    read_only: variable.read_only,
-                });
+                (member_idx, member_name, s.members[member_idx].1.clone())
             }
+            ValueType::Tuple(t) => {
+                let (member_idx, member_idx_location) = self.match_integer()?;
+
+                if member_idx < 0 {
+                    return Err(self.make_error_msg(
+                        &format!("Negative tuple fields are not allowed, fot {}", member_idx),
+                        &member_idx_location,
+                    ));
+                }
+
+                let member_idx = member_idx as usize;
+                let elem_count = t.element_types.len();
+
+                if member_idx >= elem_count {
+                    return Err(format!(
+                        "Tuple index is too high. Must be less than {}, got {}",
+                        elem_count, member_idx
+                    ));
+                }
+
+                (
+                    member_idx,
+                    member_idx.to_string(),
+                    t.element_types[member_idx].clone(),
+                )
+            }
+            ValueType::Interface(i) => {
+                let (member_name, member_name_location) = self.match_identifier()?;
+
+                self.consume(Token::LeftParen)?;
+                self.interface_method(i, &member_name, &member_name_location, chunk)?;
+                return Ok(());
+            }
+            ValueType::Vector(_) => {
+                let (member_name, member_name_location) = self.match_identifier()?;
+                match member_name.as_str() {
+                    "len" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::vector::LEN);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Integer,
+                            read_only: true,
+                        });
+                    }
+                    _ => {
+                        return Err(self.make_error_msg(
+                            &format!("Vector does not have method '{}'", member_name),
+                            &member_name_location,
+                        ));
+                    }
+                };
+
+                return Ok(());
+            }
+            ValueType::Str => {
+                let (member_name, member_name_location) = self.match_identifier()?;
+                match member_name.as_str() {
+                    "len" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::string::LEN);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Integer,
+                            read_only: true,
+                        });
+                    }
+                    "to_integer" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::string::TO_INTEGER);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Integer,
+                            read_only: true,
+                        });
+                    }
+                    "split" => {
+                        self.consume(Token::LeftParen)?;
+                        let char_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let delimiter_type = self.type_stack.pop().unwrap();
+
+                        if delimiter_type.value_type != ValueType::Char {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "String delimiter is type char, but got {}",
+                                    delimiter_type.value_type
+                                ),
+                                &char_loc,
+                            ));
+                        }
+
+                        self.type_stack.pop(); // pop string
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::string::SPLIT);
+                        chunk.write_byte(1);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Vector(Rc::new(ValueType::Str)),
+                            read_only: false,
+                        });
+                    }
+                    "trim" | "trim_start" | "trim_end" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(match member_name.as_str() {
+                            "trim" => builtin_functions::string::TRIM,
+                            "trim_start" => builtin_functions::string::TRIM_START,
+                            "trim_end" => builtin_functions::string::TRIM_END,
+                            _ => unreachable!(),
+                        });
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Str,
+                            read_only: false,
+                        });
+                    }
+                    _ => {
+                        return Err(self.make_error_msg(
+                            &format!("String does not have method '{}'", member_name),
+                            &member_name_location,
+                        ));
+                    }
+                };
+
+                return Ok(());
+            }
+            ValueType::HashMap(h) => {
+                let (member_name, member_name_location) = self.match_identifier()?;
+                match member_name.as_str() {
+                    "contains_key" => {
+                        self.consume(Token::LeftParen)?;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let index_type = self.type_stack.pop().unwrap();
+                        self.type_stack.pop();
+
+                        if index_type.value_type != h.0 {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "HashMap index is type {}, but got {}",
+                                    index_type.value_type, h.0
+                                ),
+                                &member_name_location,
+                            ));
+                        }
+
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::hashmap::CONTAINS_KEY);
+                        chunk.write_byte(1);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Bool,
+                            read_only: true,
+                        });
+                    }
+                    "keys" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::hashmap::KEYS);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Vector(Rc::new(h.0.clone())),
+                            read_only: true,
+                        });
+                    }
+                    _ => {
+                        return Err(self.make_error_msg(
+                            &format!("HashMap does not have method '{}'", member_name),
+                            &member_name_location,
+                        ));
+                    }
+                };
+
+                return Ok(());
+            }
+            x => return Err(format!("Only structs have members, got {}", x)),
+        };
+
+        if self.scanner.match_token(Token::Equal)? {
+            if variable.read_only {
+                return Err(format!("Cannot set read only field {}", member_name));
+            }
+
+            self.expression(chunk)?;
+
+            let expr_type = &self.type_stack.last().unwrap().value_type;
+            if !member_type.can_assign(&expr_type) {
+                return Err(format!("Expected type {}, got {}", member_type, expr_type));
+            }
+
+            chunk.write_byte(opcode::SET_FIELD);
+            chunk.write_byte(member_idx.try_into().unwrap());
+            self.type_stack.drain(self.type_stack.len() - 2..);
+        } else {
+            self.type_stack.pop();
+            chunk.write_byte(opcode::GET_FIELD);
+            chunk.write_byte(member_idx.try_into().unwrap());
+            self.type_stack.push(Variable {
+                value_type: member_type,
+                read_only: variable.read_only,
+            });
         }
 
-        Ok(is_field)
+        Ok(())
     }
 
     fn expression(&mut self, chunk: &mut Chunk) -> Result<bool, String> {
@@ -1640,10 +1634,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.union_constructor(union_type, chunk)?;
         } else {
             self.equality(chunk)?;
-        }
-
-        if self.try_field(chunk)? {
-            return Ok(false);
         }
 
         Ok(is_block)
@@ -2215,10 +2205,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let var_type = self.parse_type()?;
 
         self.consume(Token::Equal)?;
+
+        let rvalue_loc = self.scanner.peek_token()?.location;
         self.expression(chunk)?;
 
         if self.type_stack.is_empty() {
-            return Err("Expected value on right hand side of '=', got None".to_owned());
+            return Err(self.make_error_msg("Expected value on right hand side of '=', got None", &rvalue_loc));
         }
 
         let expr_type = self.type_stack.pop().unwrap().value_type;
@@ -2236,7 +2228,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             };
 
             if !interface_satisfied {
-                return Err(format!("Expected type {}, got {}", var_type, expr_type));
+                return Err(self.make_error_msg(&format!("Expected type {}, got {}", var_type, expr_type), &rvalue_loc));
             }
         }
 
@@ -2609,7 +2601,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             );
         } else {
             // If there is no else, this cannot always return a value.
-            println!("{} / {}", self.type_stack.len(), stack_top);
             assert!(self.type_stack.len() >= stack_top);
             unsafe {
                 self.type_stack.set_len(stack_top);
@@ -2982,7 +2973,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn factor_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
-        self.index(chunk)?;
+        self.unary(chunk)?;
 
         let len = self.type_stack.len();
         let left_type = &self.type_stack[len - 2].value_type;
@@ -3025,9 +3016,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.index(chunk)?;
 
         if do_not {
-            match self.type_stack.last().unwrap().value_type {
+            match &self.type_stack.last().unwrap().value_type {
                 ValueType::Bool => {},
-                _ => return Err(self.make_error_msg("Must be a boolean value", &loc))
+                x => return Err(self.make_error_msg(&format!("Must be a boolean value, got {}", x), &loc))
             }
 
             chunk.write_byte(opcode::NOT);
@@ -3190,15 +3181,25 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn index(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         self.primary(chunk)?;
 
-        while self.scanner.match_token(Token::LeftBracket)? {
-            let indexable = self.type_stack.pop().unwrap();
-            match &indexable.value_type {
-                ValueType::Vector(e) => self.index_vec(chunk, indexable.read_only, e)?,
-                ValueType::HashMap(kv) => {
-                    self.index_hash_map(chunk, indexable.read_only, &kv.0, &kv.1)?
+        loop {
+            match self.scanner.peek_token()?.token {
+                Token::LeftBracket => {
+                    self.scanner.scan_token()?;
+                    let indexable = self.type_stack.pop().unwrap();
+                    match &indexable.value_type {
+                        ValueType::Vector(e) => self.index_vec(chunk, indexable.read_only, e)?,
+                        ValueType::HashMap(kv) => {
+                            self.index_hash_map(chunk, indexable.read_only, &kv.0, &kv.1)?
+                        }
+                        ValueType::Str => self.index_str(chunk, indexable.read_only)?,
+                        t => return Err(format!("Cannot index type {}", t)),
+                    }
+                },
+                Token::Dot => {
+                    self.scanner.scan_token()?;
+                    self.field(chunk)?;
                 }
-                ValueType::Str => self.index_str(chunk, indexable.read_only)?,
-                t => return Err(format!("Cannot index type {}", t)),
+                _ => break
             }
         }
 

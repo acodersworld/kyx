@@ -302,9 +302,7 @@ mod day3 {
 
                 for x : start_x..end_x {
                     for y : start_y..end_y {
-                        if map.contains_key(x) {
-                        }
-                        else {
+                        if !map.contains_key(x) {
                             map[x] = hash_map<int, int>{};
                         }
 
