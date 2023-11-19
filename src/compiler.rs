@@ -1998,6 +1998,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             Token::TypeFloat => ValueType::Float,
             Token::TypeString => ValueType::Str,
             Token::TypeChar => ValueType::Char,
+            Token::TypeBool => ValueType::Bool,
             Token::LeftBracket => self.parse_type_vec_or_map()?,
             Token::LeftParen => self.parse_tuple()?,
             Token::Fn => self.parse_type_function()?,
@@ -3554,6 +3555,24 @@ mod test {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
         assert!(compiler.compile(&mut table, "print 1").is_err());
+    }
+
+    #[test]
+    fn test_builtin_types() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        let src = "
+        let i: int = 0;
+        let f: float = 3.142;
+        let s: string = \"hello\";
+        let b: bool = false;
+        ";
+
+        assert!({
+            compiler.compile(&mut table, src).unwrap();
+            true
+        });
     }
 
     #[test]
