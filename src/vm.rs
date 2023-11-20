@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::vec::Vec;
+use std::cmp::Ordering;
 
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -310,7 +311,12 @@ impl<'printer> VM<'printer> {
             },
         };
 
+        self.run_with_frame(&mut frame_stack);
+    }
+
+    fn run_with_frame(&mut self, frame_stack: &mut FrameStack) {
         let mut pc = 0;
+        let start_stack_size = frame_stack.stack.len();
         while let Some(op) = frame_stack.top.next_code() {
             //println!("PC: {}", pc);
             if self.disassemble {
@@ -367,10 +373,16 @@ impl<'printer> VM<'printer> {
                     self.jmp_if_determinant_mismatch(&mut frame_stack.top)
                 }
                 opcode::READ_INPUT => self.read_input(&mut frame_stack.top),
-                opcode::CALL => self.call(&mut frame_stack),
-                opcode::CALL_INTERFACE => self.call_interface(&mut frame_stack),
-                opcode::CALL_BUILTIN => self.call_builtin(&mut frame_stack),
-                opcode::RETURN => self.do_return(&mut frame_stack),
+                opcode::CALL => self.call(frame_stack),
+                opcode::CALL_INTERFACE => self.call_interface(frame_stack),
+                opcode::CALL_BUILTIN => self.call_builtin(frame_stack),
+                opcode::RETURN => {
+                    let sz = frame_stack.stack.len();
+                    self.do_return(frame_stack);
+                    if sz <= start_stack_size {
+                        return;
+                    }
+                },
                 _ => {
                     panic!("Unknown instruction: {} @ {}", op, frame_stack.top.pc - 1)
                 }
@@ -1056,7 +1068,7 @@ impl<'printer> VM<'printer> {
         frame_stack.top.locals[0] = interface.members[0]; // switch 'self' into first local slot
     }
 
-    fn sort_vector(vector: &mut VectorValue) {
+    fn sort_vector(&mut self, frame_stack: &mut FrameStack, vector: &mut VectorValue, pred: Option<NonNull<FunctionValue>>) {
         if vector.is_empty() {
             return;
         }
@@ -1073,7 +1085,34 @@ impl<'printer> VM<'printer> {
                     }
                 });
             }
-            _ => unimplemented!()
+            _ => {
+                let pred = match pred {
+                    Some(f) => f,
+                    None => panic!("Predicate not a function!")
+                };
+
+                vector.sort_by(|a, b| {
+                    let start_stack_size = self.value_stack.len();
+
+                    frame_stack.push(pred);
+                    frame_stack.top.locals.push(*a);
+                    frame_stack.top.locals.push(*b);
+                    self.run_with_frame(frame_stack);
+
+                    // Predicate should always return a boolean
+                    assert_eq!(start_stack_size + 1, self.value_stack.len());
+                    let is_less = match self.value_stack.pop().unwrap() {
+                        Value::Bool(b) => b,
+                        _ => panic!("Return value of predicate must be a boolean") 
+                    };
+
+                    if is_less {
+                        Ordering::Less
+                    } else {
+                        Ordering::Greater
+                    }
+                });
+            }
         }
     }
 
@@ -1096,7 +1135,17 @@ impl<'printer> VM<'printer> {
                     unsafe { v.as_mut() }.push(self.value_stack.pop().unwrap());
                 }
                 builtin_functions::vector::SORT => {
-                    Self::sort_vector(unsafe { v.as_mut() });
+                    match arg_count {
+                        0 => self.sort_vector(frame_stack, unsafe { v.as_mut() }, None),
+                        1 => {
+                            let pred = match self.value_stack.pop().unwrap() {
+                                Value::Function(f) => f,
+                                _ => panic!("Sort received unexpect argument")
+                            };
+                            self.sort_vector(frame_stack, unsafe { v.as_mut() }, Some(pred));
+                        }
+                        _ => panic!("Sort received unexpected argument count")
+                    }
                 }
                 _ => panic!("Unexpected vector builtin id {}", builtin_id),
             },
@@ -2170,6 +2219,56 @@ mod test {
             assert_eq!(printer.strings[1], "kyx");
             assert_eq!(printer.strings[2], "world");
             assert_eq!(printer.strings[3], "zebra");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                struct S {
+                    i: int,
+                    s: string,
+                }
+
+                fn pred(a: S, b: S) -> bool {
+                    return a.i < b.i;
+                }
+
+                let mut v: [S] = vec<S>{};
+                v.push(S {
+                    i = 10,
+                    s = \"something\",
+                });
+                v.push(S {
+                    i = 5,
+                    s = \"something else\",
+                });
+                v.push(S {
+                    i = 7,
+                    s = \"seven eleven\",
+                });
+                v.push(S {
+                    i = 11,
+                    s = \"eleven seven\",
+                });
+                v.sort(pred);
+                for i : 0..v.len() {
+                    print(v[i].i);
+                    print(v[i].s);
+                }
+                ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 8);
+            assert_eq!(printer.strings[0], "5");
+            assert_eq!(printer.strings[1], "something else");
+            assert_eq!(printer.strings[2], "7");
+            assert_eq!(printer.strings[3], "seven eleven");
+            assert_eq!(printer.strings[4], "10");
+            assert_eq!(printer.strings[5], "something");
+            assert_eq!(printer.strings[6], "11");
+            assert_eq!(printer.strings[7], "eleven seven");
         }
     }
 

@@ -1456,7 +1456,27 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         let arg_count = match elem_type.as_ref() {
                             ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool => 0,
                             _ => {
+                                let location = self.scanner.peek_token()?.location;
                                 self.expression(chunk)?;
+
+                                if let ValueType::Function(f) = &self.type_stack.last().unwrap().value_type {
+                                    if f.return_type != ValueType::Bool {
+                                        return Err(self.make_error_msg("Sort predicate must return a bool", &location));
+                                    }
+
+                                    if f.parameters.len() != 2 {
+                                        return Err(self.make_error_msg("Sort predicate must accept 2 parameters", &location));
+                                    }
+
+                                    if f.parameters[0] != *elem_type.as_ref() || f.parameters[1] != *elem_type.as_ref() {
+                                        return Err(self.make_error_msg(
+                                                &format!("Sort parameters must be type {}, got {} / {}", elem_type, f.parameters[0], f.parameters[1]), &location));
+                                    }
+                                }
+                                else {
+                                    return Err(self.make_error_msg("Sort takes a function as it's first parameter", &location));
+                                }
+
                                 self.type_stack.pop();
                                 1
                             }
@@ -2951,7 +2971,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         self.type_stack.pop();
-        self.type_stack.last_mut().unwrap().read_only = true;
+        let top = self.type_stack.last_mut().unwrap();
+        top.read_only = true;
+        top.value_type = ValueType::Bool;
+
         Ok(())
     }
 
@@ -4741,30 +4764,59 @@ mod test {
 
     #[test]
     fn test_vector_sort() {
-        let mut table = TestDataSection::new();
-        let mut compiler = Compiler::new();
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
 
-        assert!({
-            compiler
-                .compile(
-                    &mut table,
-                    "
-                let mut i: [int] = vec<int>{};
-                i.sort();
+            assert!({
+                compiler
+                    .compile(
+                        &mut table,
+                        "
+                    let mut i: [int] = vec<int>{};
+                    i.sort();
 
-                let mut f: [float] = vec<float>{};
-                f.sort();
+                    let mut f: [float] = vec<float>{};
+                    f.sort();
 
-                let mut s: [string] = vec<string>{};
-                s.sort();
+                    let mut s: [string] = vec<string>{};
+                    s.sort();
 
-                let mut b: [bool] = vec<bool>{};
-                b.sort();
-                ",
-                )
-                .unwrap();
-            true
-        });
+                    let mut b: [bool] = vec<bool>{};
+                    b.sort();
+                    ",
+                    )
+                    .unwrap();
+                true
+            });
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            assert!({
+                compiler
+                    .compile(
+                        &mut table,
+                        "
+                    struct S {
+                        i: int,
+                        s: string,
+                    }
+
+                    fn pred(a: S, b: S) -> bool {
+                        return a.i < b.i;
+                    }
+
+                    let mut v: [S] = vec<S>{};
+                    v.sort(pred);
+                    ",
+                    )
+                    .unwrap();
+                true
+            });
+        }
     }
 
     #[test]
