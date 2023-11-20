@@ -1358,6 +1358,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn field(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        let location = self.scanner.peek_token()?.location;
+
         let variable = self.type_stack.last().unwrap().clone();
         let (member_idx, member_name, member_type) = match &variable.value_type {
             ValueType::Struct(s) => {
@@ -1412,7 +1414,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.interface_method(i, &member_name, &member_name_location, chunk)?;
                 return Ok(());
             }
-            ValueType::Vector(_) => {
+            ValueType::Vector(elem_type) => {
                 let (member_name, member_name_location) = self.match_identifier()?;
                 match member_name.as_str() {
                     "len" => {
@@ -1428,6 +1430,45 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             value_type: ValueType::Integer,
                             read_only: true,
                         });
+                    }
+                    "push" => {
+                        if variable.read_only {
+                            return Err(self.make_error_msg("Cannot push to immutable vector", &location));
+                        }
+
+                        self.consume(Token::LeftParen)?;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::vector::PUSH);
+                        chunk.write_byte(1);
+                    }
+                    "sort" => {
+                        if variable.read_only {
+                            return Err(self.make_error_msg("Cannot sort an immutable vector", &location));
+                        }
+
+                        self.consume(Token::LeftParen)?;
+
+                        let arg_count = match elem_type.as_ref() {
+                            ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool => 0,
+                            _ => {
+                                self.expression(chunk)?;
+                                self.type_stack.pop();
+                                1
+                            }
+                        };
+
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::vector::SORT);
+                        chunk.write_byte(arg_count);
+
                     }
                     _ => {
                         return Err(self.make_error_msg(
@@ -3294,6 +3335,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn term_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
+        let loc = self.scanner.peek_token()?.location;
         self.factor(chunk)?;
 
         let len = self.type_stack.len();
@@ -3301,11 +3343,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let right_type = &self.type_stack[len - 1].value_type;
 
         if left_type != right_type {
-            return Err("Type error".to_owned());
+            return Err(self.make_error_msg(&format!("Type mismatch. Left {}, Right {}", left_type, right_type), &loc));
         } else {
             match left_type {
                 ValueType::Integer | ValueType::Float => chunk.write_byte(op),
-                _ => return Err("Type error".to_owned()),
+                x => return Err(self.make_error_msg(&format!("Expected integer or float, got {}", x), &loc))
             };
         }
 
@@ -4687,8 +4729,37 @@ mod test {
                 .compile(
                     &mut table,
                     "
-                let v: [int] = vec<int>{};
+                let mut v: [int] = vec<int>{};
                 let len: int = v.len();
+                v.push(10);
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_vector_sort() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                let mut i: [int] = vec<int>{};
+                i.sort();
+
+                let mut f: [float] = vec<float>{};
+                f.sort();
+
+                let mut s: [string] = vec<string>{};
+                s.sort();
+
+                let mut b: [bool] = vec<bool>{};
+                b.sort();
                 ",
                 )
                 .unwrap();

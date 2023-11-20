@@ -1,5 +1,7 @@
 pub mod vector {
     pub const LEN: u8 = 0;
+    pub const PUSH: u8 = 1;
+    pub const SORT: u8 = 2;
 }
 
 pub mod string {

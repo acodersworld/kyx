@@ -13,7 +13,7 @@ use crate::float;
 use crate::opcode;
 use crate::rust_function_ctx::{RustFunctionCtx, RustValue};
 use crate::value::{
-    FunctionValue, GcValue, RustFunctionValue, StringValue, StructValue, UnionValue, Value,
+    FunctionValue, GcValue, RustFunctionValue, VectorValue, StringValue, StructValue, UnionValue, Value,
 };
 use crate::var_len_int;
 
@@ -1056,6 +1056,27 @@ impl<'printer> VM<'printer> {
         frame_stack.top.locals[0] = interface.members[0]; // switch 'self' into first local slot
     }
 
+    fn sort_vector(vector: &mut VectorValue) {
+        if vector.is_empty() {
+            return;
+        }
+
+        match vector[0] {
+            Value::Integer(_) | Value::Float(_) | Value::Str(_) | Value::Bool(_) => {
+                vector.sort_by(|a, b| {
+                    match (a, b) {
+                        (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
+                        (Value::Float(x), Value::Float(y)) => x.cmp(y),
+                        (Value::Str(x), Value::Str(y)) => unsafe { x.as_ref() }.val.cmp(&unsafe { y.as_ref() }.val),
+                        (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
+                        _ => panic!("Unexpected values in vector during sort! {:?} / {:?}", a, b)
+                    }
+                });
+            }
+            _ => unimplemented!()
+        }
+    }
+
     fn call_builtin(&mut self, frame_stack: &mut FrameStack) {
         let builtin_id = frame_stack.top.next_code().unwrap();
         let arg_count = frame_stack.top.next_code().unwrap() as usize;
@@ -1066,10 +1087,16 @@ impl<'printer> VM<'printer> {
         };
 
         match obj {
-            Value::Vector(v) => match builtin_id {
+            Value::Vector(mut v) => match builtin_id {
                 builtin_functions::vector::LEN => {
                     self.value_stack
                         .push(Value::Integer(unsafe { v.as_ref() }.len() as i64));
+                }
+                builtin_functions::vector::PUSH => {
+                    unsafe { v.as_mut() }.push(self.value_stack.pop().unwrap());
+                }
+                builtin_functions::vector::SORT => {
+                    Self::sort_vector(unsafe { v.as_mut() });
                 }
                 _ => panic!("Unexpected vector builtin id {}", builtin_id),
             },
@@ -2067,6 +2094,86 @@ mod test {
     }
 
     #[test]
+    fn vector_sort() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                let mut v: [int] = vec<int>{20, 10, 40, 30};
+                v.sort();
+
+                for i : 0..v.len() {
+                    print(v[i]);
+                }
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 4);
+            assert_eq!(printer.strings[0], "10");
+            assert_eq!(printer.strings[1], "20");
+            assert_eq!(printer.strings[2], "30");
+            assert_eq!(printer.strings[3], "40");
+        }
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                let mut v: [float] = vec<float>{3.4, 1.2, 8.7, 11.9};
+                v.sort();
+
+                for i : 0..v.len() {
+                    print(v[i]);
+                }
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 4);
+            assert_eq!(printer.strings[0], "1.2");
+            assert_eq!(printer.strings[1], "3.4");
+            assert_eq!(printer.strings[2], "8.7");
+            assert_eq!(printer.strings[3], "11.9");
+        }
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                let mut v: [bool] = vec<bool>{true, false, false, true};
+                v.sort();
+
+                for i : 0..v.len() {
+                    print(v[i]);
+                }
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 4);
+            assert_eq!(printer.strings[0], "false");
+            assert_eq!(printer.strings[1], "false");
+            assert_eq!(printer.strings[2], "true");
+            assert_eq!(printer.strings[3], "true");
+        }
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                let mut v: [string] = vec<string>{\"hello\", \"world\", \"kyx\", \"zebra\"};
+                v.sort();
+
+                for i : 0..v.len() {
+                    print(v[i]);
+                }
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 4);
+            assert_eq!(printer.strings[0], "hello");
+            assert_eq!(printer.strings[1], "kyx");
+            assert_eq!(printer.strings[2], "world");
+            assert_eq!(printer.strings[3], "zebra");
+        }
+    }
+
+    #[test]
     fn construct_hash_map() {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
@@ -2930,13 +3037,24 @@ mod test {
         let mut vm = VM::new(&mut printer);
 
         let src = "
-            let v: [int] = vec<int>{1,2,3,4,5};
+            let mut v: [int] = vec<int>{1,2,3,4,5};
             print(v.len());
+
+            v.push(60);
+            print(v.len());
+            v.push(70);
+            print(v.len());
+            print(v[5]);
+            print(v[6]);
         ";
 
         assert_eq!(vm.interpret(src), Ok(()));
-        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings.len(), 5);
         assert_eq!(printer.strings[0], "5");
+        assert_eq!(printer.strings[1], "6");
+        assert_eq!(printer.strings[2], "7");
+        assert_eq!(printer.strings[3], "60");
+        assert_eq!(printer.strings[4], "70");
     }
 
     #[test]
