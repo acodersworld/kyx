@@ -1202,13 +1202,19 @@ impl<'printer> VM<'printer> {
                             &s[..iend]
                         }
                         builtin_functions::string::SUBSTR_TO_END => {
-                            let istart = s
-                                .chars()
-                                .enumerate()
-                                .nth(pop_index(&mut self.value_stack))
-                                .unwrap()
-                                .0;
-                            &s[istart..]
+                            let idx = pop_index(&mut self.value_stack);
+                            if idx == s.len() {
+                                ""
+                            }
+                            else {
+                                let istart = s
+                                    .chars()
+                                    .enumerate()
+                                    .nth(idx)
+                                    .unwrap()
+                                    .0;
+                                &s[istart..]
+                            }
                         }
                         x => panic!("Unexpected SUBSTR builtin id: {}", x),
                     };
