@@ -496,17 +496,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             return;
         }
 
-        if pop_count == 1 && self.type_stack.pop().unwrap().value_type == ValueType::Unit {
+        if pop_count == 1 && self.type_stack.last().unwrap().value_type == ValueType::Unit {
             // This will happen when a function returns no values. Since it does not return any values
             // no pop instruction should be emitted.
             //
             // Unit is on the type stack so types can still be validated, eg.
             // let a = func();
             // where func does not return a value.
+            self.type_stack.pop();
         } else {
-            self.type_stack.clear();
-
             for _ in 0..pop_count {
+                self.type_stack.pop();
                 chunk.code.push(opcode::POP)
             }
         }
@@ -1576,6 +1576,66 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         self.type_stack.push(Variable {
                             value_type: ValueType::Str,
                             read_only: false,
+                        });
+                    }
+                    "starts_with" | "ends_with" => {
+                        self.consume(Token::LeftParen)?;
+                        let substr_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let substr_type = self.type_stack.pop().unwrap();
+                        if substr_type.value_type != ValueType::Str {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "substr type string, but got {}",
+                                    substr_type.value_type
+                                ),
+                                &substr_loc,
+                            ));
+                        }
+
+                        self.type_stack.pop(); // pop substr
+                        self.type_stack.pop(); // pop string
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(match member_name.as_str() {
+                            "starts_with" => builtin_functions::string::STARTS_WITH,
+                            "ends_with" => builtin_functions::string::ENDS_WITH,
+                            _ => unreachable!(),
+                        });
+                        chunk.write_byte(1);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Bool,
+                            read_only: true,
+                        });
+                    }
+                    "contains" => {
+                        self.consume(Token::LeftParen)?;
+                        let substr_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let substr_type = self.type_stack.pop().unwrap();
+                        if substr_type.value_type != ValueType::Str {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "substr type string, but got {}",
+                                    substr_type.value_type
+                                ),
+                                &substr_loc,
+                            ));
+                        }
+
+                        self.type_stack.pop(); // pop substr
+                        self.type_stack.pop(); // pop string
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::string::CONTAINS);
+                        chunk.write_byte(1);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Bool,
+                            read_only: true,
                         });
                     }
                     _ => {
@@ -4839,6 +4899,9 @@ mod test {
                 let trim: string = s.trim();
                 let trim_start: string = s.trim_start();
                 let trim_end: string = s.trim_end();
+                let starts_with: bool = s.starts_with(\"hello\");
+                let ends_with: bool = s.starts_with(\"world\");
+                let contains: bool = s.contains(\"contains\");
                 ",
                 )
                 .unwrap();

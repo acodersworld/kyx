@@ -1273,6 +1273,30 @@ impl<'printer> VM<'printer> {
                     self.value_stack
                         .push(Value::Str(self.constant_strs[idx as usize]));
                 }
+                builtin_functions::string::STARTS_WITH => {
+                    let substr = match self.value_stack.pop().unwrap() {
+                        Value::Str(s) => &unsafe { s.as_ref() }.val,
+                        _ => panic!("Expected string"),
+                    };
+                    let s = &unsafe { s.as_ref() }.val;
+                    self.value_stack.push(Value::Bool(s.starts_with(substr)));
+                }
+                builtin_functions::string::ENDS_WITH => {
+                    let substr = match self.value_stack.pop().unwrap() {
+                        Value::Str(s) => &unsafe { s.as_ref() }.val,
+                        _ => panic!("Expected string"),
+                    };
+                    let s = &unsafe { s.as_ref() }.val;
+                    self.value_stack.push(Value::Bool(s.ends_with(substr)));
+                }
+                builtin_functions::string::CONTAINS => {
+                    let substr = match self.value_stack.pop().unwrap() {
+                        Value::Str(s) => &unsafe { s.as_ref() }.val,
+                        _ => panic!("Expected string"),
+                    };
+                    let s = &unsafe { s.as_ref() }.val;
+                    self.value_stack.push(Value::Bool(s.contains(substr)));
+                }
                 _ => panic!("Unexpected string builtin id {}", builtin_id),
             },
             Value::HashMap(h) => match builtin_id {
@@ -3211,6 +3235,33 @@ mod test {
         assert_eq!(printer.strings[2], " world pipe-a");
         assert_eq!(printer.strings[3], "pipe-b");
         assert_eq!(printer.strings[4], "pipe-c");
+    }
+
+    #[test]
+    fn test_string_starts_ends_with() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let s: string = \"hello, world\";
+            print(s.starts_with(\"hello\"));
+            print(s.ends_with(\"hello\"));
+            print(s.starts_with(\"world\"));
+            print(s.ends_with(\"world\"));
+            print(s.contains(\"hello\"));
+            print(s.contains(\"world\"));
+            print(s.contains(\"contains\"));
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 7);
+        assert_eq!(printer.strings[0], "true");
+        assert_eq!(printer.strings[1], "false");
+        assert_eq!(printer.strings[2], "false");
+        assert_eq!(printer.strings[3], "true");
+        assert_eq!(printer.strings[4], "true");
+        assert_eq!(printer.strings[5], "true");
+        assert_eq!(printer.strings[6], "false");
     }
 
     #[test]
