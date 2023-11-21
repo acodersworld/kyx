@@ -2935,6 +2935,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })?;
 
         self.is_in_loop = prev_in_loop;
+        self.type_stack.clear(); // FIX ME
         Ok(())
     }
 
