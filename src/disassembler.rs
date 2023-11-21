@@ -55,6 +55,7 @@ impl<'a> Disassembler<'a> {
             opcode::SUB => self.simple_instruction("sub"),
             opcode::MUL => self.simple_instruction("mul"),
             opcode::DIV => self.simple_instruction("div"),
+            opcode::MOD => self.simple_instruction("mod"),
             opcode::EQ => self.simple_instruction("eq"),
             opcode::NEQ => self.simple_instruction("neq"),
             opcode::LESS => self.simple_instruction("less"),

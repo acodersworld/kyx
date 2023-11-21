@@ -354,6 +354,7 @@ impl<'printer> VM<'printer> {
                 opcode::SUB => self.sub(),
                 opcode::MUL => self.mul(),
                 opcode::DIV => self.div(),
+                opcode::MOD => self.modulus(),
                 opcode::EQ => self.equals(),
                 opcode::NEQ => self.not_equals(),
                 opcode::LESS => self.less(),
@@ -478,6 +479,10 @@ impl<'printer> VM<'printer> {
 
     fn div(&mut self) {
         bin_op!(self, /);
+    }
+
+    fn modulus(&mut self) {
+        bin_op!(self, %);
     }
 
     fn equals(&mut self) {
@@ -1499,6 +1504,14 @@ mod test {
             assert_eq!(vm.interpret("print 6/2;"), Ok(()));
             assert_eq!(printer.strings.len(), 1);
             assert_eq!(printer.strings[0], "3");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print 70%60;"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "10");
         }
     }
 

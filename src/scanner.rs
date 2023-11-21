@@ -41,6 +41,7 @@ pub enum Token<'a> {
     Minus,
     Slash,
     Star,
+    Percent,
 
     LeftBrace,
     RightBrace,
@@ -118,6 +119,7 @@ impl Token<'_> {
             Self::Minus => "-",
             Self::Slash => "/",
             Self::Star => "*",
+            Self::Percent => "%",
 
             Self::LeftBrace => "{",
             Self::RightBrace => "}",
@@ -481,6 +483,7 @@ impl<'a> Scanner<'a> {
                 }
             }
             '*' => Token::Star,
+            '%' => Token::Percent,
 
             '{' => Token::LeftBrace,
             '}' => Token::RightBrace,
@@ -593,12 +596,13 @@ mod tests {
     #[test]
     fn test_arithmetic() {
         {
-            let src = "+-/*".to_owned();
+            let src = "+-/*%".to_owned();
             let mut scanner = Scanner::new(&src);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Plus);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Minus);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Slash);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Star);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::Percent);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Eof);
         }
 

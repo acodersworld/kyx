@@ -3106,6 +3106,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if left_type != right_type {
             return Err("Type error".to_owned());
         } else {
+            if op == opcode::MOD && *left_type != ValueType::Integer {
+                return Err("Can only mod integers".to_owned());
+            }
+
             match left_type {
                 ValueType::Integer | ValueType::Float => chunk.write_byte(op),
                 _ => return Err("Type error".to_owned()),
@@ -3125,6 +3129,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.factor_right(chunk, opcode::MUL)?;
             } else if self.scanner.match_token(Token::Slash)? {
                 self.factor_right(chunk, opcode::DIV)?;
+            } else if self.scanner.match_token(Token::Percent)? {
+                self.factor_right(chunk, opcode::MOD)?;
             } else {
                 break;
             }

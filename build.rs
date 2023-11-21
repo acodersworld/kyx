@@ -25,6 +25,7 @@ const OPCODES: &[&str] = &[
     "SUB",
     "MUL",
     "DIV",
+    "MOD",
     //
     "EQ",
     "NEQ",
