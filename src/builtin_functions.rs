@@ -28,3 +28,8 @@ pub mod hashmap {
     pub const CONTAINS_KEY: u8 = 0;
     pub const KEYS: u8 = 1;
 }
+
+pub mod ch {
+    pub const TO_LOWERCASE: u8 = 0;
+    pub const TO_UPPERCASE: u8 = 1;
+}

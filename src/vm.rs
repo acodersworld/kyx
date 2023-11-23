@@ -1158,6 +1158,17 @@ impl<'printer> VM<'printer> {
         };
 
         match obj {
+            Value::Char(c) => match builtin_id {
+                builtin_functions::ch::TO_LOWERCASE => {
+                    self.value_stack
+                        .push(Value::Char(c.to_ascii_lowercase()));
+                }
+                builtin_functions::ch::TO_UPPERCASE => {
+                    self.value_stack
+                        .push(Value::Char(c.to_ascii_uppercase()));
+                }
+                _ => panic!("Unexpected char builtin id {}", builtin_id),
+            }
             Value::Vector(mut v) => match builtin_id {
                 builtin_functions::vector::LEN => {
                     self.value_stack
@@ -1424,6 +1435,24 @@ mod test {
         assert_eq!(printer.strings.len(), 2);
         assert_eq!(printer.strings[0], "true");
         assert_eq!(printer.strings[1], "false");
+    }
+
+    #[test]
+    fn char_builting() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+        let src = "
+            let c: char = 'a';
+            print(c.to_uppercase());
+
+            let C: char = 'A';
+            print(c.to_lowercase());
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings[0], "A");
+        assert_eq!(printer.strings[1], "a");
     }
 
     #[test]

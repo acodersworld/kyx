@@ -1711,6 +1711,37 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 return Ok(());
             }
+            ValueType::Char => {
+                let (member_name, member_name_location) = self.match_identifier()?;
+                match member_name.as_str() {
+                    "to_lowercase" | "to_uppercase" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        match member_name.as_str() {
+                            "to_lowercase" => { chunk.write_byte(builtin_functions::ch::TO_LOWERCASE); }
+                            "to_uppercase" => { chunk.write_byte(builtin_functions::ch::TO_UPPERCASE); }
+                            _ => unimplemented!()
+                        }
+
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Char,
+                            read_only: true,
+                        });
+                    }
+                    _ => {
+                        return Err(self.make_error_msg(
+                            &format!("Char does not have method '{}'", member_name),
+                            &member_name_location,
+                        ));
+                    }
+                }
+                return Ok(());
+            }
             x => return Err(format!("Only structs have members, got {}", x)),
         };
 
@@ -4894,6 +4925,26 @@ mod test {
                 true
             });
         }
+    }
+
+    #[test]
+    fn test_char_builtin() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                let mut c: char = 'a';
+                let upper: char = c.to_uppercase();
+                let lower: char = c.to_lowercase();
+                ",
+                )
+                .unwrap();
+            true
+        });
     }
 
     #[test]
