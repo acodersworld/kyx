@@ -1,0 +1,61 @@
+let line: string = readinput();
+
+fn react(input: [char]) -> [char] {
+	let mut output: [char] = vec<char>{};
+
+	for i : 0..input.len() {
+		let olen: int = output.len();
+		if olen == 0 {
+			output.push(input[i]);
+		}
+		else {
+			let a: char = input[i];
+			let b: char = output[olen-1];
+			let al: char = a.to_lowercase();
+			let bl: char = b.to_lowercase();
+
+			if al != bl {
+				output.push(a);
+			}
+			else {
+				if a == b {
+					output.push(a);
+				}
+				else {
+					output.pop();
+				}
+			}
+		}
+	}
+
+	return output;
+}
+
+let mut in: [char] = vec<char>{};
+
+for i : 0..line.len() {
+	in.push(line[i]);	
+}
+
+// part 1
+let out: [char] = react(in);
+print(out.len());
+
+// part 2
+let chars: [char] = vec<char>{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'};
+
+let mut smallest: int = 90000000000;
+for ic : 0..chars.len() {
+	let c: char = chars[ic];
+	let mut rm: [char] = in.clone();
+	rm.remove(c);
+	rm.remove(c.to_uppercase());
+
+	let len: int = react(rm).len();
+	if len < smallest {
+		smallest = len;
+	}
+}
+
+print(smallest);
+

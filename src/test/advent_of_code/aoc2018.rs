@@ -569,3 +569,31 @@ mod day4 {
         assert_eq!(printer.strings[1], "39940");
     }
 }
+
+#[cfg(test)]
+mod day5 {
+    use super::*;
+
+    fn input(ctx: &mut dyn RustFunctionCtx) {
+        // not sure why the trim_end is needed, there seems to be a newline at the end which is not
+        // in the file
+        let input = include_str!("aoc2018/day5-input.txt").trim_end();
+        ctx.set_result(RustValue::Str(input.to_string()));
+    }
+
+    #[test]
+    fn part_1_and_2() {
+        let mut printer = utils::TestPrinter::new();
+        let mut vm = vm::VM::new(&mut printer);
+
+        vm.create_function("fn readinput() -> string", &input)
+            .expect("Failed to create function");
+
+        let src = include_str!("aoc2018/day5.kyx");
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings[0], "9390");
+        assert_eq!(printer.strings[1], "5898");
+    }
+}
