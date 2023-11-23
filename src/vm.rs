@@ -163,8 +163,19 @@ impl DataSection for VMDataSection<'_> {
             }
         }
 
+        let mut len = 0;
+        let mut is_ascii = true;
+        for c in s.chars() {
+            if is_ascii && !c.is_ascii() {
+                is_ascii = false;
+            }
+            len += 1;
+        }
+
         let mut str_val = Box::new(StringValue {
             val: s.to_string(),
+            len,
+            is_ascii,
             hash: 0,
         });
         let ptr = unsafe { NonNull::new_unchecked(str_val.as_mut() as *mut _) };
@@ -590,18 +601,34 @@ impl<'printer> VM<'printer> {
                     Value::Integer(i) => i as usize,
                     _ => panic!("Bad index value"),
                 };
+
+                if index >= vector.len() {
+                    // TODO: Proper kyx panic
+                    panic!("Vector index out of bounds");
+                }
+
                 self.value_stack.push(vector[index]);
             }
             Value::Str(s) => {
-                let string = &unsafe { s.as_ref() }.val;
                 let index = match index {
                     Value::Integer(i) => i as usize,
                     _ => panic!("Bad index value"),
                 };
 
-                // Really slow! Just getting this working
-                self.value_stack
-                    .push(Value::Char(string.chars().nth(index).unwrap()));
+                let string = unsafe { s.as_ref() };
+                if index >= string.len {
+                    // TODO: Proper kyx panic
+                    panic!("String index out of bounds");
+                }
+
+                if string.is_ascii {
+                    let bytes = string.val.as_bytes(); 
+                    self.value_stack.push(Value::Char(bytes[index] as char));
+                }
+                else {
+                    self.value_stack
+                        .push(Value::Char(string.val.chars().nth(index).unwrap()));
+                }
             }
             _ => panic!("Not a hash map"),
         };
@@ -1160,7 +1187,7 @@ impl<'printer> VM<'printer> {
             Value::Str(s) => match builtin_id {
                 builtin_functions::string::LEN => {
                     self.value_stack
-                        .push(Value::Integer(unsafe { s.as_ref() }.val.len() as i64));
+                        .push(Value::Integer(unsafe { s.as_ref() }.len as i64));
                 }
                 builtin_functions::string::TO_INTEGER => {
                     self.value_stack.push(Value::Integer(
@@ -1401,18 +1428,47 @@ mod test {
 
     #[test]
     fn string_index() {
-        let mut printer = TestPrinter::new();
-        let mut vm = VM::new(&mut printer);
-        let src = "
-            let s: string = \"hello\";
-            print(s[0]);
-            print(s[3]);
-        ";
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let s: string = \"hello\";
+                print(s[0]);
+                print(s[3]);
+            ";
 
-        assert_eq!(vm.interpret(src), Ok(()));
-        assert_eq!(printer.strings.len(), 2);
-        assert_eq!(printer.strings[0], "h");
-        assert_eq!(printer.strings[1], "l");
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "h");
+            assert_eq!(printer.strings[1], "l");
+        }
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let s: string = \"hello你好こんにちは\";
+                for i : 0..s.len() {
+                    print(s[i]);
+                }
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 12);
+            assert_eq!(printer.strings[0], "h");
+            assert_eq!(printer.strings[1], "e");
+            assert_eq!(printer.strings[2], "l");
+            assert_eq!(printer.strings[3], "l");
+            assert_eq!(printer.strings[4], "o");
+
+            assert_eq!(printer.strings[5], "你");
+            assert_eq!(printer.strings[6], "好");
+
+            assert_eq!(printer.strings[7], "こ");
+            assert_eq!(printer.strings[8], "ん");
+            assert_eq!(printer.strings[9], "に");
+            assert_eq!(printer.strings[10], "ち");
+            assert_eq!(printer.strings[11], "は");
+        }
     }
 
     #[test]

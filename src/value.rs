@@ -10,7 +10,11 @@ use crate::rust_function_ctx::RustFunctionCtx;
 
 #[derive(Debug)]
 pub struct StringValue {
+    // we could store a lookup for quick indexing for non-ascii strings
+    // probably not worth it right now
     pub val: String,
+    pub len: usize,
+    pub is_ascii: bool,
     pub hash: usize,
 }
 
