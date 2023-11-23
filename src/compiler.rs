@@ -1437,10 +1437,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         }
 
                         self.consume(Token::LeftParen)?;
+                        let arg_loc = self.scanner.peek_token()?.location;
                         self.expression(chunk)?;
                         self.consume(Token::RightParen)?;
 
-                        self.type_stack.pop();
+                        let arg_type = self.type_stack.pop().unwrap();
+
+                        if arg_type.value_type != *elem_type.as_ref() {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "Vector push expects type {}, got {}",
+                                    arg_type.value_type, elem_type
+                                ),
+                                &arg_loc,
+                            ));
+                        }
+
                         self.type_stack.pop();
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::vector::PUSH);
@@ -1511,6 +1523,38 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::vector::CLEAR);
                         chunk.write_byte(0);
+                    }
+                    "clone" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+                        
+                        // no need to pop, expecting same vector type
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::vector::CLONE);
+                        chunk.write_byte(0);
+                    }
+                    "remove" => {
+                        self.consume(Token::LeftParen)?;
+                        let arg_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let arg_type = self.type_stack.pop().unwrap();
+
+                        if arg_type.value_type != *elem_type.as_ref() {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "Vector remove expects type {}, got {}",
+                                    arg_type.value_type, elem_type
+                                ),
+                                &arg_loc,
+                            ));
+                        }
+                        
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::vector::REMOVE);
+                        chunk.write_byte(1);
                     }
                     _ => {
                         return Err(self.make_error_msg(
@@ -4877,6 +4921,8 @@ mod test {
                 v.push(10);
                 v.pop();
                 v.clear();
+                let v2: [int] = v.clone();
+                v.remove(0);
                 ",
                 )
                 .unwrap();

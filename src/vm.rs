@@ -1201,6 +1201,23 @@ impl<'printer> VM<'printer> {
                 builtin_functions::vector::CLEAR => {
                     unsafe { v.as_mut() }.clear();
                 }
+                builtin_functions::vector::CLONE => {
+                    let src = unsafe { v.as_mut() };
+                    let mut vec_val = Box::new(src.clone());
+                    let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                    self.objects.push(GcValue::Vector(vec_val));
+                    self.value_stack.push(Value::Vector(ptr));
+                }
+                builtin_functions::vector::REMOVE => {
+                    let val = self.value_stack.pop().unwrap();
+                    match val {
+                        Value::Char(_) | Value::Integer(_) | Value::Float(_) | Value::Str(_) => {},
+                        _ => unimplemented!()
+                    }
+
+
+                    unsafe { v.as_mut() }.retain(|x| *x != val);
+                }
                 _ => panic!("Unexpected vector builtin id {}", builtin_id),
             },
             Value::Str(s) => match builtin_id {
@@ -2348,6 +2365,55 @@ mod test {
         assert_eq!(printer.strings.len(), 2);
         assert_eq!(printer.strings[0], "4");
         assert_eq!(printer.strings[1], "0");
+    }
+
+    #[test]
+    fn vector_clone() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut v: [int] = vec<int>{10,20,30,40};
+            let v2: [int] = v.clone();
+            v.clear();
+            print(v.len());
+            for i : 0..v2.len() {
+                print(v2[i]);
+            }
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings[0], "0");
+        assert_eq!(printer.strings[1], "10");
+        assert_eq!(printer.strings[2], "20");
+        assert_eq!(printer.strings[3], "30");
+        assert_eq!(printer.strings[4], "40");
+    }
+
+    #[test]
+    fn vector_remove() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut v: [int] = vec<int>{10,20,30,10,40};
+            v.remove(10);
+            print(v.len());
+
+            for i : 0..v.len() {
+                print(v[i]);
+            }
+
+            v.remove(1000);
+            print(v.len());
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings[0], "3");
+        assert_eq!(printer.strings[1], "20");
+        assert_eq!(printer.strings[2], "30");
+        assert_eq!(printer.strings[3], "40");
+        assert_eq!(printer.strings[4], "3");
     }
 
     #[test]

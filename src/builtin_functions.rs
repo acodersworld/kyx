@@ -4,6 +4,8 @@ pub mod vector {
     pub const POP: u8 = 2;
     pub const SORT: u8 = 3;
     pub const CLEAR: u8 = 4;
+    pub const CLONE: u8 = 5;
+    pub const REMOVE: u8 = 6;
 }
 
 pub mod string {
