@@ -1,0 +1,45 @@
+fn find_pair() {
+	let lines: [string] = readinput();
+
+	let nlines: int = lines.len();
+	let mut ilines: int = 0;
+	let mut jlines: int = 0;
+
+	let mut count_two: int = 0;
+	let mut count_three: int = 0;
+
+	while ilines < nlines {
+		jlines = 0;
+		while jlines < nlines {
+			let iword: string = lines[ilines];
+			let jword: string = lines[jlines];
+
+			let len: int = iword.len();
+			let mut iw: int = 0;
+
+			let mut differences: int = 0;
+			while iw < len {
+				if iword[iw] != jword[iw] {
+					differences = differences + 1;
+					if differences > 1 {
+						break;
+					}
+				}
+				iw = iw + 1;
+			}
+
+			if differences == 1 {
+				print("Pair found!");
+				print(iword);
+				print(jword);
+				return;		
+			}
+			jlines = jlines + 1;
+		}
+		ilines = ilines + 1;
+	}
+
+	print("No pair found!");
+}
+
+find_pair();
