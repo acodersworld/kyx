@@ -1490,6 +1490,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         chunk.write_byte(arg_count);
 
                     }
+                    "clear" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+                        
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::vector::CLEAR);
+                        chunk.write_byte(0);
+                    }
                     _ => {
                         return Err(self.make_error_msg(
                             &format!("Vector does not have method '{}'", member_name),
@@ -4822,6 +4831,7 @@ mod test {
                 let mut v: [int] = vec<int>{};
                 let len: int = v.len();
                 v.push(10);
+                v.clear();
                 ",
                 )
                 .unwrap();

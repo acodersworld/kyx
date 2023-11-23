@@ -1152,6 +1152,9 @@ impl<'printer> VM<'printer> {
                         _ => panic!("Sort received unexpected argument count")
                     }
                 }
+                builtin_functions::vector::CLEAR => {
+                    unsafe { v.as_mut() }.clear();
+                }
                 _ => panic!("Unexpected vector builtin id {}", builtin_id),
             },
             Value::Str(s) => match builtin_id {
@@ -2183,6 +2186,23 @@ mod test {
         assert_eq!(printer.strings[2], "30");
         assert_eq!(printer.strings[3], "20");
         assert_eq!(printer.strings[4], "100");
+    }
+
+    #[test]
+    fn vector_clear() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut v: [int] = vec<int>{10,20,30,40};
+            print(v.len());
+            v.clear();
+            print(v.len());
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings[0], "4");
+        assert_eq!(printer.strings[1], "0");
     }
 
     #[test]
