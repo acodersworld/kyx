@@ -1446,6 +1446,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         chunk.write_byte(builtin_functions::vector::PUSH);
                         chunk.write_byte(1);
                     }
+                    "pop" => {
+                        if variable.read_only {
+                            return Err(self.make_error_msg("Cannot push to immutable vector", &location));
+                        }
+
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::vector::POP);
+                        chunk.write_byte(0);
+                    }
                     "sort" => {
                         if variable.read_only {
                             return Err(self.make_error_msg("Cannot sort an immutable vector", &location));
@@ -4862,6 +4875,7 @@ mod test {
                 let mut v: [int] = vec<int>{};
                 let len: int = v.len();
                 v.push(10);
+                v.pop();
                 v.clear();
                 ",
                 )

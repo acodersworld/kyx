@@ -1177,6 +1177,14 @@ impl<'printer> VM<'printer> {
                 builtin_functions::vector::PUSH => {
                     unsafe { v.as_mut() }.push(self.value_stack.pop().unwrap());
                 }
+                builtin_functions::vector::POP => {
+                    let vector = unsafe { v.as_mut() };
+                    if vector.is_empty() {
+                        panic!("Vector is empty, cannot pop");
+                    }
+
+                    vector.pop();
+                }
                 builtin_functions::vector::SORT => {
                     match arg_count {
                         0 => self.sort_vector(frame_stack, unsafe { v.as_mut() }, None),
@@ -2212,6 +2220,58 @@ mod test {
         assert_eq!(printer.strings[1], "40");
         assert_eq!(printer.strings[2], "30");
         assert_eq!(printer.strings[3], "20");
+    }
+
+    #[test]
+    fn test_vector_push() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut v: [int] = vec<int>{1,2,3,4,5};
+            print(v.len());
+
+            v.push(60);
+            print(v.len());
+            v.push(70);
+            print(v.len());
+            print(v[5]);
+            print(v[6]);
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings[0], "5");
+        assert_eq!(printer.strings[1], "6");
+        assert_eq!(printer.strings[2], "7");
+        assert_eq!(printer.strings[3], "60");
+        assert_eq!(printer.strings[4], "70");
+    }
+
+    #[test]
+    fn test_vector_pop() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut v: [int] = vec<int>{1,2,3,4,5};
+            print(v.len());
+            v.pop();
+            print(v.len());
+            v.pop();
+
+            for i : 0..v.len() {
+                print(v[i]);
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings[0], "5");
+        assert_eq!(printer.strings[1], "4");
+        assert_eq!(printer.strings[2], "1");
+        assert_eq!(printer.strings[3], "2");
+        assert_eq!(printer.strings[4], "3");
     }
 
     #[test]
@@ -3276,32 +3336,6 @@ mod test {
         assert_eq!(printer.strings[0], "2.14");
         assert_eq!(printer.strings[1], "4321");
         assert_eq!(printer.strings[2], "kyx");
-    }
-
-    #[test]
-    fn test_vector_builtin() {
-        let mut printer = TestPrinter::new();
-        let mut vm = VM::new(&mut printer);
-
-        let src = "
-            let mut v: [int] = vec<int>{1,2,3,4,5};
-            print(v.len());
-
-            v.push(60);
-            print(v.len());
-            v.push(70);
-            print(v.len());
-            print(v[5]);
-            print(v[6]);
-        ";
-
-        assert_eq!(vm.interpret(src), Ok(()));
-        assert_eq!(printer.strings.len(), 5);
-        assert_eq!(printer.strings[0], "5");
-        assert_eq!(printer.strings[1], "6");
-        assert_eq!(printer.strings[2], "7");
-        assert_eq!(printer.strings[3], "60");
-        assert_eq!(printer.strings[4], "70");
     }
 
     #[test]
