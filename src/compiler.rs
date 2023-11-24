@@ -1493,6 +1493,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::vector::POP);
                         chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: elem_type.as_ref().clone(),
+                            read_only: true,
+                        });
                     }
                     "sort" => {
                         if variable.read_only {
@@ -3386,25 +3391,25 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         read_only: bool,
         elem_type: &ValueType,
     ) -> Result<(), String> {
+        let index_loc = self.scanner.peek_token()?.location;
         self.expression(chunk)?;
         let index_type = self.type_stack.pop().unwrap();
         if index_type.value_type != ValueType::Integer {
-            return Err(format!(
+            return Err(self.make_error_msg(&format!(
                 "Can only index using Integer. Got {}",
-                index_type.value_type
-            ));
+                index_type.value_type), &index_loc));
         }
 
         self.consume(Token::RightBracket)?;
 
         if self.scanner.match_token(Token::Equal)? {
+            let expr_loc = self.scanner.peek_token()?.location;
             self.expression(chunk)?;
             let new_value_type = self.type_stack.pop().unwrap().value_type;
             if new_value_type != *elem_type {
-                return Err(format!(
+                return Err(self.make_error_msg(&format!(
                     "Type mismatch for setting vector. Expected {}, got {}",
-                    *elem_type, new_value_type
-                ));
+                    *elem_type, new_value_type), &expr_loc));
             }
 
             chunk.write_byte(opcode::SET_INDEX);

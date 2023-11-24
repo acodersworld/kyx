@@ -1240,7 +1240,7 @@ impl<'printer> VM<'printer> {
                         panic!("Vector is empty, cannot pop");
                     }
 
-                    vector.pop();
+                    self.value_stack.push(vector.pop().unwrap());
                 }
                 builtin_functions::vector::SORT => {
                     match arg_count {
@@ -2382,11 +2382,11 @@ mod test {
         let mut vm = VM::new(&mut printer);
 
         let src = "
-            let mut v: [int] = vec<int>{1,2,3,4,5};
+            let mut v: [int] = vec<int>{10,20,30,40,50};
             print(v.len());
-            v.pop();
+            print(v.pop());
             print(v.len());
-            v.pop();
+            print(v.pop());
 
             for i : 0..v.len() {
                 print(v[i]);
@@ -2394,12 +2394,14 @@ mod test {
         ";
 
         assert_eq!(vm.interpret(src), Ok(()));
-        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings.len(), 7);
         assert_eq!(printer.strings[0], "5");
-        assert_eq!(printer.strings[1], "4");
-        assert_eq!(printer.strings[2], "1");
-        assert_eq!(printer.strings[3], "2");
-        assert_eq!(printer.strings[4], "3");
+        assert_eq!(printer.strings[1], "50");
+        assert_eq!(printer.strings[2], "4");
+        assert_eq!(printer.strings[3], "40");
+        assert_eq!(printer.strings[4], "10");
+        assert_eq!(printer.strings[5], "20");
+        assert_eq!(printer.strings[6], "30");
     }
 
     #[test]
