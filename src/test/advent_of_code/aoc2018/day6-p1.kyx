@@ -1,0 +1,157 @@
+let lines: [string] = readinput();
+
+let mut xmax: int = 0;
+let mut ymax: int = 0;
+
+struct Coord {
+	x: int,
+	y: int,
+}
+
+let mut points: [Coord] = vec<Coord>{};
+for i : 0..lines.len() {
+	let scoord: [string] = lines[i].split(',');
+	let x: int = scoord[0].to_integer();
+	let y: int = scoord[1].trim().to_integer();
+
+	if x > xmax { xmax = x; }
+	if y > ymax { ymax = y; }
+
+	points.push(Coord {
+		x = x,
+		y = y,
+	});
+}
+
+xmax = xmax + 1;
+ymax = ymax + 1;
+let grid_size: int = xmax * ymax;
+
+fn index(x: int, y: int) -> int {
+	return y * xmax + x;	
+}
+
+struct Grid {
+	distance: [int],
+	who: [int],
+}
+impl {
+	fn (self) visit(x: int, y: int, v: int, w: int) -> bool {
+		let idx: int = index(x, y);
+		let d: int = self.distance[idx];
+		if d > v {
+			self.distance[idx] = v;
+			self.who[idx] = w;
+			return true;
+		}
+		
+		if d == v {
+			self.who[idx] = -1;
+			return true;
+		}
+
+		return false;
+	}
+}
+
+fn fill(grid: Grid, who: int, x: int, y: int) {
+	let xdist: [int] = vec<int>[xmax]{0};
+	let ydist: [int] = vec<int>[ymax]{0};
+
+	let mut ix: int = x;
+	let mut iy: int = y;
+
+	for ix : 0..xmax {
+		xdist[ix] = (x - ix).abs();
+	}
+
+	for iy : 0..ymax {
+		ydist[iy] = (y - iy).abs();
+	}
+
+	while iy >= 0 {
+		ix = x;
+		while ix >= 0 {
+			if !grid.visit(ix, iy, xdist[ix] + ydist[iy], who) {
+				break;
+			}
+			ix = ix - 1;
+		}
+
+		ix = x + 1;
+		while ix < xmax {
+			if !grid.visit(ix, iy, xdist[ix] + ydist[iy], who) {
+				break;
+			}
+			ix = ix + 1;
+		}
+		iy = iy - 1;
+	}
+
+	iy = y + 1;
+	while iy < ymax {
+		ix = x;
+		while ix >= 0 {
+			if !grid.visit(ix, iy, xdist[ix] + ydist[iy], who) {
+				break;
+			}
+			ix = ix - 1;
+		}
+
+		ix = x + 1;
+		while ix < xmax {
+			if !grid.visit(ix, iy, xdist[ix] + ydist[iy], who) {
+				break;
+			}
+			ix = ix + 1;
+		}
+		iy = iy + 1;
+	}
+}
+
+let grid: Grid = Grid {
+	distance = vec<int>[grid_size]{1000000},
+	who = vec<int>[grid_size]{-1},
+};
+
+for c : 0..points.len() {
+	let xy: Coord = points[c];
+	fill(grid, c, xy.x, xy.y);
+}
+
+let mut area: [int] = vec<int>[points.len()]{0};
+
+for y : 0..ymax {
+	for x : 0..xmax {
+		let idx: int = index(x, y);
+		let who: int = grid.who[idx];
+		if who != -1 {
+			if x == 0 {
+				area[who] = -1;	
+			}
+			if y == 0 {
+				area[who] = -1;	
+			}
+			if x == (xmax-1) {
+				area[who] = -1;	
+			}
+			if y == (ymax-1) {
+				area[who] = -1;	
+			}
+
+			if area[who] != -1 {
+				area[who] = area[who] + 1;	
+			}
+		}
+	}
+}
+
+let mut max: int = 0;
+for i : 0..area.len() {
+	let a: int = area[i];
+	if a != -1 && a > max {
+		max = a;
+	}
+}
+print(max);
+

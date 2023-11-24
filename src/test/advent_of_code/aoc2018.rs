@@ -231,3 +231,48 @@ mod day5 {
         assert_eq!(printer.strings[1], "5898");
     }
 }
+
+#[cfg(test)]
+mod day6 {
+    use super::*;
+
+    fn input(ctx: &mut dyn RustFunctionCtx) {
+        let mut v = vec![];
+
+        for l in include_str!("aoc2018/day6-input.txt").lines() {
+            v.push(l.to_string());
+        }
+
+        ctx.set_result(RustValue::StringVector(v));
+    }
+
+    #[test]
+    fn part_1() {
+        let mut printer = utils::TestPrinter::new();
+        let mut vm = vm::VM::new(&mut printer);
+
+        vm.create_function("fn readinput() -> [string]", &input)
+            .expect("Failed to create function");
+
+        let src = include_str!("aoc2018/day6-p1.kyx");
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "3969");
+    }
+
+    #[test]
+    fn part_2() {
+        let mut printer = utils::TestPrinter::new();
+        let mut vm = vm::VM::new(&mut printer);
+
+        vm.create_function("fn readinput() -> [string]", &input)
+            .expect("Failed to create function");
+
+        let src = include_str!("aoc2018/day6-p2.kyx");
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "42123");
+    }
+}

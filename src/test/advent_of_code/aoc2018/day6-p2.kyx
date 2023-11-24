@@ -1,0 +1,82 @@
+let lines: [string] = readinput();
+
+struct Coord {
+	x: int,
+	y: int,
+}
+
+{
+	let mut xmax: int = 0;
+	let mut ymax: int = 0;
+
+	let mut points: [Coord] = vec<Coord>{};
+	for i : 0..lines.len() {
+		let scoord: [string] = lines[i].split(',');
+		let x: int = scoord[0].to_integer();
+		let y: int = scoord[1].trim().to_integer();
+
+		if x > xmax { xmax = x; }
+		if y > ymax { ymax = y; }
+
+		points.push(Coord {
+			x = x,
+			y = y,
+		});
+	}
+
+	xmax = xmax + 1;
+	ymax = ymax + 1;
+	let grid_size: int = xmax * ymax;
+
+	let xdist: [int] = vec<int>[xmax]{0};
+	let ydist: [int] = vec<int>[ymax]{0};
+
+	for x : 0..xmax {
+		let mut total: int = 0;
+		for p : 0..points.len() {
+			let ptx: int = points[p].x;
+
+			let dist: int = {
+				if x < ptx {
+					ptx - x	
+				}
+				else {
+					x - ptx
+				}
+			};
+			total = total + dist;
+		}
+		xdist[x] = total;
+	}
+
+	for y : 0..ymax {
+		let mut total: int = 0;
+		for p : 0..points.len() {
+			let pty: int = points[p].y;
+
+			let dist: int = {
+				if y < pty {
+					pty - y	
+				}
+				else {
+					y - pty
+				}
+			};
+			total = total + dist;
+		}
+		ydist[y] = total;
+	}
+
+	let mut region_size: int = 0;
+	for y : 0..ymax {
+		for x : 0..xmax {
+			let dist: int = xdist[x] + ydist[y];
+			if dist < 10000 {
+				region_size = region_size + 1;
+			}
+		}
+	}
+
+	print(region_size);
+}
+
