@@ -86,6 +86,8 @@ use std::vec::Vec;
             field_index -> expression "." identifier
 
             assignment -> identifier = expression | equality
+            logical_or -> logical_and "||" logical_and
+            logical_and -> equality "&&" equality
             equality -> comparison (("!=" | "==") comparison)?
             comparison -> term (("<" | "<=" | ">" | ">=") term)?
             term -> factor ( "-" | "+" factor )*
@@ -1287,19 +1289,40 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         };
 
-        let argument_count = 1 /* self */+ self.parse_commas_separate_list(Token::RightParen, |cm, _| {
+        let argument_count_minus_self = self.parse_commas_separate_list(Token::RightParen, |cm, _| {
             cm.expression(chunk)?;
             Ok(())
         })?;
 
+        if argument_count_minus_self != function_type.parameters.len() {
+            return Err(self.make_error_msg(
+                &format!("Incorrect argument count for method. Expected {}, got {}",
+                         function_type.parameters.len(), argument_count_minus_self),
+                method_name_location,
+            ))
+        }
+
         let stack_len = self.type_stack.len();
+        let argument_count = argument_count_minus_self + 1;
         assert!(stack_len >= argument_count);
         chunk.write_byte(opcode::PUSH_METHOD);
         chunk.write_short(method_idx.try_into().unwrap());
         chunk.write_byte(opcode::CALL);
         chunk.write_byte(argument_count.try_into().unwrap());
 
-        self.type_stack.drain(stack_len - argument_count..stack_len);
+        let args: Vec<_> = self.type_stack.drain(stack_len - argument_count_minus_self..stack_len).collect();
+        for (i, a) in args.iter().enumerate() {
+            let arg_type = &function_type.parameters[i];
+            if a.value_type != *arg_type {
+                return Err(self.make_error_msg(
+                    &format!("Argument {} type is incorrect. Expected {}, got {}",
+                             i + 1, arg_type, a.value_type),
+                    method_name_location,
+                ))
+            }
+        }
+
+        self.type_stack.pop(); // pop self
         self.type_stack.push(Variable {
             value_type: function_type.return_type.clone(),
             read_only: true,
@@ -1851,7 +1874,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         } else if let Ok(Some(union_type)) = self.match_union_type() {
             self.union_constructor(union_type, chunk)?;
         } else {
-            self.equality(chunk)?;
+            self.logical_or(chunk)?;
         }
 
         Ok(is_block)
@@ -2896,7 +2919,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.is_in_loop = true;
 
         let loop_begin_idx = chunk.code.len() + 1;
-        self.equality(chunk)?;
+        self.logical_or(chunk)?;
         self.consume(Token::LeftBrace)?;
         chunk.write_byte(opcode::JMP_IF_FALSE);
         self.type_stack.pop();
@@ -3200,6 +3223,58 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
+    fn logical_or(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        let location = self.scanner.peek_token()?.location;
+        self.logical_and(chunk)?;
+
+        while self.scanner.match_token(Token::LogicalOr)? {
+            let expr_type = self.type_stack.pop().unwrap().value_type;
+            if expr_type != ValueType::Bool {
+                return Err(self.make_error_msg(
+                        &format!("Expected boolean type for logical or, got {}", expr_type), &location));
+            }
+
+            let location = self.scanner.peek_token()?.location;
+            self.logical_and(chunk)?;
+            let expr_type = &self.type_stack.last().unwrap().value_type;
+            if *expr_type != ValueType::Bool {
+                return Err(self.make_error_msg(
+                        &format!("Expected boolean type for logical or, got {}", expr_type), &location));
+            }
+
+            chunk.write_byte(opcode::LOGICAL_OR);
+            self.type_stack.last_mut().unwrap().read_only = true;
+        }
+
+        Ok(())
+    }
+
+    fn logical_and(&mut self, chunk: &mut Chunk) -> Result<(), String> {
+        let location = self.scanner.peek_token()?.location;
+        self.equality(chunk)?;
+
+        while self.scanner.match_token(Token::LogicalAnd)? {
+            let expr_type = self.type_stack.pop().unwrap().value_type;
+            if expr_type != ValueType::Bool {
+                return Err(self.make_error_msg(
+                        &format!("Expected boolean type for logical or, got {}", expr_type), &location));
+            }
+
+            let location = self.scanner.peek_token()?.location;
+            self.equality(chunk)?;
+            let expr_type = &self.type_stack.last().unwrap().value_type;
+            if *expr_type != ValueType::Bool {
+                return Err(self.make_error_msg(
+                        &format!("Expected boolean type for logical or, got {}", expr_type), &location));
+            }
+
+            chunk.write_byte(opcode::LOGICAL_AND);
+            self.type_stack.last_mut().unwrap().read_only = true;
+        }
+
+        Ok(())
+    }
+
     fn equality_right(&mut self, chunk: &mut Chunk, op: u8) -> Result<(), String> {
         let location = self.scanner.peek_token()?.location;
 
@@ -3226,7 +3301,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         self.type_stack.pop();
-        self.type_stack.last_mut().unwrap().read_only = true;
+
+        let last = self.type_stack.last_mut().unwrap();
+        last.value_type = ValueType::Bool;
+        last.read_only = true;
         Ok(())
     }
 
@@ -4415,6 +4493,24 @@ mod test {
         });
     }
 
+    #[test]
+    fn test_logical() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                    let and: bool = true && false && true && false;
+                    let or: bool = true || false || true || false;
+                    let mix: bool = true || false && true || false && false;
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
     #[test]
     fn test_empty_struct() {
         let mut table = TestDataSection::new();

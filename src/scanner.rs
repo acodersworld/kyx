@@ -43,6 +43,9 @@ pub enum Token<'a> {
     Star,
     Percent,
 
+    LogicalAnd,
+    LogicalOr,
+
     LeftBrace,
     RightBrace,
     LeftParen,
@@ -120,6 +123,9 @@ impl Token<'_> {
             Self::Slash => "/",
             Self::Star => "*",
             Self::Percent => "%",
+
+            Self::LogicalAnd => "&&",
+            Self::LogicalOr => "||",
 
             Self::LeftBrace => "{",
             Self::RightBrace => "}",
@@ -485,6 +491,20 @@ impl<'a> Scanner<'a> {
             '*' => Token::Star,
             '%' => Token::Percent,
 
+            '&' => {
+                if self.match_char('&') {
+                    Token::LogicalAnd
+                } else {
+                    return Err(format!("Unexpected token '&'"));
+                }
+            }
+            '|' => {
+                if self.match_char('|') {
+                    Token::LogicalOr
+                } else {
+                    return Err(format!("Unexpected token '|'"));
+                }
+            }
             '{' => Token::LeftBrace,
             '}' => Token::RightBrace,
             '(' => Token::LeftParen,
@@ -611,6 +631,16 @@ mod tests {
             let mut scanner = Scanner::new(&src);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Slash);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Eof);
+        }
+    }
+
+    #[test]
+    fn test_logical() {
+        {
+            let src = "&&||".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::LogicalAnd);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::LogicalOr);
         }
     }
 

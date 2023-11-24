@@ -235,6 +235,25 @@ macro_rules! bin_op_equality {
                 (Value::Float(l), Value::Float(r)) => Value::Bool(l $op r),
                 (Value::Str(l), Value::Str(r)) => Value::Bool(l $op r),
                 (Value::Char(l), Value::Char(r)) => Value::Bool(l $op r),
+                (Value::Bool(l), Value::Bool(r)) => Value::Bool(l $op r),
+                _ => panic!("")
+            };
+
+            *st.last_mut().unwrap() = result;
+        }
+    }
+}
+
+macro_rules! bin_op_logical {
+    ($self:ident, $op:tt) => {
+        {
+            let st = &mut $self.value_stack;
+
+            let right = st.pop().unwrap();
+            let left = st.last().unwrap();
+
+            let result = match (left, right) {
+                (Value::Bool(l), Value::Bool(r)) => Value::Bool(*l $op r),
                 _ => panic!("")
             };
 
@@ -366,6 +385,8 @@ impl<'printer> VM<'printer> {
                 opcode::MUL => self.mul(),
                 opcode::DIV => self.div(),
                 opcode::MOD => self.modulus(),
+                opcode::LOGICAL_AND => self.logical_and(),
+                opcode::LOGICAL_OR => self.logical_or(),
                 opcode::EQ => self.equals(),
                 opcode::NEQ => self.not_equals(),
                 opcode::LESS => self.less(),
@@ -494,6 +515,14 @@ impl<'printer> VM<'printer> {
 
     fn modulus(&mut self) {
         bin_op!(self, %);
+    }
+
+    fn logical_and(&mut self) {
+        bin_op_logical!(self, &&);
+    }
+
+    fn logical_or(&mut self) {
+        bin_op_logical!(self, ||);
     }
 
     fn equals(&mut self) {
@@ -820,6 +849,7 @@ impl<'printer> VM<'printer> {
 
         let locals = &frame.locals;
         assert!(!locals.is_empty());
+//        eprintln!("{:?}", locals);
         self.value_stack.push(locals[idx]);
     }
 
@@ -1891,6 +1921,46 @@ mod test {
         assert_eq!(vm.interpret(src), Ok(()));
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "0");
+    }
+
+    #[test]
+    fn logical_and() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            print true && false;
+            print false && false;
+            print true && true;
+
+            print 1 == 1 && 10 == 10;
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "false");
+        assert_eq!(printer.strings[1], "false");
+        assert_eq!(printer.strings[2], "true");
+        assert_eq!(printer.strings[3], "true");
+    }
+
+    #[test]
+    fn logical_or() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            print true || false;
+            print false || false;
+            print true || true;
+
+            print 1 == 1 || 10 == 10;
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "true");
+        assert_eq!(printer.strings[1], "false");
+        assert_eq!(printer.strings[2], "true");
+        assert_eq!(printer.strings[3], "true");
     }
 
     #[test]
