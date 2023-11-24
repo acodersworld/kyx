@@ -21,7 +21,7 @@ pub struct DefaultPrinter {}
 
 impl vm::Printer for DefaultPrinter {
     fn print(&mut self, s: &str) {
-        println!("{}", s);
+        print!("{}", s);
     }
 }
 
