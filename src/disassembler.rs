@@ -185,10 +185,19 @@ impl<'a> Disassembler<'a> {
     }
 
     fn create_vec(&mut self) {
-        let arg_count = self.code[self.offset];
-        self.offset += 1;
+        let init_type = self.code[self.offset];
+        if init_type == 0 {
+            println!("CREATE VEC");
+        }
+        else if init_type == 1 {
+            let arg_count = self.code[self.offset];
+            self.offset += 1;
 
-        println!("CREATE VEC: {}", arg_count);
+            println!("CREATE VEC: {}", arg_count);
+        }
+        else {
+            panic!("Unknown vector init type {}", init_type); 
+        }
     }
 
     fn set_global(&mut self) {

@@ -571,19 +571,46 @@ impl<'printer> VM<'printer> {
     }
 
     fn create_vec(&mut self, frame: &mut Frame) {
-        let arg_count = frame.next_code().unwrap() as usize;
+        let init_type = frame.next_code().unwrap() as usize;
 
-        assert!(self.value_stack.len() >= arg_count);
-        let vector: Vec<Value> = self
-            .value_stack
-            .drain((self.value_stack.len() - arg_count)..)
-            .collect();
+        match init_type {
+            0 => {
+                let arg_count = frame.next_code().unwrap() as usize;
 
-        let mut vec_val = Box::new(vector);
-        let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
-        self.objects.push(GcValue::Vector(vec_val));
+                assert!(self.value_stack.len() >= arg_count);
+                let vector: Vec<Value> = self
+                    .value_stack
+                    .drain((self.value_stack.len() - arg_count)..)
+                    .collect();
 
-        self.value_stack.push(Value::Vector(ptr));
+                let mut vec_val = Box::new(vector);
+                let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                self.objects.push(GcValue::Vector(vec_val));
+
+                self.value_stack.push(Value::Vector(ptr));
+            }
+            1 => {
+                let init_value = self.value_stack.pop().unwrap();
+                let init_size = match self.value_stack.pop().unwrap() {
+                    Value::Integer(i) => {
+                        if i < 0 {
+                            panic!("Vector size init value is less than 0")
+                        }
+
+                        i as usize
+                    },
+                    _ => panic!("Expected integer for vector init size")
+                };
+
+                let vector = vec![init_value; init_size];
+                let mut vec_val = Box::new(vector);
+                let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                self.objects.push(GcValue::Vector(vec_val));
+
+                self.value_stack.push(Value::Vector(ptr));
+            }
+            x => panic!("Unknown vector init type {}", x)
+        }
     }
 
     fn get_index(&mut self) {
@@ -2207,16 +2234,30 @@ mod test {
 
     #[test]
     fn construct_vector() {
-        let mut printer = TestPrinter::new();
-        let mut vm = VM::new(&mut printer);
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
 
-        let src = "
-            let v: [int] = vec<int>{10,20,30,40};
-            print v;
-        ";
-        assert_eq!(vm.interpret(src), Ok(()));
-        assert_eq!(printer.strings.len(), 1);
-        assert_eq!(printer.strings[0], "vec{10,20,30,40}");
+            let src = "
+                let v: [int] = vec<int>{10,20,30,40};
+                print v;
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "vec{10,20,30,40}");
+        }
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+
+            let src = "
+                let v: [int] = vec<int>[5]{11};
+                print v;
+            ";
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "vec{11,11,11,11,11}");
+        }
     }
 
     #[test]

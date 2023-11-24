@@ -1862,40 +1862,88 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let elem_type = self.parse_type()?;
         self.consume(Token::Greater)?;
 
-        self.consume(Token::LeftBrace)?;
-
-        let arg_count = self.parse_commas_separate_list(Token::RightBrace, |cm, _| {
-            cm.expression(chunk)?;
-            let tp = &cm.type_stack.pop().unwrap().value_type;
-            if elem_type != *tp {
-                let interface_satisfied = match (&elem_type, tp) {
-                    (ValueType::Interface(i), ValueType::Struct(s)) => {
-                        if i.does_struct_satisfy_interface(s) {
-                            cm.create_interface_object_for_struct(i, s, chunk);
-                            true
-                        } else {
-                            false
+        if self.scanner.match_token(Token::LeftBrace)? {
+            let arg_count = self.parse_commas_separate_list(Token::RightBrace, |cm, _| {
+                cm.expression(chunk)?;
+                let tp = cm.type_stack.pop().unwrap().value_type;
+                if elem_type != tp {
+                    let interface_satisfied = match (&elem_type, &tp) {
+                        (ValueType::Interface(i), ValueType::Struct(s)) => {
+                            if i.does_struct_satisfy_interface(s) {
+                                cm.create_interface_object_for_struct(i, s, chunk);
+                                true
+                            } else {
+                                false
+                            }
                         }
+                        _ => false,
+                    };
+
+                    if !interface_satisfied {
+                        return Err(format!(
+                            "Vector argument type mismatch. Expected {}, got {}",
+                            elem_type, tp
+                        ));
                     }
-                    _ => false,
-                };
-
-                if !interface_satisfied {
-                    return Err(format!(
-                        "Vector argument type mismatch. Expected {}, got {}",
-                        elem_type, tp
-                    ));
                 }
-            }
-            Ok(())
-        })?;
+                Ok(())
+            })?;
 
-        chunk.write_byte(opcode::CREATE_VEC);
-        chunk.write_byte(arg_count.try_into().unwrap());
-        self.type_stack.push(Variable {
-            value_type: ValueType::Vector(Rc::new(elem_type)),
-            read_only: false,
-        });
+            chunk.write_byte(opcode::CREATE_VEC);
+            chunk.write_byte(0);
+            chunk.write_byte(arg_count.try_into().unwrap());
+            self.type_stack.push(Variable {
+                value_type: ValueType::Vector(Rc::new(elem_type)),
+                read_only: false,
+            });
+        }
+        else if self.scanner.match_token(Token::LeftBracket)? {
+            let size_location = self.scanner.peek_token()?.location;
+            match elem_type {
+                ValueType::Integer | ValueType::Float | ValueType::Bool | ValueType::Str => {},
+                _ => return Err(self.make_error_msg(
+                                    &format!("Vector repeat intialiser can only be used with primitive types, got {}", elem_type),
+                                    &size_location
+                ))
+            }
+
+            self.expression(chunk)?;
+            let size_type = self.type_stack.pop().unwrap().value_type;
+            if size_type != ValueType::Integer {
+                return Err(self.make_error_msg(
+                    &format!("Vector size intialiser must be an integer, got {}", size_type),
+                    &size_location
+                ));
+            }
+            self.consume(Token::RightBracket)?;
+            self.consume(Token::LeftBrace)?;
+
+            let init_val_location = self.scanner.peek_token()?.location;
+            self.expression(chunk)?;
+
+            let init_val_type = self.type_stack.pop().unwrap().value_type;
+            if init_val_type != elem_type {
+                return Err(self.make_error_msg(
+                    &format!("Vector argument type mismatch. Expected {}, got {}",
+                    elem_type, init_val_type), &init_val_location));
+            }
+
+            self.consume(Token::RightBrace)?;
+
+            chunk.write_byte(opcode::CREATE_VEC);
+            chunk.write_byte(1);
+
+            self.type_stack.push(Variable {
+                value_type: ValueType::Vector(Rc::new(elem_type)),
+                read_only: false,
+            });
+        }
+        else {
+            let location = self.scanner.peek_token()?.location;
+            return Err(self.make_error_msg(
+                &format!("Expected '{{' or '['"), &location));
+        }
+
         Ok(())
     }
 
@@ -3931,6 +3979,22 @@ mod test {
             ";
 
             assert_ne!(compiler.compile(&mut table, src).err(), None);
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+                let v: [int] = vec<int>[5]{11};
+            ";
+
+            assert_eq!(
+                compiler
+                    .compile(&mut table, src)
+                    .err(),
+                None
+            );
         }
     }
 
