@@ -1827,6 +1827,32 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
                 return Ok(());
             }
+            ValueType::Integer => {
+                let (member_name, member_name_location) = self.match_identifier()?;
+                match member_name.as_str() {
+                    "abs" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::integer::ABS);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Integer,
+                            read_only: true,
+                        });
+                    }
+                    _ => {
+                        return Err(self.make_error_msg(
+                            &format!("Integer does not have method '{}'", member_name),
+                            &member_name_location,
+                        ));
+                    }
+                }
+                return Ok(());
+            }
             x => return Err(format!("Only structs have members, got {}", x)),
         };
 
@@ -5150,6 +5176,28 @@ mod test {
                 true
             });
         }
+    }
+
+    #[test]
+    fn test_integer_builtin() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                let i: int = -10;
+
+                let a: int = -10.abs();
+                let b: int = 10.abs();
+                let c: int = i.abs();
+                ",
+                )
+                .unwrap();
+            true
+        });
     }
 
     #[test]

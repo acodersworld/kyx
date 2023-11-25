@@ -1215,6 +1215,13 @@ impl<'printer> VM<'printer> {
         };
 
         match obj {
+            Value::Integer(i) => match builtin_id {
+                builtin_functions::integer::ABS => {
+                    self.value_stack
+                        .push(Value::Integer(i.abs()));
+                }
+                _ => panic!("Unexpected integer builtin id {}", builtin_id),
+            }
             Value::Char(c) => match builtin_id {
                 builtin_functions::ch::TO_LOWERCASE => {
                     self.value_stack
@@ -3612,6 +3619,24 @@ mod test {
         assert_eq!(printer.strings[0], "hello, world");
         assert_eq!(printer.strings[1], "hello, world  ");
         assert_eq!(printer.strings[2], "  hello, world");
+    }
+
+    #[test]
+    fn test_integer_builtin() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let a: int = -11;
+            print(-10.abs());
+            print(10.abs());
+            print(a.abs());
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "10");
+        assert_eq!(printer.strings[2], "11");
     }
 
     #[test]

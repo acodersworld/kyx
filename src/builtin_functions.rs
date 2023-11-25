@@ -36,3 +36,7 @@ pub mod ch {
     pub const TO_LOWERCASE: u8 = 0;
     pub const TO_UPPERCASE: u8 = 1;
 }
+
+pub mod integer {
+    pub const ABS: u8 = 0;
+}
