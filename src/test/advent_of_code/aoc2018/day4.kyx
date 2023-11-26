@@ -33,7 +33,7 @@ fn pred(a: Event, b: Event) -> bool {
 events.sort(pred);
 
 struct Guard {
-	minutes_asleep: int,
+	minutes_asleep: mut int,
 	minutes_awake: [int],
 }
 

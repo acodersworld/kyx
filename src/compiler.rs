@@ -122,9 +122,16 @@ struct Method {
     method_idx: usize,
 }
 
+
+#[derive(Debug, PartialEq, Clone)]
+struct StructMember {
+    read_only: bool,
+    value_type: ValueType
+}
+
 #[derive(Debug, PartialEq)]
 struct StructType {
-    members: Vec<(String, ValueType)>,
+    members: Vec<(String, StructMember)>,
     methods: Vec<Method>,
 }
 
@@ -722,11 +729,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let (member_name, member_name_location) = self.match_identifier()?;
 
             self.consume(Token::Colon)?;
+            let is_member_mutable = self.scanner.match_token(Token::Mut)?;
             let member_type = self.parse_type()?;
             self.consume(Token::Comma)?;
 
             if members_map
-                .insert(member_name.to_string(), member_type)
+                .insert(member_name.to_string(), StructMember { read_only: !is_member_mutable, value_type: member_type })
                 .is_some()
             {
                 return Err(self.make_error_msg(
@@ -755,6 +763,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.consume(Token::Fn)?;
 
                 self.consume(Token::LeftParen)?;
+                let is_self_mutable = self.scanner.match_token(Token::Mut)?;
                 self.consume(Token::SmallSelf)?;
                 self.consume(Token::RightParen)?;
 
@@ -829,7 +838,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 method_metadata_map.insert(
                     function_name,
-                    (scanner_method_head, parameter_names_types, return_type),
+                    (is_self_mutable, scanner_method_head, parameter_names_types, return_type),
                 );
             }
         }
@@ -837,7 +846,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let members = members_map
             .into_iter()
             .map(|(name, value_type)| (name, value_type))
-            .collect::<Vec<(String, ValueType)>>();
+            .collect::<Vec<(String, StructMember)>>();
 
         let methods = method_map
             .into_iter()
@@ -862,14 +871,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let saved_scanner = self.scanner.clone();
 
         if has_methods {
-            for (method_name, (scanner, parameters, return_type)) in method_metadata_map {
+            for (method_name, (is_self_mutable, scanner, parameters, return_type)) in method_metadata_map {
                 let mut locals = vec![];
 
                 locals.push(LocalVariable {
                     name: "self".to_owned(),
                     v: Variable {
                         value_type: ValueType::Struct(struct_type.clone()),
-                        read_only: true,
+                        read_only: !is_self_mutable,
                     },
                     scope: 0,
                 });
@@ -1384,7 +1393,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let location = self.scanner.peek_token()?.location;
 
         let variable = self.type_stack.last().unwrap().clone();
-        let (member_idx, member_name, member_type) = match &variable.value_type {
+        let (member_idx, member_name, member_read_only, member_type) = match &variable.value_type {
             ValueType::Struct(s) => {
                 let (member_name, member_name_location) = self.match_identifier()?;
                 if self.scanner.match_token(Token::LeftParen)? {
@@ -1402,7 +1411,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     }
                 };
 
-                (member_idx, member_name, s.members[member_idx].1.clone())
+                let member = &s.members[member_idx].1;
+                (member_idx, member_name, member.read_only, member.value_type.clone())
             }
             ValueType::Tuple(t) => {
                 let (member_idx, member_idx_location) = self.match_integer()?;
@@ -1427,6 +1437,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 (
                     member_idx,
                     member_idx.to_string(),
+                    true,
                     t.element_types[member_idx].clone(),
                 )
             }
@@ -1858,9 +1869,18 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if self.scanner.match_token(Token::Equal)? {
             if variable.read_only {
-                return Err(format!("Cannot set read only field {}", member_name));
+                return Err(self.make_error_msg(
+                    &format!("Self is read only, cannot set field {}", member_name),
+                    &location));
             }
 
+            if member_read_only {
+                return Err(self.make_error_msg(
+                    &format!("Cannot set read only field {}", member_name),
+                    &location));
+            }
+
+            
             self.expression(chunk)?;
 
             let expr_type = &self.type_stack.last().unwrap().value_type;
@@ -1877,7 +1897,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             chunk.write_byte(member_idx.try_into().unwrap());
             self.type_stack.push(Variable {
                 value_type: member_type,
-                read_only: variable.read_only,
+                read_only: variable.read_only || member_read_only,
             });
         }
 
@@ -4582,14 +4602,22 @@ mod test {
                 .compile(
                     &mut table,
                     "
-                struct Struct {}
+                struct Struct {
+                    i: mut int,
+                }
                 impl {
                     fn (self) test() {
                         print \"Test method\";
                     }
+
+                    fn (mut self) set() {
+                        self.i = 10;
+                    }
                 }
 
-                let s: Struct = Struct {};
+                let s: Struct = Struct {
+                    i = 0,
+                };
                 s.test();
                 ",
                 )
@@ -4673,7 +4701,7 @@ mod test {
                     &mut table,
                     "struct Struct
                 {
-                    i: int,
+                    i: mut int,
                     f: float,
                     s: string,
                 }
@@ -4701,6 +4729,199 @@ mod test {
                 .unwrap();
             true
         });
+    }
+
+    #[test]
+    fn test_struct_set_read_only_field() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "struct Struct
+                {
+                    i: int,
+                }
+
+                let mut s: Struct = Struct {
+                    i = 0,
+                };
+
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!(
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                    s.i = 10;
+                ",
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_struct_set_mutable_field_read_only_self() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "struct Struct
+                {
+                    i: mut int,
+                }
+
+                let s: Struct = Struct {
+                    i = 0,
+                };
+
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!(
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                    s.i = 10;
+                ",
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_struct_set_mutable_nested_field() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                struct Nested {
+                    i: mut int,
+                }
+
+                struct Struct
+                {
+                    n: mut Nested,
+                }
+
+                let mut s: Struct = Struct {
+                    n = Nested {
+                        i = 10,
+                    },
+                };
+
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                    s.n.i = 10;
+                ",
+            ).unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_struct_set_mutable_nested_field_nested_read_only() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                struct Nested {
+                    i: mut int,
+                }
+
+                struct Struct
+                {
+                    n: Nested, // read only
+                }
+
+                let mut s: Struct = Struct {
+                    n = Nested {
+                        i = 10,
+                    },
+                };
+
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!(
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                    s.n.i = 10;
+                ",
+            ).is_err()
+        );
+    }
+    #[test]
+    fn test_struct_set_mutable_nested_field_self_read_only() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                struct Nested {
+                    i: mut int,
+                }
+
+                struct Struct
+                {
+                    n: mut Nested,
+                }
+
+                let s: Struct = Struct { // read only
+                    n = Nested {
+                        i = 10,
+                    },
+                };
+
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!(
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                    s.n.i = 10;
+                ",
+            ).is_err()
+        );
     }
 
     #[test]

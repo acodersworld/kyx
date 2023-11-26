@@ -2966,9 +2966,9 @@ mod test {
             let src = "
                 struct Struct
                 {
-                    i: int,
-                    f: float,
-                    s: string,
+                    i: mut int,
+                    f: mut float,
+                    s: mut string,
                 }
 
                 let mut s: Struct = Struct {
@@ -3011,12 +3011,12 @@ mod test {
         {
             let src = "
                 struct Nested {
-                    inner: string,
+                    inner: mut string,
                 }
 
                 struct Struct
                 {
-                    nested: Nested,
+                    nested: mut Nested,
                 }
 
                 let mut s: Struct = Struct {
@@ -3071,8 +3071,8 @@ mod test {
 
         let src = "
                 struct Struct {
-                    i: int,
-                    f: float,
+                    i: mut int,
+                    f: mut float,
                 }
                 impl {
                     fn (self) test() {
