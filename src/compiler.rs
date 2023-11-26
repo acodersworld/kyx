@@ -3906,7 +3906,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     chunk.write_byte(idx.try_into().unwrap());
                     self.type_stack.push(local);
                 } else {
-                    panic!("self not found in locals!");
+                    return Err(self.make_error_msg("Cannot use 'self' outside of method", &t.location));
                 }
             }
             Token::LeftParen => {
