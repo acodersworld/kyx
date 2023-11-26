@@ -118,6 +118,7 @@ struct EnumType {
 #[derive(Debug, PartialEq)]
 struct Method {
     name: String,
+    is_self_read_only: bool,
     function_type: FunctionType,
     method_idx: usize,
 }
@@ -763,7 +764,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.consume(Token::Fn)?;
 
                 self.consume(Token::LeftParen)?;
-                let is_self_mutable = self.scanner.match_token(Token::Mut)?;
+                let is_self_read_only = !self.scanner.match_token(Token::Mut)?;
                 self.consume(Token::SmallSelf)?;
                 self.consume(Token::RightParen)?;
 
@@ -827,7 +828,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 };
 
                 let method_already_defined = method_map
-                    .insert(function_name.clone(), function_type)
+                    .insert(function_name.clone(), (is_self_read_only, function_type))
                     .is_some();
                 if method_already_defined {
                     return Err(self.make_error_msg(
@@ -838,7 +839,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 method_metadata_map.insert(
                     function_name,
-                    (is_self_mutable, scanner_method_head, parameter_names_types, return_type),
+                    (is_self_read_only, scanner_method_head, parameter_names_types, return_type),
                 );
             }
         }
@@ -850,8 +851,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let methods = method_map
             .into_iter()
-            .map(|(name, function_type)| Method {
+            .map(|(name, (is_self_read_only, function_type))| Method {
                 name,
+                is_self_read_only,
                 function_type,
                 method_idx: self.alloc_method_idx(),
             })
@@ -871,14 +873,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let saved_scanner = self.scanner.clone();
 
         if has_methods {
-            for (method_name, (is_self_mutable, scanner, parameters, return_type)) in method_metadata_map {
+            for (method_name, (is_self_read_only, scanner, parameters, return_type)) in method_metadata_map {
                 let mut locals = vec![];
 
                 locals.push(LocalVariable {
                     name: "self".to_owned(),
                     v: Variable {
                         value_type: ValueType::Struct(struct_type.clone()),
-                        read_only: !is_self_mutable,
+                        read_only: is_self_read_only,
                     },
                     scope: 0,
                 });
@@ -1277,17 +1279,18 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn struct_method(
         &mut self,
         struct_type: &StructType,
+        is_self_ready_only: bool,
         method_name: &str,
         method_name_location: &TokenLocation,
         chunk: &mut Chunk,
     ) -> Result<(), String> {
         // struct is already on the stack, first local 'self'
 
-        let (function_type, method_idx) = match struct_type
+        let (function_type, method_self_read_only, method_idx) = match struct_type
             .methods
             .iter()
             .find(|x| x.name == method_name)
-            .map(|x| (&x.function_type, x.method_idx))
+            .map(|x| (&x.function_type, x.is_self_read_only, x.method_idx))
         {
             Some(idx) => idx,
             None => {
@@ -1297,6 +1300,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ))
             }
         };
+
+        if !method_self_read_only && is_self_ready_only{
+            return Err(self.make_error_msg(
+                &format!("Cannot call a mut self method {} with non-mut self", method_name),
+                method_name_location,
+            ))
+        }
 
         let argument_count_minus_self = self.parse_commas_separate_list(Token::RightParen, |cm, _| {
             cm.expression(chunk)?;
@@ -1397,7 +1407,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ValueType::Struct(s) => {
                 let (member_name, member_name_location) = self.match_identifier()?;
                 if self.scanner.match_token(Token::LeftParen)? {
-                    self.struct_method(s, &member_name, &member_name_location, chunk)?;
+                    self.struct_method(s, variable.read_only, &member_name, &member_name_location, chunk)?;
                     return Ok(());
                 }
 
@@ -4946,14 +4956,132 @@ mod test {
             true
         });
 
-        assert!(compiler
-            .compile(
-                &mut table,
-                "
-                    s.i = 1.5;
-                "
-            )
-            .is_err());
+        assert!(compiler.compile(&mut table, "s.i = 1.5;").is_err());
+    }
+
+    #[test]
+    fn test_struct_mut_self_method_ready_only_instance() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                struct Struct {
+                    i: mut int,
+                }
+                impl {
+                    fn (mut self) test() {
+                        self.i = 10;
+                    }
+                }
+
+                let s: Struct = Struct {
+                    i = 0,
+                };
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!(compiler.compile(&mut table, "s.test();").is_err());
+    }
+
+    #[test]
+    fn test_struct_read_only_self_method_mut_instance() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                struct Struct {
+                    i: int,
+                }
+                impl {
+                    fn (self) test() {}
+                }
+
+                let mut s: Struct = Struct {
+                    i = 0,
+                };
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table, "s.test();").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_struct_read_only_self_method_read_only_instance() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                struct Struct {
+                    i: int,
+                }
+                impl {
+                    fn (self) test() {}
+                }
+
+                let s: Struct = Struct {
+                    i = 0,
+                };
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table, "s.test();").unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_struct_mut_self_method_mut_instance() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                struct Struct {
+                    i: mut int,
+                }
+                impl {
+                    fn (mut self) test() {
+                        self.i = 10;
+                    }
+                }
+
+                let mut s: Struct = Struct {
+                    i = 0,
+                };
+                ",
+                )
+                .unwrap();
+            true
+        });
+
+        assert!({
+            compiler.compile(&mut table, "s.test();").unwrap();
+            true
+        });
     }
 
     #[test]
