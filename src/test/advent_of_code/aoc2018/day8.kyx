@@ -1,0 +1,77 @@
+let line: string = readinput();
+
+let strs: [string] = line.split(' ');
+let mut nums: [int] = vec<int>{};
+
+for i : 0..strs.len() {
+	nums.push(strs[i].to_integer());
+}
+
+struct Tree {
+	index: mut int,
+	nums: [int],
+}
+impl {
+	fn (mut self) accum_metadata() -> int {
+		let nchild: int = self.nums[self.index];
+		let nmetadata: int = self.nums[self.index+1];
+
+		self.index = self.index + 2;
+
+		let mut accum: int = 0;
+		for i : 0..nchild {
+			accum = accum + self.accum_metadata();
+		}
+
+		for i : 0..nmetadata {
+			accum = accum + self.nums[self.index + i];	
+		}
+		self.index = self.index + nmetadata;
+
+		return accum;
+	}
+
+	fn (mut self) accum_value() -> int {
+		let nchild: int = self.nums[self.index];
+		let nmetadata: int = self.nums[self.index+1];
+
+		self.index = self.index + 2;
+
+		if nchild == 0 {
+			let mut accum: int = 0;
+			for i : 0..nmetadata {
+				accum = accum + self.nums[self.index + i];	
+			}
+			self.index = self.index + nmetadata;
+			return accum;
+		}
+
+		let mut values: [int] = vec<int>[nchild]{0};
+		for i : 0..nchild {
+			values[i] = self.accum_value();
+		}
+
+		let mut accum: int = 0;
+		for i : 0..nmetadata {
+			let ichild: int = self.nums[self.index + i] - 1;
+			if ichild < nchild {
+				accum = accum + values[ichild];	
+			}
+		}
+		self.index = self.index + nmetadata;
+		return accum;
+	}
+}
+
+let mut tree: Tree = Tree {
+	index = 0,
+	nums = nums,
+};
+
+// part 1
+print(tree.accum_metadata());
+tree.index = 0;
+
+// part 2
+print(tree.accum_value());
+
