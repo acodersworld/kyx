@@ -1,0 +1,153 @@
+let lines: [string] = readinput();
+
+struct Node {
+	next: mut [char],
+	prereqs: mut [char],
+	done: mut bool,
+}
+
+fn make_nodes() -> [char: Node] {
+	let mut nodes: [char: Node] = hash_map<char, Node>{};
+
+	for i : 0..lines.len() {
+		let node: char = lines[i][5];
+		let next: char = lines[i][36];
+
+		if !nodes.contains_key(node) {
+			nodes[node] = Node {
+				next = vec<char>{},
+				prereqs = vec<char>{},
+				done = false,
+			};
+		}
+
+		if !nodes.contains_key(next) {
+			nodes[next] = Node {
+				next = vec<char>{},
+				prereqs = vec<char>{},
+				done = false,
+			};
+		}
+
+		nodes[node].next.push(next);
+		nodes[next].prereqs.push(node);
+	}
+
+	let keys: [char] = nodes.keys();
+
+	for i : 0..keys.len() {
+		let k: char = keys[i];
+		nodes[k].next.sort();
+	}
+
+	return nodes;
+}
+
+fn get_available(nodes: mut [char: Node]) -> [char] {
+	let keys: [char] = nodes.keys();
+	let mut available: [char] = vec<char>{};
+
+	for i : 0..keys.len() {
+		let k: char = keys[i];
+		if nodes[k].prereqs.len() == 0 {
+			available.push(k);
+		}
+		nodes[k].next.sort();
+	}
+	available.sort();
+	return available;
+}
+
+fn check(nodes: [char: Node], available: mut [char], name: char) {
+	let mut node: Node = nodes[name];
+
+	let mut all_done: bool = true;
+	for i : 0..node.prereqs.len() {
+		all_done = all_done && nodes[node.prereqs[i]].done;	
+	}
+
+	if all_done {
+		available.push(name);
+	}
+}
+
+fn visit(nodes: [char: Node], available: mut [char], name: char) {
+	let mut node: Node = nodes[name];
+
+	for i : 0..node.next.len() {
+		let next: char = node.next[i];
+		check(nodes, available, next);
+	}
+}
+
+
+// part 1
+{
+	let mut nodes: [char: Node] = make_nodes();
+	let mut available: [char] = get_available(nodes);
+
+	while available.len() > 0 {
+		available.sort();
+		let first: char = available[0];
+		print(first);
+		available.remove(first);
+
+		nodes[first].done = true;
+		visit(nodes, available, first);
+	}
+}
+
+struct Worker {
+	node: char,
+	end_time: int,
+}
+
+let chars: [char] = vec<char>{'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'};
+fn char_to_int(c: char) -> int {
+	for i : 0..chars.len() {
+		if chars[i] == c {
+			return 1 + i;
+		}
+	}
+	print("NOT FOUND!!!!!!!!!!!!!!!!!!");
+	return -1;
+}
+
+fn worker_greater(a: Worker, b: Worker) -> bool {
+	return a.end_time > b.end_time;
+}
+
+// part 2
+{
+	let base_time: int = 60;
+	let max_workers: int = 5;
+	let mut nodes: [char: Node] = make_nodes();
+	let mut available: [char] = get_available(nodes);
+	let mut workers: [Worker] = vec<Worker>{};
+	let mut current_time: int = 0;
+
+	while available.len() > 0 || workers.len() > 0 {
+		while available.len() > 0 && workers.len() < max_workers {
+			available.sort();
+			let first: char = available[0];
+			available.remove(first);
+
+			workers.push(Worker {
+				node = first,
+				end_time = current_time + base_time + char_to_int(first),
+			});
+		}
+		
+		workers.sort(worker_greater);
+
+		let w: Worker = workers.pop();
+		nodes[w.node].done = true;
+
+		visit(nodes, available, w.node);
+		current_time = w.end_time;
+	}
+
+	print(current_time);
+}
+
+
