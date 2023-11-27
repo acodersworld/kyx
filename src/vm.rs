@@ -1163,13 +1163,14 @@ impl<'printer> VM<'printer> {
         }
 
         match vector[0] {
-            Value::Integer(_) | Value::Float(_) | Value::Str(_) | Value::Bool(_) => {
+            Value::Integer(_) | Value::Float(_) | Value::Str(_) | Value::Bool(_) | Value::Char(_) => {
                 vector.sort_by(|a, b| {
                     match (a, b) {
                         (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
                         (Value::Float(x), Value::Float(y)) => x.cmp(y),
                         (Value::Str(x), Value::Str(y)) => unsafe { x.as_ref() }.val.cmp(&unsafe { y.as_ref() }.val),
                         (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
+                        (Value::Char(x), Value::Char(y)) => x.cmp(y),
                         _ => panic!("Unexpected values in vector during sort! {:?} / {:?}", a, b)
                     }
                 });

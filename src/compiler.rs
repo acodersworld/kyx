@@ -1528,7 +1528,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         self.consume(Token::LeftParen)?;
 
                         let arg_count = match elem_type.as_ref() {
-                            ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool => 0,
+                            ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool | ValueType::Char => 0,
                             _ => {
                                 let location = self.scanner.peek_token()?.location;
                                 self.expression(chunk)?;
