@@ -3958,7 +3958,36 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 self.float(chunk, f);
             }
             Token::Str(s) => {
-                self.string(chunk, s);
+                if s.contains('\\') {
+                    let mut escaped = String::with_capacity(s.len());
+                    let mut seen_slash = false;
+                    for c in s.chars() {
+                        if c == '\\' {
+                            seen_slash = true;
+                        }
+                        else if seen_slash {
+                            match c {
+                                'n' => escaped.push('\n'),
+                                't' => escaped.push('\t'),
+                                _ => return Err(self.make_error_msg(
+                                        &format!("Unknown escape character {}", c), &t.location))
+                            }
+                            seen_slash = false;
+                        }
+                        else {
+                            escaped.push(c); 
+                        }
+                    }
+
+                    if seen_slash {
+                        return Err(self.make_error_msg("Unterminated escape character", &t.location))
+                    }
+
+                    self.string(chunk, &escaped);
+                }
+                else {
+                    self.string(chunk, s);
+                }
             }
             Token::Char(c) => {
                 self.character(chunk, c);

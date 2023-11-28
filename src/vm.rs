@@ -1509,6 +1509,17 @@ mod test {
     }
 
     #[test]
+    fn test_escape_characters() {
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            assert_eq!(vm.interpret("print(\"\\n\\t\");"), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "\n\t");
+        }
+    }
+
+    #[test]
     fn test_not() {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
