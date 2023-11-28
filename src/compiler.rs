@@ -3063,6 +3063,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let prev_in_loop = self.is_in_loop;
         self.is_in_loop = false; // disable break (maybe enable later)
 
+        let stack_size = self.type_stack.len();
         self.scoped_block(chunk, |cm, ch| {
             let (identifier_name, _) = cm.match_identifier()?;
 
@@ -3164,7 +3165,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })?;
 
         self.is_in_loop = prev_in_loop;
-        self.type_stack.clear(); // FIX ME
+        assert!(stack_size <= self.type_stack.len());
+        self.type_stack.drain(stack_size..);
         Ok(())
     }
 
