@@ -2550,9 +2550,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let mutable = self.scanner.match_token(Token::Mut)?;
         let (identifier_name, identifier_name_location) = self.match_identifier()?;
 
-        self.consume(Token::Colon)?;
-
-        let var_type = self.parse_type()?;
+        let var_type_option = {
+            if self.scanner.match_token(Token::Colon)? {
+                Some(self.parse_type()?)
+            } else {
+                None
+            }
+        };
 
         self.consume(Token::Equal)?;
 
@@ -2564,23 +2568,31 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         let expr_type = self.type_stack.pop().unwrap().value_type;
-        if !var_type.can_assign(&expr_type) {
-            let interface_satisfied = match (&var_type, &expr_type) {
-                (ValueType::Interface(i), ValueType::Struct(s)) => {
-                    if i.does_struct_satisfy_interface(s) {
-                        self.create_interface_object_for_struct(i, s, chunk);
-                        true
-                    } else {
-                        false
+        let var_type = {
+            if let Some(var_type) = var_type_option {
+                if !var_type.can_assign(&expr_type) {
+                    let interface_satisfied = match (&var_type, &expr_type) {
+                        (ValueType::Interface(i), ValueType::Struct(s)) => {
+                            if i.does_struct_satisfy_interface(s) {
+                                self.create_interface_object_for_struct(i, s, chunk);
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+
+                    if !interface_satisfied {
+                        return Err(self.make_error_msg(&format!("Expected type {}, got {}", var_type, expr_type), &rvalue_loc));
                     }
                 }
-                _ => false,
-            };
-
-            if !interface_satisfied {
-                return Err(self.make_error_msg(&format!("Expected type {}, got {}", var_type, expr_type), &rvalue_loc));
+                var_type
             }
-        }
+            else {
+                expr_type
+            }
+        };
 
         if self.stack_frames.is_empty() {
             if self.globals.contains_key(&identifier_name) {
@@ -4009,6 +4021,55 @@ mod test {
             compiler.compile(&mut table, src).unwrap();
             true
         });
+    }
+
+    #[test]
+    fn test_let_type_inference() {
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+            let i = 0;
+            let f = 3.142;
+            let s = \"hello\";
+            let b = false;
+
+            // these will fail if the types are not correct
+            let i2: int = i;
+            let f2: float = f;
+            let s2: string = s;
+            let b2: bool = b;
+            ";
+
+            assert!({
+                compiler.compile(&mut table, src).unwrap();
+                true
+            });
+        }
+
+        {
+            let mut table = TestDataSection::new();
+            let mut compiler = Compiler::new();
+
+            let src = "
+            let mut i = 0;
+            let mut f = 3.142;
+            let mut s = \"hello\";
+            let mut b = false;
+
+            // these will fail if the types are not correct
+            let i2: int = i;
+            let f2: float = f;
+            let s2: string = s;
+            let b2: bool = b;
+            ";
+
+            assert!({
+                compiler.compile(&mut table, src).unwrap();
+                true
+            });
+        }
     }
 
     #[test]
