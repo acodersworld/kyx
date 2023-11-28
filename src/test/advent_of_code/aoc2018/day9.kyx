@@ -1,0 +1,83 @@
+let num_players: int = 464;
+
+struct Marble {
+	num: int,
+	next: mut int,
+	prev: mut int,
+}
+
+let mut marbles: [Marble] = vec<Marble>{};
+marbles.push(Marble {
+	num = 0,
+	next = 0,
+	prev = 0,
+});
+let mut current: Marble = marbles[0];
+
+fn insert(num: int, m: Marble, marbles: mut [Marble]) -> Marble {
+	let mut left: Marble = marbles[m.next];
+	let mut right: Marble = marbles[left.next];
+
+	let mut new: Marble = Marble {
+		num = num,
+		prev = m.next,
+		next = left.next,
+	};
+
+	marbles.push(new);
+	let idx: int = marbles.len() - 1;
+	left.next = idx;
+	right.prev = idx;
+	return new;
+}
+
+struct Rm {
+	marble: Marble,
+	score: int,
+}
+
+fn remove(m: mut Marble, marbles: mut [Marble]) -> Rm {
+	for i : 0..7 {
+		m = marbles[m.prev];	
+	}
+
+	let c: Marble = marbles[m.next];
+	let mut left: Marble = marbles[m.prev];
+	let mut right: Marble = marbles[m.next];
+
+	left.next = m.next;
+	right.prev = m.prev;
+	return Rm {
+		marble = c,
+		score = m.num,
+	};
+}
+
+fn find_highest_score(last_marble: int) -> int {
+	let mut players: [int] = vec<int>[num_players]{0};
+	for i : 1..=last_marble {
+		if (i % 23) == 0 {
+			let pi: int = i % players.len();
+			let rm: Rm = remove(current, marbles);
+
+			current = rm.marble;
+			players[pi] = players[pi] + i + rm.score;
+		}
+		else {
+			current = insert(i, current, marbles);
+		}
+	}
+
+	let mut highest: int = 0;
+	for i : 0..players.len() {
+		if players[i] > highest {
+			highest = players[i];
+		}
+	}
+	return highest;
+}
+
+print(find_highest_score(70918));
+// part 2 takes a bit too long for testing
+//print(find_highest_score(70918 * 100));
+

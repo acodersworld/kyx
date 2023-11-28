@@ -334,3 +334,22 @@ mod day8 {
     }
 }
 
+#[cfg(test)]
+mod day9 {
+    use super::*;
+
+    // part 2 takes to long and is the same as part 1
+    #[test]
+    fn part_1() {
+        let mut printer = utils::TestPrinter::new();
+        let mut vm = vm::VM::new(&mut printer);
+
+        let src = include_str!("aoc2018/day9.kyx");
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 1);
+        assert_eq!(printer.strings[0], "370210");
+    }
+}
+
+
