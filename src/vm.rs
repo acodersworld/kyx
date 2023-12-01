@@ -273,7 +273,7 @@ macro_rules! bin_op_comparison {
             let result = match (left, right) {
                 (Value::Integer(l), Value::Integer(r)) => Value::Bool(l $op r),
                 (Value::Float(l), Value::Float(r)) => Value::Bool(l $op r),
-                _ => panic!("")
+                (l, r) => panic!("Expected ints or floats, got {:?} / {:?}", l, r)
             };
 
             *st.last_mut().unwrap() = result;
@@ -396,6 +396,7 @@ impl<'printer> VM<'printer> {
                 opcode::PRINT => self.print(),
                 opcode::POP => self.pop(),
                 opcode::LOCAL_POP => self.local_pop(&mut frame_stack.top),
+                opcode::LOCAL_SET_SIZE => self.local_set_size(&mut frame_stack.top),
                 opcode::PUSH_FRAME => self.push_frame(&mut frame_stack.top),
                 opcode::POP_FRAME => self.pop_frame(),
                 opcode::LOOP => self.jmp_loop(&mut frame_stack.top),
@@ -940,6 +941,13 @@ impl<'printer> VM<'printer> {
         frame.locals.pop();
     }
 
+    fn local_set_size(&mut self, frame: &mut Frame) {
+        let size = frame.next_code().unwrap() as usize;
+        assert!(size <= frame.locals.len());
+
+        frame.locals.drain(size..);
+    }
+
     fn push_frame(&mut self, frame: &mut Frame) {
         frame.locals.clear();
 
@@ -1023,7 +1031,6 @@ impl<'printer> VM<'printer> {
             }
             frame.pc += 2;
         } else {
-            self.value_stack.pop();
             frame.pc += offset;
         }
     }
@@ -3235,7 +3242,7 @@ mod test {
                         }
                     }
                 }
-
+                test();
                 ";
         assert_eq!(vm.interpret(src), Ok(()));
     }

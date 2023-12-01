@@ -67,6 +67,7 @@ impl<'a> Disassembler<'a> {
             opcode::PRINT => self.simple_instruction("print"),
             opcode::POP => self.simple_instruction("pop"),
             opcode::LOCAL_POP => self.simple_instruction("local pop"),
+            opcode::LOCAL_SET_SIZE => self.local_set_size(),
             opcode::PUSH_FRAME => self.simple_instruction("push frame"),
             opcode::POP_FRAME => self.simple_instruction("pop frame"),
             opcode::LOOP => self.jmp_instruction("loop", -1),
@@ -319,4 +320,12 @@ impl<'a> Disassembler<'a> {
 
         println!("CALL BUILTIN: arity({}) id({})", arg_count, builtin_id);
     }
+
+    fn local_set_size(&mut self) {
+        let size = self.code[self.offset];
+        self.offset += 1;
+
+        println!("LOCAL SET SIZE: size({})", size);
+    }
+
 }

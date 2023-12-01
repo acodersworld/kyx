@@ -3005,7 +3005,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn patch_break(&mut self, chunk: &mut Chunk, start_idx: usize, jmp_idx: usize) {
+    fn patch_break(&mut self, chunk: &mut Chunk, start_idx: usize, jmp_idx: usize) -> bool {
+        let sz = self.unpatched_break_offsets.len();
         self.unpatched_break_offsets.retain(|&idx| {
             if idx > start_idx {
                 chunk.write_short_at(idx, (jmp_idx - idx).try_into().unwrap());
@@ -3014,6 +3015,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 true
             }
         });
+
+        sz != self.unpatched_break_offsets.len()
     }
 
     fn while_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
@@ -3027,14 +3030,28 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.type_stack.pop();
         let cond_break_idx = chunk.write_short(0);
 
+        let mut has_breaks = false;
+        let locals_count = {
+            if self.stack_frames.is_empty() {
+                0
+            } else {
+                self.stack_frames.last().unwrap().locals.len()
+            }
+        };
+
         self.scoped_block(chunk, |cm, ch| {
             while !cm.scanner.match_token(Token::RightBrace)? {
                 cm.rule(ch)?;
             }
 
-            cm.patch_break(ch, loop_begin_idx, ch.code.len());
+            has_breaks = cm.patch_break(ch, loop_begin_idx, ch.code.len());
             Ok(())
         })?;
+
+        if has_breaks {
+            chunk.write_byte(opcode::LOCAL_SET_SIZE);
+            chunk.write_byte(locals_count.try_into().unwrap());
+        }
 
         chunk.write_byte(opcode::LOOP);
         chunk.write_short((chunk.code.len() - loop_begin_idx + 1).try_into().unwrap());

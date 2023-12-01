@@ -37,18 +37,19 @@ pub const PUSH_LOCAL: u8 = 34;
 pub const PUSH_METHOD: u8 = 35;
 pub const POP: u8 = 36;
 pub const LOCAL_POP: u8 = 37;
-pub const PUSH_FRAME: u8 = 38;
-pub const POP_FRAME: u8 = 39;
-pub const LOOP: u8 = 40;
-pub const BREAK: u8 = 41;
-pub const JMP: u8 = 42;
-pub const JMP_IF_FALSE: u8 = 43;
-pub const JMP_IF_DETERMINANT_MISMATCH: u8 = 44;
-pub const READ_INPUT: u8 = 45;
-pub const CALL: u8 = 46;
-pub const CALL_INTERFACE: u8 = 47;
-pub const CALL_BUILTIN: u8 = 48;
-pub const RETURN: u8 = 49;
+pub const LOCAL_SET_SIZE: u8 = 38;
+pub const PUSH_FRAME: u8 = 39;
+pub const POP_FRAME: u8 = 40;
+pub const LOOP: u8 = 41;
+pub const BREAK: u8 = 42;
+pub const JMP: u8 = 43;
+pub const JMP_IF_FALSE: u8 = 44;
+pub const JMP_IF_DETERMINANT_MISMATCH: u8 = 45;
+pub const READ_INPUT: u8 = 46;
+pub const CALL: u8 = 47;
+pub const CALL_INTERFACE: u8 = 48;
+pub const CALL_BUILTIN: u8 = 49;
+pub const RETURN: u8 = 50;
 // OP CODE END
 
 #[allow(dead_code)]
@@ -92,18 +93,19 @@ pub fn to_string(code: u8) -> String {
         35 => "PUSH_METHOD".to_owned(),
         36 => "POP".to_owned(),
         37 => "LOCAL_POP".to_owned(),
-        38 => "PUSH_FRAME".to_owned(),
-        39 => "POP_FRAME".to_owned(),
-        40 => "LOOP".to_owned(),
-        41 => "BREAK".to_owned(),
-        42 => "JMP".to_owned(),
-        43 => "JMP_IF_FALSE".to_owned(),
-        44 => "JMP_IF_DETERMINANT_MISMATCH".to_owned(),
-        45 => "READ_INPUT".to_owned(),
-        46 => "CALL".to_owned(),
-        47 => "CALL_INTERFACE".to_owned(),
-        48 => "CALL_BUILTIN".to_owned(),
-        49 => "RETURN".to_owned(),
+        38 => "LOCAL_SET_SIZE".to_owned(),
+        39 => "PUSH_FRAME".to_owned(),
+        40 => "POP_FRAME".to_owned(),
+        41 => "LOOP".to_owned(),
+        42 => "BREAK".to_owned(),
+        43 => "JMP".to_owned(),
+        44 => "JMP_IF_FALSE".to_owned(),
+        45 => "JMP_IF_DETERMINANT_MISMATCH".to_owned(),
+        46 => "READ_INPUT".to_owned(),
+        47 => "CALL".to_owned(),
+        48 => "CALL_INTERFACE".to_owned(),
+        49 => "CALL_BUILTIN".to_owned(),
+        50 => "RETURN".to_owned(),
         _ => "UNKNOWN".to_owned(),
     }
 }
