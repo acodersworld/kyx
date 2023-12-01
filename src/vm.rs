@@ -1232,6 +1232,16 @@ impl<'printer> VM<'printer> {
                     self.value_stack
                         .push(Value::Char(c.to_ascii_uppercase()));
                 }
+                builtin_functions::ch::TO_INTEGER => {
+                    self.value_stack.push(Value::Integer(
+                        c.to_digit(10).unwrap_or(0) as i64
+                    ));
+                }
+                builtin_functions::ch::IS_DIGIT => {
+                    self.value_stack.push(Value::Bool(
+                        c.is_ascii_digit()
+                    ));
+                }
                 _ => panic!("Unexpected char builtin id {}", builtin_id),
             }
             Value::Vector(mut v) => match builtin_id {

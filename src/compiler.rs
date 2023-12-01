@@ -1839,6 +1839,34 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             read_only: true,
                         });
                     }
+                    "to_integer" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::ch::TO_INTEGER);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Integer,
+                            read_only: true,
+                        });
+                    }
+                    "is_digit" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::ch::IS_DIGIT);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Bool,
+                            read_only: true,
+                        });
+                    }
                     _ => {
                         return Err(self.make_error_msg(
                             &format!("Char does not have method '{}'", member_name),

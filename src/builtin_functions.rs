@@ -35,6 +35,8 @@ pub mod hashmap {
 pub mod ch {
     pub const TO_LOWERCASE: u8 = 0;
     pub const TO_UPPERCASE: u8 = 1;
+    pub const TO_INTEGER: u8 = 2;
+    pub const IS_DIGIT: u8 = 3;
 }
 
 pub mod integer {
