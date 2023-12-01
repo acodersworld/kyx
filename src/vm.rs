@@ -3210,6 +3210,37 @@ mod test {
     }
 
     #[test]
+    fn test_if_let_loop() {
+        // Test that the value & local stacks are correct using loops.
+        // The if let block must correctly pop the unwraped value off the locals stack.
+        // If there is a misalignment due to the local stack continually grown (from a missing pop)
+        // then 'v' will not be a union and the vm will crash
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+                union Union
+                {
+                    Some(char),
+                    None,
+                }
+
+                let str = \"a1bc2def3ghi45jkl9mn4\";
+
+                fn test() {
+                    for i : 0..str.len() {
+                        let s = str;
+                        let v = Union.Some(s[i],);//test(substr);
+                        if let Union.Some(c,) = v {
+                        }
+                    }
+                }
+
+                ";
+        assert_eq!(vm.interpret(src), Ok(()));
+    }
+
+    #[test]
     fn test_if_let_multiple() {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);

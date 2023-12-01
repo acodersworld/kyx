@@ -2939,6 +2939,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if is_if_let {
             let frame = self.stack_frames.last_mut().unwrap();
             frame.locals.pop();
+            chunk.write_byte(opcode::LOCAL_POP);
         }
 
         if self.scanner.match_token(Token::Else)? {
@@ -3077,14 +3078,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         block(self, chunk)?;
 
         assert!(!self.stack_frames.is_empty());
+        let frame = self.stack_frames.last_mut().unwrap();
+        while frame.locals.len() > locals_top {
+            chunk.code.push(opcode::LOCAL_POP);
+            frame.locals.pop();
+        }
+
         if push_local {
             self.pop_stack_frame(chunk);
-        } else {
-            let frame = self.stack_frames.last_mut().unwrap();
-            while frame.locals.len() > locals_top {
-                chunk.code.push(opcode::LOCAL_POP);
-                frame.locals.pop();
-            }
         }
 
         Ok(())
