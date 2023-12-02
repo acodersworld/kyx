@@ -1,0 +1,49 @@
+let lines = readinput();
+
+let limits = hash_map<string, int>{
+	"red": 12,
+	"green": 13,
+	"blue": 14
+};
+
+let mut sum = 0;
+let mut power = 0;
+for i : 0..lines.len() {
+	let game = lines[i].split(':');
+	let game_number = game[0].split(' ')[1].to_integer();
+	let sets = game[1].split(';');
+
+	let max_colours = hash_map<string, int>{
+		"red": 0,
+		"green": 0,
+		"blue": 0
+	};
+
+	let mut possible = true;
+	for s : 0..sets.len() {
+		let balls = sets[s].split(',');
+		
+		for c : 0..balls.len() {
+			let ball = balls[c].trim().split(' ');
+			let count = ball[0].to_integer();
+			let colour = ball[1];
+
+			if limits[colour] < count {
+				possible = false;
+			}
+
+			if max_colours[colour] < count {
+				max_colours[colour] = count;
+			}
+		}
+	}
+	
+	power = power + (max_colours["green"] * max_colours["red"] * max_colours["blue"]);
+	if possible {
+		sum = sum + game_number;
+	}
+}
+
+print(sum);
+print(power);
+
