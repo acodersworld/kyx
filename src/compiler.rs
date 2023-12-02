@@ -3170,6 +3170,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 }
             };
 
+            let is_cond_less = !cm.scanner.match_token(Token::Greater)?;
+
             let end_idx;
             {
                 let end_loc = cm.scanner.peek_token()?.location;
@@ -3188,10 +3190,42 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     },
                     scope: frame.current_scope,
                 });
+
+                ch.write_byte(opcode::DEFINE_LOCAL);
+                cm.type_stack.pop();
             }
 
-            ch.write_byte(opcode::DEFINE_LOCAL);
-            cm.type_stack.pop();
+            let step_idx;
+            {
+                let step_loc = cm.scanner.peek_token()?.location;
+                if cm.scanner.match_token(Token::Colon)? {
+                    cm.expression(ch)?;
+                    if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
+                        return Err(cm.make_error_msg("Expected integer value", &step_loc));
+                    }
+                }
+                else {
+                    if is_cond_less {
+                        cm.integer(ch, 1);
+                    } else {
+                        cm.integer(ch, -1);
+                    }
+                }
+
+                let frame = cm.stack_frames.last_mut().unwrap();
+                step_idx = frame.locals.len().try_into().unwrap();
+                frame.locals.push(LocalVariable {
+                    name: "#".to_string(),
+                    v: Variable {
+                        read_only: true,
+                        value_type: ValueType::Integer,
+                    },
+                    scope: frame.current_scope,
+                });
+
+                ch.write_byte(opcode::DEFINE_LOCAL);
+                cm.type_stack.pop();
+            }
 
             cm.consume(Token::LeftBrace)?;
 
@@ -3208,10 +3242,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ch.write_byte(var_idx);
                 ch.write_byte(opcode::PUSH_LOCAL);
                 ch.write_byte(end_idx);
-                if is_inclusive {
-                    ch.write_byte(opcode::LESS_EQUAL);
-                } else {
-                    ch.write_byte(opcode::LESS);
+
+                if is_cond_less {
+                    if is_inclusive {
+                        ch.write_byte(opcode::LESS_EQUAL);
+                    } else {
+                        ch.write_byte(opcode::LESS);
+                    }
+                }
+                else {
+                    if is_inclusive {
+                        ch.write_byte(opcode::GREATER_EQUAL);
+                    } else {
+                        ch.write_byte(opcode::GREATER);
+                    }
                 }
 
                 ch.write_byte(opcode::JMP_IF_FALSE);
@@ -3224,7 +3268,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 // This will need to be shifted to the top of the loop if breaks are to be enabled.
                 ch.write_byte(opcode::PUSH_LOCAL);
                 ch.write_byte(var_idx);
-                cm.integer(ch, 1);
+                ch.write_byte(opcode::PUSH_LOCAL);
+                ch.write_byte(step_idx);
                 ch.write_byte(opcode::ADD);
                 ch.write_byte(opcode::SET_LOCAL);
                 ch.write_byte(var_idx);

@@ -27,22 +27,18 @@ fn get_number(str: string, part2: bool) -> int {
 	let mut first = 0;
 	let mut last = 0;
 
-	let mut i = 0;
-	while i < str.len() {
+	for i : 0..str.len() {
 		if let Number.Value(v,) = get_word_value(str[i..], part2) {
 			first = v;
 			break;
 		}
-		i = i + 1;
 	}
 
-	i = str.len() - 1;
-	while i >= 0 {
+	for i : (str.len()-1)..=>0 {
 		if let Number.Value(v,) = get_word_value(str[i..], part2) {
 			last = v;
 			break;
 		}
-		i = i - 1;
 	}
 
 	return first * 10 + last;

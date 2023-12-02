@@ -2205,7 +2205,6 @@ mod test {
         let mut vm = VM::new(&mut printer);
 
         let src = "
-            let mut i: int = 0;
             for i : 0..5 {
                 if i > 2 {
                     break;
@@ -2227,7 +2226,6 @@ mod test {
         let mut vm = VM::new(&mut printer);
 
         let src = "
-            let mut i: int = 0;
             for i : 0..5 {
                 if i > 2 {
                     break;
@@ -2235,7 +2233,6 @@ mod test {
 
                 print i;
 
-                let mut j: int = 0;
                 for j : 0..5 {
                     if j > 3 {
                         break;
@@ -2274,7 +2271,6 @@ mod test {
         let mut vm = VM::new(&mut printer);
 
         let src = "
-            let mut i: int = 0;
             for i : 0..5 {
                 if i < 2 {
                     continue;
@@ -2296,7 +2292,6 @@ mod test {
         let mut vm = VM::new(&mut printer);
 
         let src = "
-            let mut i: int = 0;
             for i : 0..5 {
                 if i < 2 {
                     continue;
@@ -2304,7 +2299,6 @@ mod test {
 
                 print i;
 
-                let mut j: int = 0;
                 for j : 0..5 {
                     if j < 3 {
                         continue;
@@ -2315,7 +2309,6 @@ mod test {
             }
         ";
         assert_eq!(vm.interpret(src), Ok(()));
-        println!("{:?}", printer.strings);
         assert_eq!(printer.strings.len(), 9);
         assert_eq!(printer.strings[0], "2");
         assert_eq!(printer.strings[1], "3");
@@ -2328,6 +2321,69 @@ mod test {
         assert_eq!(printer.strings[6], "4");
         assert_eq!(printer.strings[7], "3");
         assert_eq!(printer.strings[8], "4");
+    }
+
+    #[test]
+    fn for_loop_step() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            for i : 0..=10:2 {
+                print i;
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 6);
+        assert_eq!(printer.strings[0], "0");
+        assert_eq!(printer.strings[1], "2");
+        assert_eq!(printer.strings[2], "4");
+        assert_eq!(printer.strings[3], "6");
+        assert_eq!(printer.strings[4], "8");
+        assert_eq!(printer.strings[5], "10");
+    }
+
+    #[test]
+    fn for_loop_rev() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            for i : 5..=>0 {
+                print i;
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 6);
+        assert_eq!(printer.strings[0], "5");
+        assert_eq!(printer.strings[1], "4");
+        assert_eq!(printer.strings[2], "3");
+        assert_eq!(printer.strings[3], "2");
+        assert_eq!(printer.strings[4], "1");
+        assert_eq!(printer.strings[5], "0");
+    }
+
+    #[test]
+    fn for_loop_step_rev() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            for i : 10..=>0:-2 {
+                print i;
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 6);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "8");
+        assert_eq!(printer.strings[2], "6");
+        assert_eq!(printer.strings[3], "4");
+        assert_eq!(printer.strings[4], "2");
+        assert_eq!(printer.strings[5], "0");
     }
 
     #[test]
