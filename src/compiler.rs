@@ -650,7 +650,16 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             members: HashMap::new(),
         };
 
+        let mut seen_comma = true; // seed for first one
         while !self.scanner.match_token(Token::RightBrace)? {
+            if !seen_comma {
+                let comma_location = self.scanner.peek_token()?.location;
+                return Err(self.make_error_msg(
+                    &format!("Expected comma"),
+                    &comma_location,
+                ));
+            }
+
             let (member_name, member_name_location) = self.match_identifier()?;
             self.consume(Token::Equal)?;
 
@@ -703,7 +712,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ));
             }
 
-            self.consume(Token::Comma)?;
+            seen_comma = self.scanner.match_token(Token::Comma)?;
         }
 
         let enum_type = Rc::new(enum_type);
@@ -732,13 +741,21 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let mut members_map = HashMap::new();
 
         self.consume(Token::LeftBrace)?;
+        let mut seen_comma = true; // seed for first one
         while !self.scanner.match_token(Token::RightBrace)? {
+            if !seen_comma {
+                let comma_location = self.scanner.peek_token()?.location;
+                return Err(self.make_error_msg(
+                    &format!("Expected comma"),
+                    &comma_location,
+                ));
+            }
+
             let (member_name, member_name_location) = self.match_identifier()?;
 
             self.consume(Token::Colon)?;
             let is_member_mutable = self.scanner.match_token(Token::Mut)?;
             let member_type = self.parse_type()?;
-            self.consume(Token::Comma)?;
 
             if members_map
                 .insert(member_name.to_string(), StructMember { read_only: !is_member_mutable, value_type: member_type })
@@ -752,6 +769,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     &member_name_location,
                 ));
             }
+
+            seen_comma = self.scanner.match_token(Token::Comma)?;
         }
 
         if self.user_types.contains_key(&struct_name) {
@@ -1017,18 +1036,25 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut members: Vec<(String, Vec<UnionMemberType>)> = vec![];
 
+
+        let mut seen_comma = true; // seed for first one
         while !self.scanner.match_token(Token::RightBrace)? {
+            if !seen_comma {
+                let comma_location = self.scanner.peek_token()?.location;
+                return Err(self.make_error_msg(
+                    &format!("Expected comma"),
+                    &comma_location,
+                ));
+            }
+
             let (member_name, member_name_location) = self.match_identifier()?;
 
             let mut member_types = vec![];
             if self.scanner.match_token(Token::LeftParen)? {
-                member_types.push(self.union_member_type(&mut template_parameter_types)?);
-
-                while self.scanner.match_token(Token::Comma)? {
-                    member_types.push(self.union_member_type(&mut template_parameter_types)?);
-                }
-
-                self.consume(Token::RightParen)?;
+                self.parse_commas_separate_list(Token::RightParen, |cm, _| {
+                    member_types.push(cm.union_member_type(&mut template_parameter_types)?);
+                    Ok(())
+                })?;
             }
 
             if members
@@ -1045,8 +1071,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ));
             }
 
-            self.consume(Token::Comma)?;
             members.push((member_name, member_types));
+
+            seen_comma = self.scanner.match_token(Token::Comma)?;
         }
 
         let template_parameter_count = template_parameter_types.len();
@@ -2150,7 +2177,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         if member_count > 0 {
             self.consume(Token::LeftParen)?;
 
+            let mut seen_comma = true;
             for member_type in &member.1 {
+                if !seen_comma {
+                    let loc = self.scanner.peek_token()?.location;
+                    return Err(self.make_error_msg(&format!("Expected ','"), &loc));
+                }
+
                 self.expression(chunk)?;
 
                 let expr_type = &self.type_stack.pop().unwrap().value_type;
@@ -2161,7 +2194,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     ));
                 }
 
-                self.consume(Token::Comma)?;
+                seen_comma = self.scanner.match_token(Token::Comma)?;
             }
 
             self.consume(Token::RightParen)?;
@@ -2328,17 +2361,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     where
         F: FnMut(&mut Self, usize) -> Result<(), String>,
     {
-        if self.scanner.match_token(terminal_token)? {
-            return Ok(0);
-        }
-
-        f(self, 0)?;
-
-        let mut idx = 1;
+        let mut idx = 0;
+        let mut seen_comma = true; // seed first
         while !self.scanner.match_token(terminal_token)? {
-            self.consume(Token::Comma)?;
+            if !seen_comma {
+                let loc = self.scanner.peek_token()?.location;
+                return Err(self.make_error_msg(&format!("Expected ','"), &loc));
+            }
+
             f(self, idx)?;
             idx += 1;
+            seen_comma = self.scanner.match_token(Token::Comma)?;
         }
 
         Ok(idx)
@@ -2816,15 +2849,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         &mut self,
         chunk: &mut Chunk,
     ) -> Result<(usize, Vec<String>, Rc<UnionType>), String> {
-        let union_name = self.match_identifier()?.0;
+        let (union_name, union_loc) = self.match_identifier()?;
 
         let mut template_parameters = vec![];
 
         let union_type = if self.scanner.match_token(Token::Less)? {
-            while !self.scanner.match_token(Token::Greater)? {
-                template_parameters.push(self.parse_type()?);
-                self.consume(Token::Comma)?;
-            }
+            self.parse_commas_separate_list(Token::Greater, |cm, _| {
+                template_parameters.push(cm.parse_type()?);
+                Ok(())
+            })?;
 
             match self.user_types.get(&union_name) {
                 Some(user_type) => {
@@ -2835,7 +2868,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                     templated_union_type.instance_union(&template_parameters)?
                 }
-                None => return Err(format!("No union named {}", union_name)),
+                None => return Err(self.make_error_msg(&format!("No union named {}", union_name), &union_loc)),
             }
         } else {
             match self.user_types.get(&union_name) {
@@ -2847,13 +2880,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                     union_type.clone()
                 }
-                None => return Err(format!("No union named {}", union_name)),
+                None => return Err(self.make_error_msg(&format!("No union named {}", union_name), &union_loc)),
             }
         };
 
         self.consume(Token::Dot)?;
 
-        let member_name = self.match_identifier()?.0;
+        let (member_name, member_loc) = self.match_identifier()?;
         let (determinant, member) = match union_type
             .members
             .iter()
@@ -2862,28 +2895,34 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         {
             Some(x) => (x.0, &x.1 .1),
             None => {
-                return Err(format!(
+                return Err(self.make_error_msg(&format!(
                     "{} not a member of union {}",
                     member_name, union_name
-                ))
+                ), &member_loc))
             }
         };
 
         self.consume(Token::LeftParen)?;
 
         let mut variable_names = vec![];
-        for _ in 0..member.len() {
-            variable_names.push(self.match_identifier()?.0);
-            self.consume(Token::Comma)?;
+        self.parse_commas_separate_list(Token::RightParen, |cm, _| {
+            variable_names.push(cm.match_identifier()?.0);
+            Ok(())
+        })?;
+
+        if variable_names.len() != member.len() {
+            let loc = self.scanner.peek_token()?.location;
+            return Err(self.make_error_msg(&format!("Expected {} variables, get {}", member.len(), variable_names.len()), &loc));
+
         }
 
-        self.consume(Token::RightParen)?;
         self.consume(Token::Equal)?;
 
+        let expr_loc = self.scanner.peek_token()?.location;
         self.expression(chunk)?;
 
         if self.type_stack.last().unwrap().value_type != ValueType::Union(union_type.clone()) {
-            return Err(format!("Union type does not match"));
+            return Err(self.make_error_msg(&format!("Union type does not match"), &expr_loc));
         }
 
         Ok((determinant, variable_names, union_type))
@@ -4718,6 +4757,26 @@ mod test {
     }
 
     #[test]
+    fn test_enum_no_trailing_comma() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                enum Enum : int {
+                    a = 1,
+                    b = 2 // no comma
+                }
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
     fn test_enum_type_mismatch() {
         let mut table = TestDataSection::new();
         let mut compiler = Compiler::new();
@@ -4864,6 +4923,27 @@ mod test {
                     s = \"hello world\",
                 };
 
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_struct_no_trailing_comma() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "struct Struct
+                {
+                    i: int,
+                    f: float,
+                    s: string // no comma
+                }
                 ",
                 )
                 .unwrap();
@@ -5399,14 +5479,38 @@ mod test {
             compiler
                 .compile(
                     &mut table,
-                    "union Union
+                    "
+                union Union
                 {
                     I(int), F(float), S(string),
                 }
 
-                let mut u: Union = Union.I(9,);
-                u = Union.S(\"Hello world\",);
-                u = Union.F(3.142,);
+                let mut u: Union = Union.I(9);
+                u = Union.S(\"Hello world\");
+                u = Union.F(3.142);
+                ",
+                )
+                .unwrap();
+            true
+        });
+    }
+
+    #[test]
+    fn test_union_no_trailing_comma() {
+        let mut table = TestDataSection::new();
+        let mut compiler = Compiler::new();
+
+        assert!({
+            compiler
+                .compile(
+                    &mut table,
+                    "
+                union Union
+                {
+                    I(int),
+                    F(float),
+                    S(string) // no trailing comma
+                }
                 ",
                 )
                 .unwrap();
@@ -5427,9 +5531,9 @@ mod test {
                     I(A), F(B), S(C),
                 }
 
-                let mut u: Union<int, float, string,> = Union<int, float, string,>.I(9,);
-                u = Union<int, float, string,>.S(\"Hello world\",);
-                u = Union<int, float, string,>.F(3.142,);
+                let mut u: Union<int, float, string,> = Union<int, float, string,>.I(9);
+                u = Union<int, float, string,>.S(\"Hello world\");
+                u = Union<int, float, string,>.F(3.142);
                 ",
                 )
                 .unwrap();
@@ -5471,7 +5575,7 @@ mod test {
                     None,
                 }
 
-                let o: Option = Option.Some(10,);
+                let o: Option = Option.Some(10);
                 if let Option.Some(x,) = o {
                 }
                 ",
@@ -5495,11 +5599,11 @@ mod test {
                     Three(int, float, string),
                 }
 
-                let mut c: Composite = Composite.Two(10,1.23,);
+                let mut c: Composite = Composite.Two(10,1.23);
                 if let Composite.Two(x, y,) = c {
                 }
 
-                c = Composite.Three(300, 3.142, \"Hello World\",);
+                c = Composite.Three(300, 3.142, \"Hello World\");
                 if let Composite.Three(x, y, z,) = c {
                 }
                 ",
@@ -5524,12 +5628,12 @@ mod test {
                     Three(A, C, B),
                 }
 
-                let mut c: Composite<int, float, string,> = Composite<int, float, string,>.Two(10,1.23,);
-                if let Composite<int, float, string,>.Two(x, y,) = c {
+                let mut c: Composite<int, float, string,> = Composite<int, float, string,>.Two(10,1.23);
+                if let Composite<int, float, string>.Two(x, y,) = c {
                 }
 
-                c = Composite<int, float, string,>.Three(300, \"Hello World\", 3.142,);
-                if let Composite<int, float, string,>.Three(x, y, z,) = c {
+                c = Composite<int, float, string,>.Three(300, \"Hello World\", 3.142);
+                if let Composite<int, float, string>.Three(x, y, z,) = c {
                 }
                 ",
                 )
@@ -5554,7 +5658,7 @@ mod test {
 
                 type_alias MyOption = Option<int,>;
 
-                let o: Option<int,> = MyOption.Some(10,);
+                let o: Option<int,> = MyOption.Some(10);
 
                 struct Struct {
                     s: string,

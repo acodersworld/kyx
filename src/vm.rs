@@ -3339,13 +3339,13 @@ mod test {
                     I(int), F(float), S(string),
                 }
 
-                let mut u: Union = Union.I(9,);
+                let mut u: Union = Union.I(9);
                 print(u);
 
-                u = Union.S(\"Hello world\",);
+                u = Union.S(\"Hello world\");
                 print(u);
 
-                u = Union.F(3.142,);
+                u = Union.F(3.142);
                 print(u);
                 ";
 
@@ -3364,7 +3364,7 @@ mod test {
                     S(string),
                 }
 
-                let mut o: Union = Union.I(10,);
+                let mut o: Union = Union.I(10);
                 if let Union.I(x,) = o {
                     print(x);
                 }
@@ -3379,7 +3379,7 @@ mod test {
                     print(\"Mismatch\");
                 }
 
-                o = Union.F(3.142,);
+                o = Union.F(3.142);
                 if let Union.F(x,) = o {
                     print(x);
                 }
@@ -3424,7 +3424,7 @@ mod test {
                 fn test() {
                     for i : 0..str.len() {
                         let s = str;
-                        let v = Union.Some(s[i],);//test(substr);
+                        let v = Union.Some(s[i]);
                         if let Union.Some(c,) = v {
                         }
                     }
@@ -3445,7 +3445,7 @@ mod test {
                     Three(int, float, string),
                 }
 
-                let mut c: Composite = Composite.Two(10,1.23,);
+                let mut c: Composite = Composite.Two(10,1.23);
                 if let Composite.Two(x, y,) = c {
                     print(x);
                     print(y);
@@ -3458,7 +3458,7 @@ mod test {
                     print(\"Mismatch\");
                 }
 
-                c = Composite.Three(300, 3.142, \"Hello World\",);
+                c = Composite.Three(300, 3.142, \"Hello World\");
                 if let Composite.Three(x, y, z,) = c {
                     print(x);
                     print(y);
@@ -3516,7 +3516,7 @@ mod test {
             union Option<T> { Some(T), None, }
 
             type_alias O = Option<(int, float,),>;
-            let o: O = O.Some(tuple(9, 1.23,),);
+            let o: O = O.Some(tuple(9, 1.23,));
 
             if let O.Some(x,) = o {
                 print(x.0);
