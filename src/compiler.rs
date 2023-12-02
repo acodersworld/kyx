@@ -379,6 +379,12 @@ pub struct Compiler {
     tuple_types: Vec<Rc<TupleType>>,
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum LoopBreakType {
+    Break,
+    Continue
+}
+
 pub struct SrcCompiler<'a, T> {
     src: &'a str,
     globals: &'a mut HashMap<String, Variable>,
@@ -387,7 +393,7 @@ pub struct SrcCompiler<'a, T> {
     scanner: Scanner<'a>,
     type_stack: Vec<Variable>,
     data_section: &'a mut T,
-    unpatched_break_offsets: Vec<usize>,
+    unpatched_break_offsets: Vec<(usize, LoopBreakType)>,
     is_in_loop: bool,
     function_chunks: HashMap<String, Chunk>,
     method_chunks: HashMap<usize, Chunk>,
@@ -3005,10 +3011,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn patch_break(&mut self, chunk: &mut Chunk, start_idx: usize, jmp_idx: usize) -> bool {
+    fn patch_break(&mut self, chunk: &mut Chunk, start_idx: usize, jmp_idx: usize, break_type: Option<LoopBreakType>) -> bool {
         let sz = self.unpatched_break_offsets.len();
-        self.unpatched_break_offsets.retain(|&idx| {
-            if idx > start_idx {
+        self.unpatched_break_offsets.retain(|&(idx, btype)| {
+            if break_type != None && Some(btype) != break_type {
+                true
+            } else if idx > start_idx {
                 chunk.write_short_at(idx, (jmp_idx - idx).try_into().unwrap());
                 false
             } else {
@@ -3044,7 +3052,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 cm.rule(ch)?;
             }
 
-            has_breaks = cm.patch_break(ch, loop_begin_idx, ch.code.len());
+            has_breaks = cm.patch_break(ch, loop_begin_idx, ch.code.len(), None);
             Ok(())
         })?;
 
@@ -3119,7 +3127,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn for_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let prev_in_loop = self.is_in_loop;
-        self.is_in_loop = false; // disable break (maybe enable later)
+        self.is_in_loop = true;
 
         let stack_size = self.type_stack.len();
         self.scoped_block(chunk, |cm, ch| {
@@ -3186,6 +3194,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             cm.type_stack.pop();
 
             cm.consume(Token::LeftBrace)?;
+
+            let locals_count = {
+                if cm.stack_frames.is_empty() {
+                    0
+                } else {
+                    cm.stack_frames.last().unwrap().locals.len()
+                }
+            };
+
             cm.scoped_block(ch, |cm, ch| {
                 let loop_begin_idx = ch.write_byte(opcode::PUSH_LOCAL);
                 ch.write_byte(var_idx);
@@ -3202,6 +3219,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 cm.for_block(ch)?;
 
+                let has_continue = cm.patch_break(ch, loop_begin_idx, ch.code.len(), Some(LoopBreakType::Continue));
+
                 // This will need to be shifted to the top of the loop if breaks are to be enabled.
                 ch.write_byte(opcode::PUSH_LOCAL);
                 ch.write_byte(var_idx);
@@ -3209,6 +3228,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 ch.write_byte(opcode::ADD);
                 ch.write_byte(opcode::SET_LOCAL);
                 ch.write_byte(var_idx);
+
+                if cm.patch_break(ch, loop_begin_idx, ch.code.len(), Some(LoopBreakType::Break)) || has_continue {
+                    ch.write_byte(opcode::LOCAL_SET_SIZE);
+                    ch.write_byte(locals_count.try_into().unwrap());
+                }
 
                 ch.write_byte(opcode::LOOP);
                 ch.write_short((ch.code.len() - loop_begin_idx).try_into().unwrap());
@@ -3237,7 +3261,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         chunk.write_byte(opcode::BREAK);
         let idx = chunk.write_short(0);
-        self.unpatched_break_offsets.push(idx);
+        self.unpatched_break_offsets.push((idx, LoopBreakType::Break));
 
         Ok(())
     }
@@ -3251,7 +3275,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         chunk.write_byte(opcode::JMP);
         let idx = chunk.write_short(0);
-        self.unpatched_break_offsets.push(idx);
+        self.unpatched_break_offsets.push((idx, LoopBreakType::Continue));
 
         Ok(())
     }
