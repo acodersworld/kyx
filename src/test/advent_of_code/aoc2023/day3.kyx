@@ -1,0 +1,123 @@
+let lines = readinput();
+
+union Number {
+	Found(int, int, int, int),
+	None
+}
+
+fn scan_number(x: int, y: int) -> Number {
+	let mut x_start = x;
+	let x_end = lines[0].len();
+	for row : y..lines.len() {
+		let ln = lines[row];
+		for col : x_start..x_end {
+			if ln[col].is_digit() {
+				let mut end = col + 1;
+				while end < x_end {
+					if !ln[end].is_digit() {
+						break;
+					}
+					end = end + 1;
+				}
+				return Number.Found(col, row, ln[col..end].to_integer(), end);
+			}
+		}
+
+		x_start = 0;
+	}
+
+	return Number.None;
+}
+
+fn has_symbol(x: int, y: int) -> bool {
+	let max_row = lines.len();
+	let max_col = lines[0].len();
+	for row : y-1..=y+1 {
+		if row >= 0 && row < max_row {
+			let ln = lines[row];
+			for col : x-1..=x+1 {
+				if col >= 0 && col < max_col {
+					if ln[col] != '.' && !ln[col].is_digit() {
+						return true;
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
+
+let mut x = 0;
+let mut y = 0;
+let mut sum = 0;
+
+let mut map = vec<[int]>{};
+
+for i : 0..lines.len() {
+	map.push(vec<int>[lines[0].len()]{0});
+}
+
+while true {
+	if let Number.Found(x_found, y_found, number, x_end) = scan_number(x, y) {
+		for col : x_found..x_end {
+			if has_symbol(col, y_found) {
+				sum = sum + number;
+				break;
+			}
+		}
+
+		for col : x_found..x_end {
+			map[y_found][col] = number;	
+		}
+
+		x = x_end + 1;
+		y = y_found;
+	}
+	else {
+		break;
+	}
+}
+
+print(sum);
+
+fn calc_gear_ratio(x: int, y: int) -> int {
+	let max_row = lines.len();
+	let max_col = lines[0].len();
+
+	let mut numbers = vec<int>{};
+
+	for row : y-1..=y+1 {
+		if row >= 0 && row < max_row {
+			let ln = lines[row];
+			for col : x-1..=x+1 {
+				if col >= 0 && col < max_col {
+					let n = map[row][col];	
+					if n != 0 && !numbers.contains(n) {
+						numbers.push(n);	
+					}
+				}
+			}
+		}
+	}
+
+	if numbers.len() == 2 {
+		return numbers[0] * numbers[1];
+	}
+
+	return 0;
+}
+
+// part 2
+let mut gear_sum = 0;
+let len = lines[0].len();
+for row : 0..lines.len() {
+	let ln = lines[row];
+	for col : 0..len {
+		if ln[col] == '*' {
+			gear_sum = gear_sum + calc_gear_ratio(col, row);	
+		}
+	}
+}
+
+print(gear_sum);
+
