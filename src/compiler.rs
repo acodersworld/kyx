@@ -506,6 +506,29 @@ impl Compiler {
     }
 }
 
+trait ForLoopIteration<'a, T: DataSection> {
+    fn begin_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) -> usize;
+    fn end_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk);
+}
+
+struct IntegerIteration {
+    var_idx: u8,
+    step_idx: u8,
+    end_idx: u8,
+    is_inclusive: bool,
+    is_cond_less: bool
+}
+
+impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerIteration {
+    fn begin_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) -> usize {
+        cm.for_integer_iteration_begin(chunk, &self)
+    }
+
+    fn end_loop(&self, cm: &mut SrcCompiler<'_, T>, chunk: &mut Chunk) {
+        cm.for_integer_iteration_end(chunk, &self)
+    }
+}
+
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn clear_stack(&mut self, chunk: &mut Chunk, pop_count: usize) {
         if pop_count == 0 {
@@ -3201,6 +3224,137 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })
     }
 
+    fn for_integer_iteration(&mut self, index_variable_name: &str, chunk: &mut Chunk) -> Result<IntegerIteration, String> 
+    {
+        let var_idx;
+        {
+            let frame = self.stack_frames.last_mut().unwrap();
+            var_idx = frame.locals.len().try_into().unwrap();
+            chunk.write_byte(opcode::DEFINE_LOCAL);
+            self.type_stack.pop();
+
+            frame.locals.push(LocalVariable {
+                name: index_variable_name.to_string(),
+                v: Variable {
+                    read_only: true,
+                    value_type: ValueType::Integer,
+                },
+                scope: frame.current_scope,
+            });
+        }
+
+        let is_inclusive = {
+            let t = self.scanner.scan_token()?;
+            match t.token {
+                Token::DotDot => false,
+                Token::DotDotEqual => true,
+                _ => {
+                    return Err(self
+                        .make_error_msg("Expected range delimiter '..' or '..='", &t.location))
+                }
+            }
+        };
+
+        let is_cond_less = !self.scanner.match_token(Token::Greater)?;
+
+        let end_idx;
+        {
+            let end_loc = self.scanner.peek_token()?.location;
+            self.expression(chunk)?;
+            if self.type_stack.last().unwrap().value_type != ValueType::Integer {
+                return Err(self.make_error_msg("Expected integer value", &end_loc));
+            }
+
+            let frame = self.stack_frames.last_mut().unwrap();
+            end_idx = frame.locals.len().try_into().unwrap();
+            frame.locals.push(LocalVariable {
+                name: "#".to_string(),
+                v: Variable {
+                    read_only: true,
+                    value_type: ValueType::Integer,
+                },
+                scope: frame.current_scope,
+            });
+
+            chunk.write_byte(opcode::DEFINE_LOCAL);
+            self.type_stack.pop();
+        }
+
+        let step_idx;
+        {
+            let step_loc = self.scanner.peek_token()?.location;
+            if self.scanner.match_token(Token::Colon)? {
+                self.expression(chunk)?;
+                if self.type_stack.last().unwrap().value_type != ValueType::Integer {
+                    return Err(self.make_error_msg("Expected integer value", &step_loc));
+                }
+            }
+            else {
+                if is_cond_less {
+                    self.integer(chunk, 1);
+                } else {
+                    self.integer(chunk, -1);
+                }
+            }
+
+            let frame = self.stack_frames.last_mut().unwrap();
+            step_idx = frame.locals.len().try_into().unwrap();
+            frame.locals.push(LocalVariable {
+                name: "#".to_string(),
+                v: Variable {
+                    read_only: true,
+                    value_type: ValueType::Integer,
+                },
+                scope: frame.current_scope,
+            });
+
+            chunk.write_byte(opcode::DEFINE_LOCAL);
+            self.type_stack.pop();
+        }
+
+        Ok(IntegerIteration {
+            var_idx,
+            step_idx,
+            end_idx,
+            is_inclusive,
+            is_cond_less
+        })
+    }
+
+    fn for_integer_iteration_begin(&mut self, chunk: &mut Chunk, ii: &IntegerIteration) -> usize {
+        let loop_begin_idx = chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ii.var_idx);
+        chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ii.end_idx);
+
+        if ii.is_cond_less {
+            if ii.is_inclusive {
+                chunk.write_byte(opcode::LESS_EQUAL);
+            } else {
+                chunk.write_byte(opcode::LESS);
+            }
+        }
+        else {
+            if ii.is_inclusive {
+                chunk.write_byte(opcode::GREATER_EQUAL);
+            } else {
+                chunk.write_byte(opcode::GREATER);
+            }
+        }
+
+        loop_begin_idx
+    }
+
+    fn for_integer_iteration_end(&mut self, chunk: &mut Chunk, ii: &IntegerIteration) {
+        chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ii.var_idx);
+        chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ii.step_idx);
+        chunk.write_byte(opcode::ADD);
+        chunk.write_byte(opcode::SET_LOCAL);
+        chunk.write_byte(ii.var_idx);
+    }
+
     fn for_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let prev_in_loop = self.is_in_loop;
         self.is_in_loop = true;
@@ -3213,95 +3367,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             let start_loc = cm.scanner.peek_token()?.location;
             cm.expression(ch)?;
-            if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
-                return Err(cm.make_error_msg("Expected integer value", &start_loc));
-            }
 
-            let var_idx;
-            {
-                let frame = cm.stack_frames.last_mut().unwrap();
-                var_idx = frame.locals.len().try_into().unwrap();
-                ch.write_byte(opcode::DEFINE_LOCAL);
-                cm.type_stack.pop();
-
-                frame.locals.push(LocalVariable {
-                    name: identifier_name.to_string(),
-                    v: Variable {
-                        read_only: true,
-                        value_type: ValueType::Integer,
-                    },
-                    scope: frame.current_scope,
-                });
-            }
-
-            let is_inclusive = {
-                let t = cm.scanner.scan_token()?;
-                match t.token {
-                    Token::DotDot => false,
-                    Token::DotDotEqual => true,
-                    _ => {
-                        return Err(cm
-                            .make_error_msg("Expected range delimiter '..' or '..='", &t.location))
-                    }
-                }
-            };
-
-            let is_cond_less = !cm.scanner.match_token(Token::Greater)?;
-
-            let end_idx;
-            {
-                let end_loc = cm.scanner.peek_token()?.location;
-                cm.expression(ch)?;
+            let iterator = {
                 if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
-                    return Err(cm.make_error_msg("Expected integer value", &end_loc));
+                    return Err(cm.make_error_msg("Expected integer value", &start_loc));
                 }
 
-                let frame = cm.stack_frames.last_mut().unwrap();
-                end_idx = frame.locals.len().try_into().unwrap();
-                frame.locals.push(LocalVariable {
-                    name: "#".to_string(),
-                    v: Variable {
-                        read_only: true,
-                        value_type: ValueType::Integer,
-                    },
-                    scope: frame.current_scope,
-                });
-
-                ch.write_byte(opcode::DEFINE_LOCAL);
-                cm.type_stack.pop();
-            }
-
-            let step_idx;
-            {
-                let step_loc = cm.scanner.peek_token()?.location;
-                if cm.scanner.match_token(Token::Colon)? {
-                    cm.expression(ch)?;
-                    if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
-                        return Err(cm.make_error_msg("Expected integer value", &step_loc));
-                    }
-                }
-                else {
-                    if is_cond_less {
-                        cm.integer(ch, 1);
-                    } else {
-                        cm.integer(ch, -1);
-                    }
-                }
-
-                let frame = cm.stack_frames.last_mut().unwrap();
-                step_idx = frame.locals.len().try_into().unwrap();
-                frame.locals.push(LocalVariable {
-                    name: "#".to_string(),
-                    v: Variable {
-                        read_only: true,
-                        value_type: ValueType::Integer,
-                    },
-                    scope: frame.current_scope,
-                });
-
-                ch.write_byte(opcode::DEFINE_LOCAL);
-                cm.type_stack.pop();
-            }
+                cm.for_integer_iteration(&identifier_name, ch)?
+            };
 
             cm.consume(Token::LeftBrace)?;
 
@@ -3314,25 +3387,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             };
 
             cm.scoped_block(ch, |cm, ch| {
-                let loop_begin_idx = ch.write_byte(opcode::PUSH_LOCAL);
-                ch.write_byte(var_idx);
-                ch.write_byte(opcode::PUSH_LOCAL);
-                ch.write_byte(end_idx);
-
-                if is_cond_less {
-                    if is_inclusive {
-                        ch.write_byte(opcode::LESS_EQUAL);
-                    } else {
-                        ch.write_byte(opcode::LESS);
-                    }
-                }
-                else {
-                    if is_inclusive {
-                        ch.write_byte(opcode::GREATER_EQUAL);
-                    } else {
-                        ch.write_byte(opcode::GREATER);
-                    }
-                }
+                let loop_begin_idx = iterator.begin_loop(cm, ch);
 
                 ch.write_byte(opcode::JMP_IF_FALSE);
                 let cond_break_idx = ch.write_short(0);
@@ -3341,14 +3396,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 let has_continue = cm.patch_break(ch, loop_begin_idx, ch.code.len(), Some(LoopBreakType::Continue));
 
-                // This will need to be shifted to the top of the loop if breaks are to be enabled.
-                ch.write_byte(opcode::PUSH_LOCAL);
-                ch.write_byte(var_idx);
-                ch.write_byte(opcode::PUSH_LOCAL);
-                ch.write_byte(step_idx);
-                ch.write_byte(opcode::ADD);
-                ch.write_byte(opcode::SET_LOCAL);
-                ch.write_byte(var_idx);
+                iterator.end_loop(cm, ch);
 
                 if cm.patch_break(ch, loop_begin_idx, ch.code.len(), Some(LoopBreakType::Break)) || has_continue {
                     ch.write_byte(opcode::LOCAL_SET_SIZE);
