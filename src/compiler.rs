@@ -3428,7 +3428,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let end_idx;
         {
-            let end_loc = self.scanner.peek_token()?.location;
             chunk.write_byte(opcode::PUSH_LOCAL);
             chunk.write_byte(container_idx);
             chunk.write_byte(opcode::CALL_BUILTIN);
@@ -3452,8 +3451,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let iterator_idx;
         {
-            let end_loc = self.scanner.peek_token()?.location;
-
             // Need to allocate the iterator now but can't index the container as it could be empty.
             // Fill it with a 0 first
             self.integer(chunk, 0);
@@ -3519,8 +3516,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let (identifier_name, _) = cm.match_identifier()?;
 
             cm.consume(Token::Colon)?;
-
-            let start_loc = cm.scanner.peek_token()?.location;
             cm.expression(ch)?;
 
             let iterator: Box<dyn ForLoopIteration<T>> = {
