@@ -511,7 +511,7 @@ trait ForLoopIteration<'a, T: DataSection> {
     fn end_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk);
 }
 
-struct IntegerIteration {
+struct IntegerRangeIteration {
     var_idx: u8,
     step_idx: u8,
     end_idx: u8,
@@ -519,7 +519,7 @@ struct IntegerIteration {
     is_cond_less: bool
 }
 
-impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerIteration {
+impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerRangeIteration {
     fn begin_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) -> usize {
         cm.for_integer_iteration_begin(chunk, &self)
     }
@@ -528,6 +528,7 @@ impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerIteration {
         cm.for_integer_iteration_end(chunk, &self)
     }
 }
+
 
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn clear_stack(&mut self, chunk: &mut Chunk, pop_count: usize) {
@@ -3224,7 +3225,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })
     }
 
-    fn for_integer_iteration(&mut self, index_variable_name: &str, chunk: &mut Chunk) -> Result<IntegerIteration, String> 
+    fn for_integer_iteration(&mut self, index_variable_name: &str, chunk: &mut Chunk) -> Result<IntegerRangeIteration, String> 
     {
         let var_idx;
         {
@@ -3312,7 +3313,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.type_stack.pop();
         }
 
-        Ok(IntegerIteration {
+        Ok(IntegerRangeIteration {
             var_idx,
             step_idx,
             end_idx,
@@ -3321,7 +3322,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })
     }
 
-    fn for_integer_iteration_begin(&mut self, chunk: &mut Chunk, ii: &IntegerIteration) -> usize {
+    fn for_integer_iteration_begin(&mut self, chunk: &mut Chunk, ii: &IntegerRangeIteration) -> usize {
         let loop_begin_idx = chunk.write_byte(opcode::PUSH_LOCAL);
         chunk.write_byte(ii.var_idx);
         chunk.write_byte(opcode::PUSH_LOCAL);
@@ -3345,7 +3346,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         loop_begin_idx
     }
 
-    fn for_integer_iteration_end(&mut self, chunk: &mut Chunk, ii: &IntegerIteration) {
+    fn for_integer_iteration_end(&mut self, chunk: &mut Chunk, ii: &IntegerRangeIteration) {
         chunk.write_byte(opcode::PUSH_LOCAL);
         chunk.write_byte(ii.var_idx);
         chunk.write_byte(opcode::PUSH_LOCAL);
