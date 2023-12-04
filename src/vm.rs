@@ -292,7 +292,7 @@ impl<'printer> VM<'printer> {
             break_loop_flag: false,
             compiler: Compiler::new(),
             printer,
-            disassemble: true,
+            disassemble: false,
         }
     }
 
