@@ -3433,9 +3433,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             chunk.write_byte(container_idx);
             chunk.write_byte(opcode::CALL_BUILTIN);
             chunk.write_byte(builtin_len_id);
-            if self.type_stack.last().unwrap().value_type != ValueType::Integer {
-                return Err(self.make_error_msg("Expected integer value", &end_loc));
-            }
+            chunk.write_byte(0);
 
             let frame = self.stack_frames.last_mut().unwrap();
             end_idx = frame.locals.len().try_into().unwrap();
@@ -3472,7 +3470,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 scope: frame.current_scope,
             });
 
-            chunk.write_byte(opcode::DEFINE_LOCAL);
             self.type_stack.pop();
         }
 
@@ -3501,8 +3498,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         chunk.write_byte(opcode::ADD);
         chunk.write_byte(opcode::SET_LOCAL);
         chunk.write_byte(ci.var_idx);
-        chunk.write_byte(opcode::SET_LOCAL);
-        chunk.write_byte(ci.iterator_idx);
     }
 
     fn for_container_iteration_iterate(&mut self, chunk: &mut Chunk, ci: &ContainerRangeIteration) {
@@ -3511,6 +3506,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         chunk.write_byte(opcode::PUSH_LOCAL);
         chunk.write_byte(ci.var_idx);
         chunk.write_byte(opcode::GET_INDEX);
+        chunk.write_byte(opcode::SET_LOCAL);
+        chunk.write_byte(ci.iterator_idx);
     }
 
     fn for_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
@@ -3528,10 +3525,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             let iterator: Box<dyn ForLoopIteration<T>> = {
                 if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
-                    Box::new(cm.for_container_iteration(&identifier_name, ch)? as dyn ForLoopIteration<T>)
+                    Box::new(cm.for_container_iteration(&identifier_name, ch)?)
                 }
                 else {
-                    Box::new(cm.for_integer_iteration(&identifier_name, ch)? as dyn ForLoopIteration<T>)
+                    Box::new(cm.for_integer_iteration(&identifier_name, ch)?)
                 }
             };
 
