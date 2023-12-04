@@ -509,6 +509,7 @@ impl Compiler {
 trait ForLoopIteration<'a, T: DataSection> {
     fn begin_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) -> usize;
     fn end_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk);
+    fn iterate(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk);
 }
 
 struct IntegerRangeIteration {
@@ -519,6 +520,13 @@ struct IntegerRangeIteration {
     is_cond_less: bool
 }
 
+struct ContainerRangeIteration {
+    var_idx: u8,
+    end_idx: u8,
+    container_idx: u8,
+    iterator_idx: u8
+}
+
 impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerRangeIteration {
     fn begin_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) -> usize {
         cm.for_integer_iteration_begin(chunk, &self)
@@ -526,6 +534,22 @@ impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerRangeIteration {
 
     fn end_loop(&self, cm: &mut SrcCompiler<'_, T>, chunk: &mut Chunk) {
         cm.for_integer_iteration_end(chunk, &self)
+    }
+
+    fn iterate(&self, _cm: &mut SrcCompiler<'a, T>, _chunk: &mut Chunk) {}
+}
+
+impl<'a, T: DataSection> ForLoopIteration<'a, T> for ContainerRangeIteration {
+    fn begin_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) -> usize {
+        cm.for_container_iteration_begin(chunk, &self)
+    }
+
+    fn end_loop(&self, cm: &mut SrcCompiler<'_, T>, chunk: &mut Chunk) {
+        cm.for_container_iteration_end(chunk, &self)
+    }
+
+    fn iterate(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) {
+        cm.for_container_iteration_iterate(chunk, &self)
     }
 }
 
@@ -3356,6 +3380,139 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         chunk.write_byte(ii.var_idx);
     }
 
+    fn for_container_iteration(&mut self, iterator_variable_name: &str, chunk: &mut Chunk) -> Result<ContainerRangeIteration, String> 
+    {
+        let container_type = self.type_stack.last().unwrap().value_type.clone();
+
+        let (elem_type, builtin_len_id) = match &container_type {
+            ValueType::Vector(elem_type) => (elem_type.as_ref().clone(), builtin_functions::vector::LEN),
+            ValueType::Str => (ValueType::Char, builtin_functions::string::LEN),
+            _ => return Err("Expected integer value".into())
+        };
+
+        let container_idx;
+        {
+            let frame = self.stack_frames.last_mut().unwrap();
+            container_idx = frame.locals.len().try_into().unwrap();
+            chunk.write_byte(opcode::DEFINE_LOCAL);
+            self.type_stack.pop();
+
+            frame.locals.push(LocalVariable {
+                name: "#".into(),
+                v: Variable {
+                    read_only: true,
+                    value_type: elem_type.clone(),
+                },
+                scope: frame.current_scope,
+            });
+        }
+
+        let var_idx;
+        {
+            self.integer(chunk, 0);
+
+            let frame = self.stack_frames.last_mut().unwrap();
+            var_idx = frame.locals.len().try_into().unwrap();
+            chunk.write_byte(opcode::DEFINE_LOCAL);
+            self.type_stack.pop();
+
+            frame.locals.push(LocalVariable {
+                name: "#".into(),
+                v: Variable {
+                    read_only: true,
+                    value_type: elem_type.clone(),
+                },
+                scope: frame.current_scope,
+            });
+        }
+
+        let end_idx;
+        {
+            let end_loc = self.scanner.peek_token()?.location;
+            chunk.write_byte(opcode::PUSH_LOCAL);
+            chunk.write_byte(container_idx);
+            chunk.write_byte(opcode::CALL_BUILTIN);
+            chunk.write_byte(builtin_len_id);
+            if self.type_stack.last().unwrap().value_type != ValueType::Integer {
+                return Err(self.make_error_msg("Expected integer value", &end_loc));
+            }
+
+            let frame = self.stack_frames.last_mut().unwrap();
+            end_idx = frame.locals.len().try_into().unwrap();
+            frame.locals.push(LocalVariable {
+                name: "#".to_string(),
+                v: Variable {
+                    read_only: true,
+                    value_type: ValueType::Integer,
+                },
+                scope: frame.current_scope,
+            });
+
+            chunk.write_byte(opcode::DEFINE_LOCAL);
+            self.type_stack.pop();
+        }
+
+        let iterator_idx;
+        {
+            let end_loc = self.scanner.peek_token()?.location;
+
+            // Need to allocate the iterator now but can't index the container as it could be empty.
+            // Fill it with a 0 first
+            self.integer(chunk, 0);
+            chunk.write_byte(opcode::DEFINE_LOCAL);
+
+            let frame = self.stack_frames.last_mut().unwrap();
+            iterator_idx = frame.locals.len().try_into().unwrap();
+            frame.locals.push(LocalVariable {
+                name: iterator_variable_name.into(),
+                v: Variable {
+                    read_only: true,
+                    value_type: elem_type,
+                },
+                scope: frame.current_scope,
+            });
+
+            chunk.write_byte(opcode::DEFINE_LOCAL);
+            self.type_stack.pop();
+        }
+
+        Ok(ContainerRangeIteration {
+            var_idx,
+            end_idx,
+            container_idx,
+            iterator_idx,
+        })
+    }
+
+    fn for_container_iteration_begin(&mut self, chunk: &mut Chunk, ii: &ContainerRangeIteration) -> usize {
+        let loop_begin_idx = chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ii.var_idx);
+        chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ii.end_idx);
+        chunk.write_byte(opcode::LESS);
+
+        loop_begin_idx
+    }
+
+    fn for_container_iteration_end(&mut self, chunk: &mut Chunk, ci: &ContainerRangeIteration) {
+        chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ci.var_idx);
+        self.integer(chunk, 1);
+        chunk.write_byte(opcode::ADD);
+        chunk.write_byte(opcode::SET_LOCAL);
+        chunk.write_byte(ci.var_idx);
+        chunk.write_byte(opcode::SET_LOCAL);
+        chunk.write_byte(ci.iterator_idx);
+    }
+
+    fn for_container_iteration_iterate(&mut self, chunk: &mut Chunk, ci: &ContainerRangeIteration) {
+        chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ci.container_idx);
+        chunk.write_byte(opcode::PUSH_LOCAL);
+        chunk.write_byte(ci.var_idx);
+        chunk.write_byte(opcode::GET_INDEX);
+    }
+
     fn for_statement(&mut self, chunk: &mut Chunk) -> Result<(), String> {
         let prev_in_loop = self.is_in_loop;
         self.is_in_loop = true;
@@ -3369,12 +3526,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let start_loc = cm.scanner.peek_token()?.location;
             cm.expression(ch)?;
 
-            let iterator = {
+            let iterator: Box<dyn ForLoopIteration<T>> = {
                 if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
-                    return Err(cm.make_error_msg("Expected integer value", &start_loc));
+                    Box::new(cm.for_container_iteration(&identifier_name, ch)? as dyn ForLoopIteration<T>)
                 }
-
-                cm.for_integer_iteration(&identifier_name, ch)?
+                else {
+                    Box::new(cm.for_integer_iteration(&identifier_name, ch)? as dyn ForLoopIteration<T>)
+                }
             };
 
             cm.consume(Token::LeftBrace)?;
@@ -3392,6 +3550,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 ch.write_byte(opcode::JMP_IF_FALSE);
                 let cond_break_idx = ch.write_short(0);
+
+                iterator.iterate(cm, ch);
 
                 cm.for_block(ch)?;
 
