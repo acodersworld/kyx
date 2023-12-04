@@ -1213,6 +1213,23 @@ impl<'printer> VM<'printer> {
         }
     }
 
+    fn string_index(s: &str, is_ascii: bool, idx: usize) -> usize {
+        if is_ascii {
+            return idx;
+        }
+
+        let real_index =
+            s
+            .chars()
+            .enumerate()
+            .nth(idx);
+
+        match real_index {
+            Some(i) => i.0,
+            None => s.len()
+        }
+    }
+
     fn call_builtin(&mut self, frame_stack: &mut FrameStack) {
         let builtin_id = frame_stack.top.next_code().unwrap();
         let arg_count = frame_stack.top.next_code().unwrap() as usize;
@@ -1297,8 +1314,16 @@ impl<'printer> VM<'printer> {
                         _ => unimplemented!()
                     }
 
-
                     unsafe { v.as_mut() }.retain(|x| *x != val);
+                }
+                builtin_functions::vector::CONTAINS => {
+                    let val = self.value_stack.pop().unwrap();
+                    match val {
+                        Value::Char(_) | Value::Integer(_) | Value::Float(_) | Value::Str(_) => {},
+                        _ => unimplemented!()
+                    }
+
+                    self.value_stack.push(Value::Bool(unsafe { v.as_mut() }.contains(&val)));
                 }
                 _ => panic!("Unexpected vector builtin id {}", builtin_id),
             },
@@ -1315,6 +1340,7 @@ impl<'printer> VM<'printer> {
                 builtin_functions::string::SUBSTR
                 | builtin_functions::string::SUBSTR_FROM_START
                 | builtin_functions::string::SUBSTR_TO_END => {
+                    let is_ascii = unsafe { s.as_ref() }.is_ascii;
                     let s = &unsafe { s.as_ref() }.val;
 
                     let pop_index = |value_stack: &mut Vec<Value>| match value_stack.pop().unwrap()
@@ -1328,44 +1354,22 @@ impl<'printer> VM<'printer> {
                         x => panic!("Expected integer, got {:?}", x),
                     };
 
-                    // TODO: Optimise indexing
                     let substr = match builtin_id {
                         builtin_functions::string::SUBSTR => {
-                            let iend = s
-                                .chars()
-                                .enumerate()
-                                .nth(pop_index(&mut self.value_stack))
-                                .unwrap()
-                                .0;
-                            let istart = s
-                                .chars()
-                                .enumerate()
-                                .nth(pop_index(&mut self.value_stack))
-                                .unwrap()
-                                .0;
+                            let iend = Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
+                            let istart = Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
                             &s[istart..iend]
                         }
                         builtin_functions::string::SUBSTR_FROM_START => {
-                            let iend = s
-                                .chars()
-                                .enumerate()
-                                .nth(pop_index(&mut self.value_stack))
-                                .unwrap()
-                                .0;
+                            let iend = Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
                             &s[..iend]
                         }
                         builtin_functions::string::SUBSTR_TO_END => {
-                            let idx = pop_index(&mut self.value_stack);
-                            if idx == s.len() {
+                            let istart = Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
+                            if istart == s.len() {
                                 ""
                             }
                             else {
-                                let istart = s
-                                    .chars()
-                                    .enumerate()
-                                    .nth(idx)
-                                    .unwrap()
-                                    .0;
                                 &s[istart..]
                             }
                         }
@@ -2750,6 +2754,28 @@ mod test {
         assert_eq!(printer.strings[2], "30");
         assert_eq!(printer.strings[3], "40");
         assert_eq!(printer.strings[4], "3");
+    }
+
+    #[test]
+    fn vector_contains() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut v: [int] = vec<int>{10,20,30};
+            print(v.contains(10));
+            print(v.contains(20));
+            print(v.contains(11));
+            print(v.contains(40));
+            print(v.contains(30));
+        ";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 5);
+        assert_eq!(printer.strings[0], "true");
+        assert_eq!(printer.strings[1], "true");
+        assert_eq!(printer.strings[2], "false");
+        assert_eq!(printer.strings[3], "false");
+        assert_eq!(printer.strings[4], "true");
     }
 
     #[test]

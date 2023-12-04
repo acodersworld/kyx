@@ -1638,6 +1638,43 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         chunk.write_byte(builtin_functions::vector::REMOVE);
                         chunk.write_byte(1);
                     }
+                    "contains" => {
+                        match elem_type.as_ref() {
+                            ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Char => {},
+                            _ => {
+                                let location = self.scanner.peek_token()?.location;
+                                return Err(self.make_error_msg(
+                                        "contains can only be used with integer, float, string or char", &location));
+                           }
+                        }
+
+                        self.consume(Token::LeftParen)?;
+                        let arg_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let arg_type = self.type_stack.pop().unwrap();
+
+                        if arg_type.value_type != *elem_type.as_ref() {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "Vector contains expects type {}, got {}",
+                                    arg_type.value_type, elem_type
+                                ),
+                                &arg_loc,
+                            ));
+                        }
+                        
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::vector::CONTAINS);
+                        chunk.write_byte(1);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Bool,
+                            read_only: true,
+                        });
+                    }
                     _ => {
                         return Err(self.make_error_msg(
                             &format!("Vector does not have method '{}'", member_name),
@@ -5774,6 +5811,7 @@ mod test {
                 v.clear();
                 let v2: [int] = v.clone();
                 v.remove(0);
+                v.contains(0);
                 ",
                 )
                 .unwrap();

@@ -6,6 +6,7 @@ pub mod vector {
     pub const CLEAR: u8 = 4;
     pub const CLONE: u8 = 5;
     pub const REMOVE: u8 = 6;
+    pub const CONTAINS: u8 = 7;
 }
 
 pub mod string {
