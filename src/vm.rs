@@ -2391,6 +2391,25 @@ mod test {
     }
 
     #[test]
+    fn for_loop_container() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let v = vec<int>{10, 20, 30};
+            for i : v {
+                print i;
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "10");
+        assert_eq!(printer.strings[1], "20");
+        assert_eq!(printer.strings[2], "30");
+    }
+
+    #[test]
     fn while_loop_break() {
         let mut printer = TestPrinter::new();
         let mut vm = VM::new(&mut printer);
