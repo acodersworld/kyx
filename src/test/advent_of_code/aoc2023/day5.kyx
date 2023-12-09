@@ -1,0 +1,186 @@
+let lines = readinput();
+
+let seeds = {
+	let ss = lines[0].split(':')[1].trim().split_whitespace();
+
+	let mut v = vec<int>{};
+	for s : ss {
+		v.push(s.to_integer());
+	}
+	v
+};
+
+fn min(a: int, b: int) -> int {
+	if a < b {
+		return a;
+	}
+	return b;
+}
+
+fn max(a: int, b: int) -> int {
+	if a > b {
+		return a;
+	}
+	return b;
+}
+
+fn get_ln_idx(s: string) -> int {
+	for i : 0..lines.len() {
+		if lines[i].starts_with(s) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+union Number {
+	Value(int),
+	None
+}
+
+struct Segment {
+	start: int,
+	end: int
+}
+
+struct Range {
+	from_start: int,
+	to_start: int,
+	count: int
+}
+impl {
+	fn (self) from_end() -> int {
+		return self.from_start + self.count;
+	}
+
+	fn (self) to_end() -> int {
+		return self.to_start + self.count;
+	}
+
+	fn (self) map(value: int) -> Number {
+		if value >= self.from_start {
+			let rel = value - self.from_start;
+			if rel < self.count {
+				return Number.Value(self.to_start + rel);
+			}
+		}
+
+		return Number.None;
+	}
+}
+
+fn parse_ranges(start_idx: int, end_idx: int) -> [Range] {
+	let mut ranges = vec<Range>{};
+
+	for i : start_idx..end_idx {
+		let params = lines[i].split(' ');
+		ranges.push(Range {
+			from_start= params[1].to_integer(),
+			to_start= params[0].to_integer(),
+			count= params[2].to_integer(),
+		});
+	}
+
+	return ranges;
+}
+
+let to_soil_idx = get_ln_idx("seed-to-soil map");
+let to_fert_idx = get_ln_idx("soil-to-fertilizer map");
+let to_water_idx = get_ln_idx("fertilizer-to-water map");
+let to_light_idx = get_ln_idx("water-to-light map");
+let to_temp_idx = get_ln_idx("light-to-temperature map");
+let to_hum_idx = get_ln_idx("temperature-to-humidity map");
+let to_loc_idx = get_ln_idx("humidity-to-location map");
+
+let mut maps: [[Range]] = vec<[Range]>{};
+maps.push(parse_ranges(to_soil_idx + 1, to_fert_idx - 1));
+maps.push(parse_ranges(to_fert_idx + 1, to_water_idx - 1));
+maps.push(parse_ranges(to_water_idx + 1, to_light_idx - 1));
+maps.push(parse_ranges(to_light_idx + 1, to_temp_idx - 1));
+maps.push(parse_ranges(to_temp_idx + 1, to_hum_idx - 1));
+maps.push(parse_ranges(to_hum_idx + 1, to_loc_idx - 1));
+maps.push(parse_ranges(to_loc_idx + 1, lines.len()));
+
+fn map_number(value: int, ranges: [Range]) -> int {
+	for r : ranges {
+		if let Number.Value(v) = r.map(value) {
+			return v;
+		}
+	}
+	return value;
+}
+
+let mut mapped_seeds = vec<int>{};
+for s : seeds {
+	mapped_seeds.push(s);	
+}
+
+for m : maps {
+	for iseed : 0..mapped_seeds.len() {
+		mapped_seeds[iseed] = map_number(mapped_seeds[iseed], m);
+	}
+}
+
+let mut min_location = 1000000000000000000;
+for seed : mapped_seeds {
+	if seed < min_location {
+		min_location = seed;
+	}
+}
+print(min_location);
+
+// part2
+let mut seed_segments = {
+	let mut segs = vec<Segment>{};
+
+	for iseed : 0..seeds.len():2 {
+		segs.push(Segment {
+			start= seeds[iseed],
+			end= seeds[iseed] + seeds[iseed+1],
+		});
+	}
+	segs
+};
+
+for m : maps {
+	let mut unmapped = seed_segments;
+
+	seed_segments = vec<Segment>{};
+
+	for r : m {
+		let mut new = vec<Segment>{};
+		
+		let offset = r.to_start - r.from_start;
+		for u : unmapped {
+			let before = Segment{ start = u.start, end = min(u.end, r.from_start), };
+			let intersect = Segment{ start = max(u.start + offset, r.to_start), end = min(u.end + offset, r.to_end()), };
+			let after = Segment{ start = max(u.start, r.from_end()), end = u.end, };
+
+			if before.start < before.end {
+				new.push(before);
+			}
+			if intersect.start < intersect.end {
+				seed_segments.push(intersect);
+			}
+			if after.start < after.end {
+				new.push(after);
+			}
+		}
+
+		unmapped = new;
+	}
+
+	for u : unmapped {
+		seed_segments.push(u);
+	}
+}
+
+min_location = 1000000000000000000;
+for seg : seed_segments {
+	if seg.start < min_location {
+		min_location = seg.start;
+	}
+}
+
+print(min_location);
+
