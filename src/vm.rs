@@ -654,25 +654,46 @@ impl<'printer> VM<'printer> {
             }
             Value::Vector(v) => {
                 let vector = unsafe { v.as_ref() };
-                let index = match index {
-                    Value::Integer(i) => i as usize,
-                    _ => panic!("Bad index value"),
+                let len: i64 = vector.len().try_into().unwrap();
+                let mut index = match index {
+                    Value::Integer(i) => i,
+                    x => panic!("Bad index value. Expected int, got {:?}", x),
                 };
 
-                if index >= vector.len() {
+                if index < 0 {
+                    index = len + index;
+
+                    if index < 0 {
+                        // TODO: Proper kyx panic
+                        panic!("Vector index out of bounds");
+                    }
+                }
+
+                if index >= len {
                     // TODO: Proper kyx panic
                     panic!("Vector index out of bounds");
                 }
 
-                self.value_stack.push(vector[index]);
+                self.value_stack.push(vector[index as usize]);
             }
             Value::Str(s) => {
-                let index = match index {
-                    Value::Integer(i) => i as usize,
+                let mut index = match index {
+                    Value::Integer(i) => i,
                     _ => panic!("Bad index value"),
                 };
 
                 let string = unsafe { s.as_ref() };
+                if index < 0 {
+                    let len: i64 = string.len.try_into().unwrap();
+                    index = len + index;
+
+                    if index < 0 {
+                        // TODO: Proper kyx panic
+                        panic!("Vector index out of bounds");
+                    }
+                }
+
+                let index: usize = index.try_into().unwrap();
                 if index >= string.len {
                     // TODO: Proper kyx panic
                     panic!("String index out of bounds");
@@ -1661,12 +1682,20 @@ mod test {
                 let s: string = \"hello\";
                 print(s[0]);
                 print(s[3]);
+
+                print(s[-1]);
+                print(s[-2]);
+                print(s[-4]);
             ";
 
             assert_eq!(vm.interpret(src), Ok(()));
-            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings.len(), 5);
             assert_eq!(printer.strings[0], "h");
             assert_eq!(printer.strings[1], "l");
+
+            assert_eq!(printer.strings[2], "o");
+            assert_eq!(printer.strings[3], "l");
+            assert_eq!(printer.strings[4], "e");
         }
         {
             let mut printer = TestPrinter::new();
@@ -2662,13 +2691,21 @@ mod test {
             print v[3];
             print v[2];
             print v[1];
+
+            print v[-1];
+            print v[-2];
+            print v[-3];
         ";
         assert_eq!(vm.interpret(src), Ok(()));
-        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings.len(), 7);
         assert_eq!(printer.strings[0], "10");
         assert_eq!(printer.strings[1], "40");
         assert_eq!(printer.strings[2], "30");
         assert_eq!(printer.strings[3], "20");
+
+        assert_eq!(printer.strings[4], "40");
+        assert_eq!(printer.strings[5], "30");
+        assert_eq!(printer.strings[6], "20");
     }
 
     #[test]
