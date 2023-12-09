@@ -27,6 +27,8 @@ pub mod string {
     pub const STARTS_WITH: u8 = 10;
     pub const ENDS_WITH: u8 = 11;
     pub const CONTAINS: u8 = 12;
+    pub const REMOVE_CHAR: u8 = 13;
+    pub const REPLACE_CHAR: u8 = 14;
 }
 
 pub mod hashmap {

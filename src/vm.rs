@@ -1394,15 +1394,27 @@ impl<'printer> VM<'printer> {
                     };
 
                     let mut vector = vec![];
-                    for substr in s.split(delimiter) {
-                        let mut data_section = VMDataSection {
-                            objects: &mut self.objects,
-                            constant_strs: &mut self.constant_strs,
-                        };
+                    if delimiter == ' ' {
+                        for substr in s.split_whitespace() {
+                            let mut data_section = VMDataSection {
+                                objects: &mut self.objects,
+                                constant_strs: &mut self.constant_strs,
+                            };
 
-                        let idx = data_section.create_constant_str(substr);
-                        vector.push(Value::Str(self.constant_strs[idx as usize]));
-                    }
+                            let idx = data_section.create_constant_str(substr);
+                            vector.push(Value::Str(self.constant_strs[idx as usize]));
+                        }
+                    } else {
+                        for substr in s.split(delimiter) {
+                            let mut data_section = VMDataSection {
+                                objects: &mut self.objects,
+                                constant_strs: &mut self.constant_strs,
+                            };
+
+                            let idx = data_section.create_constant_str(substr);
+                            vector.push(Value::Str(self.constant_strs[idx as usize]));
+                        }
+                    };
 
                     let mut vec_val = Box::new(vector);
                     let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
@@ -1473,6 +1485,49 @@ impl<'printer> VM<'printer> {
                     };
                     let s = &unsafe { s.as_ref() }.val;
                     self.value_stack.push(Value::Bool(s.contains(substr)));
+                }
+                builtin_functions::string::REMOVE_CHAR => {
+                    let s = &unsafe { s.as_ref() }.val;
+
+                    let ch = match self.value_stack.pop().unwrap() {
+                        Value::Char(c) => c,
+                        _ => panic!("Expected char"),
+                    };
+
+                    let mut data_section = VMDataSection {
+                        objects: &mut self.objects,
+                        constant_strs: &mut self.constant_strs,
+                    };
+
+                    let mut new = s.clone();
+                    new.retain(|c| c != ch);
+                    let idx = data_section.create_constant_str(&new);
+                    self.value_stack
+                        .push(Value::Str(self.constant_strs[idx as usize]));
+                }
+                builtin_functions::string::REPLACE_CHAR => {
+                    let s = &unsafe { s.as_ref() }.val;
+
+                    let to = match self.value_stack.pop().unwrap() {
+                        Value::Char(c) => c,
+                        _ => panic!("Expected char"),
+                    };
+
+                    let from = match self.value_stack.pop().unwrap() {
+                        Value::Char(c) => c,
+                        _ => panic!("Expected char"),
+                    };
+
+                    let mut data_section = VMDataSection {
+                        objects: &mut self.objects,
+                        constant_strs: &mut self.constant_strs,
+                    };
+
+                    let mut buf = [0;4];
+                    let new = s.replace(|c| c == from, to.encode_utf8(&mut buf));
+                    let idx = data_section.create_constant_str(&new);
+                    self.value_stack
+                        .push(Value::Str(self.constant_strs[idx as usize]));
                 }
                 _ => panic!("Unexpected string builtin id {}", builtin_id),
             },
@@ -3952,6 +4007,44 @@ mod test {
         assert_eq!(printer.strings[0], "hello, world");
         assert_eq!(printer.strings[1], "hello, world  ");
         assert_eq!(printer.strings[2], "  hello, world");
+    }
+
+    #[test]
+    fn test_string_remove_char() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let s: string = \"  hello, world  \";
+            print(s.remove_char('l'));
+            print(s.remove_char('d'));
+            print(s.remove_char('o'));
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "  heo, word  ");
+        assert_eq!(printer.strings[1], "  hello, worl  ");
+        assert_eq!(printer.strings[2], "  hell, wrld  ");
+    }
+
+    #[test]
+    fn test_string_replace_char() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let s: string = \"  hello, world  \";
+            print(s.replace_char('l', '9'));
+            print(s.replace_char('d', '8'));
+            print(s.replace_char('o', '7'));
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        assert_eq!(printer.strings[0], "  he99o, wor9d  ");
+        assert_eq!(printer.strings[1], "  hello, worl8  ");
+        assert_eq!(printer.strings[2], "  hell7, w7rld  ");
     }
 
     #[test]

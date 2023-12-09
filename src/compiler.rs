@@ -1885,6 +1885,74 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             read_only: true,
                         });
                     }
+                    "remove_char" => {
+                        self.consume(Token::LeftParen)?;
+                        let arg_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let arg_type = self.type_stack.pop().unwrap();
+                        if arg_type.value_type != ValueType::Char {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "remove_char expects a char, got {}",
+                                    arg_type.value_type
+                                ),
+                                &arg_loc,
+                            ));
+                        }
+
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::string::REMOVE_CHAR);
+                        chunk.write_byte(1);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Str,
+                            read_only: false,
+                        });
+                    }
+                    "replace_char" => {
+                        self.consume(Token::LeftParen)?;
+                        let from_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::Comma)?;
+                        let to_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let to = self.type_stack.pop().unwrap();
+                        if to.value_type != ValueType::Char {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "replace_char expects a char, got {}",
+                                    to.value_type
+                                ),
+                                &to_loc,
+                            ));
+                        }
+
+                        let from = self.type_stack.pop().unwrap();
+                        if from.value_type != ValueType::Char {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "replace_char expects a char, got {}",
+                                    from.value_type
+                                ),
+                                &from_loc,
+                            ));
+                        }
+
+                        println!("{:?}", self.type_stack);
+                        self.type_stack.pop(); // pop string
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::string::REPLACE_CHAR);
+                        chunk.write_byte(2);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Str,
+                            read_only: false,
+                        });
+                    }
                     _ => {
                         return Err(self.make_error_msg(
                             &format!("String does not have method '{}'", member_name),
