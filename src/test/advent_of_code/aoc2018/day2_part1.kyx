@@ -3,7 +3,7 @@ let lines: [string] = readinput();
 let nlines: int = lines.len();
 let mut ilines: int = 0;
 while ilines < nlines {
-	ilines = ilines + 1;
+	ilines += 1;
 }
 ilines = 0;
 
@@ -15,13 +15,13 @@ while ilines < nlines {
 	let h: [char: int] = hash_map<char, int>{};
 
 	let word: string = lines[ilines];
-	ilines = ilines + 1;
+	ilines += 1;
 	let word_len: int = word.len();
 
 	let mut i: int = 0;
 	while i < word_len {
 		let c: char = word[i];
-		i = i + 1;
+		i += 1;
 
 		if h.contains_key(c) {
 			h[c] = h[c] + 1;
@@ -46,14 +46,14 @@ while ilines < nlines {
 			has_three = 1;
 		}
 
-		i = i + 1;
+		i += 1;
 	}
 
 	if has_two == 1 {
-		count_two = count_two + 1;
+		count_two += 1;
 	}
 	if has_three == 1 {
-		count_three = count_three + 1;
+		count_three += 1;
 	}
 }
 

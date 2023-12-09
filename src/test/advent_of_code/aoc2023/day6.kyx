@@ -19,7 +19,7 @@ fn calc_distance(held: int, game_time: int) -> int {
 		let mut count = 0;
 		for h : 1..(duration - 1) {
 			if calc_distance(h, duration) > record {
-				count = count + 1;
+				count += 1;
 			}
 		}
 

@@ -56,13 +56,13 @@ for ln : lines {
 
 let mut sum = 0;
 for h : histories {
-	sum = sum + process(h);
+	sum += process(h);
 }
 print(sum);
 
 sum = 0;
 for h : histories {
-	sum = sum + process(reverse(h));
+	sum += process(reverse(h));
 }
 print(sum);
 

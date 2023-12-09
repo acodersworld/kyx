@@ -24,8 +24,8 @@ struct Coord {
 		});
 	}
 
-	xmax = xmax + 1;
-	ymax = ymax + 1;
+	xmax += 1;
+	ymax += 1;
 	let grid_size: int = xmax * ymax;
 
 	let xdist: [int] = vec<int>[xmax]{0};
@@ -44,7 +44,7 @@ struct Coord {
 					x - ptx
 				}
 			};
-			total = total + dist;
+			total += dist;
 		}
 		xdist[x] = total;
 	}
@@ -62,7 +62,7 @@ struct Coord {
 					y - pty
 				}
 			};
-			total = total + dist;
+			total += dist;
 		}
 		ydist[y] = total;
 	}
@@ -72,7 +72,7 @@ struct Coord {
 		for x : 0..xmax {
 			let dist: int = xdist[x] + ydist[y];
 			if dist < 10000 {
-				region_size = region_size + 1;
+				region_size += 1;
 			}
 		}
 	}

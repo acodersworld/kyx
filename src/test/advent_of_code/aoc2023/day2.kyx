@@ -38,9 +38,9 @@ for i : 0..lines.len() {
 		}
 	}
 	
-	power = power + (max_colours["green"] * max_colours["red"] * max_colours["blue"]);
+	power += (max_colours["green"] * max_colours["red"] * max_colours["blue"]);
 	if possible {
-		sum = sum + game_number;
+		sum += game_number;
 	}
 }
 

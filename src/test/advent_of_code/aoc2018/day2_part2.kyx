@@ -20,12 +20,12 @@ fn find_pair() {
 			let mut differences: int = 0;
 			while iw < len {
 				if iword[iw] != jword[iw] {
-					differences = differences + 1;
+					differences += 1;
 					if differences > 1 {
 						break;
 					}
 				}
-				iw = iw + 1;
+				iw += 1;
 			}
 
 			if differences == 1 {
@@ -34,9 +34,9 @@ fn find_pair() {
 				print(jword);
 				return;		
 			}
-			jlines = jlines + 1;
+			jlines += 1;
 		}
-		ilines = ilines + 1;
+		ilines += 1;
 	}
 
 	print("No pair found!");

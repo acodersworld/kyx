@@ -49,7 +49,7 @@ for ix : 0..xkeys.len() {
 
 	for iy : 0..ykeys.len() {
 		if mapx[ykeys[iy]] > 1 {
-			overlapping_claims = overlapping_claims + 1;
+			overlapping_claims += 1;
 		}
 	}
 }

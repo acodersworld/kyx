@@ -17,7 +17,7 @@ fn scan_number(x: int, y: int) -> Number {
 					if !ln[end].is_digit() {
 						break;
 					}
-					end = end + 1;
+					end += 1;
 				}
 				return Number.Found(col, row, ln[col..end].to_integer(), end);
 			}
@@ -61,7 +61,7 @@ while true {
 	if let Number.Found(x_found, y_found, number, x_end) = scan_number(x, y) {
 		for col : x_found..x_end {
 			if has_symbol(col, y_found) {
-				sum = sum + number;
+				sum += number;
 				break;
 			}
 		}

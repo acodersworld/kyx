@@ -20,11 +20,11 @@ impl {
 
 		let mut accum: int = 0;
 		for i : 0..nchild {
-			accum = accum + self.accum_metadata();
+			accum += self.accum_metadata();
 		}
 
 		for i : 0..nmetadata {
-			accum = accum + self.nums[self.index + i];	
+			accum += self.nums[self.index + i];	
 		}
 		self.index = self.index + nmetadata;
 
@@ -40,7 +40,7 @@ impl {
 		if nchild == 0 {
 			let mut accum: int = 0;
 			for i : 0..nmetadata {
-				accum = accum + self.nums[self.index + i];	
+				accum += self.nums[self.index + i];	
 			}
 			self.index = self.index + nmetadata;
 			return accum;
@@ -55,7 +55,7 @@ impl {
 		for i : 0..nmetadata {
 			let ichild: int = self.nums[self.index + i] - 1;
 			if ichild < nchild {
-				accum = accum + values[ichild];	
+				accum += values[ichild];	
 			}
 		}
 		self.index = self.index + nmetadata;

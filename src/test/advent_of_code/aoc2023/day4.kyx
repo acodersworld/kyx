@@ -10,7 +10,7 @@ fn calc_points(winning: [string], hand: [string]) -> ScoreCount {
 	let mut count = 0;
 	for w : winning {
 		if hand.contains(w) {
-			count = count + 1;
+			count += 1;
 			if score == 0 {
 				score = 1;
 			}
@@ -43,8 +43,8 @@ for iline : 0..lines.len() {
 		card_counts[idx] = card_counts[idx] + card_counts[iline];
 	}
 
-	extra_cards = extra_cards + score_count.count * card_counts[iline];
-	total = total + score_count.score;
+	extra_cards += score_count.count * card_counts[iline];
+	total += score_count.score;
 }
 
 print(total);

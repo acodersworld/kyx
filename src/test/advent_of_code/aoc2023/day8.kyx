@@ -45,7 +45,7 @@ fn find(start: string, part2: bool) -> int {
 			n = nodes[n].right;
 		}
 			
-		steps = steps + 1;
+		steps += 1;
 		if part2 {
 			if n[2] == 'Z' {
 				break;
