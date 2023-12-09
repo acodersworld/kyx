@@ -1792,6 +1792,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             read_only: false,
                         });
                     }
+                    "split_whitespace" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop(); // pop string
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::string::SPLIT_WHITESPACE);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Vector(Rc::new(ValueType::Str)),
+                            read_only: false,
+                        });
+                    }
                     "trim" | "trim_start" | "trim_end" => {
                         self.consume(Token::LeftParen)?;
                         self.consume(Token::RightParen)?;

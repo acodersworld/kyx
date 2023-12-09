@@ -18,14 +18,15 @@ pub mod string {
     pub const SUBSTR_TO_END: u8 = 4;
 
     pub const SPLIT: u8 = 5;
+    pub const SPLIT_WHITESPACE: u8 = 6;
 
-    pub const TRIM: u8 = 6;
-    pub const TRIM_START: u8 = 7;
-    pub const TRIM_END: u8 = 8;
+    pub const TRIM: u8 = 7;
+    pub const TRIM_START: u8 = 8;
+    pub const TRIM_END: u8 = 9;
 
-    pub const STARTS_WITH: u8 = 9;
-    pub const ENDS_WITH: u8 = 10;
-    pub const CONTAINS: u8 = 11;
+    pub const STARTS_WITH: u8 = 10;
+    pub const ENDS_WITH: u8 = 11;
+    pub const CONTAINS: u8 = 12;
 }
 
 pub mod hashmap {

@@ -1410,6 +1410,26 @@ impl<'printer> VM<'printer> {
 
                     self.value_stack.push(Value::Vector(ptr));
                 }
+                builtin_functions::string::SPLIT_WHITESPACE => {
+                    let s = &unsafe { s.as_ref() }.val;
+
+                    let mut vector = vec![];
+                    for substr in s.split_whitespace() {
+                        let mut data_section = VMDataSection {
+                            objects: &mut self.objects,
+                            constant_strs: &mut self.constant_strs,
+                        };
+
+                        let idx = data_section.create_constant_str(substr);
+                        vector.push(Value::Str(self.constant_strs[idx as usize]));
+                    }
+
+                    let mut vec_val = Box::new(vector);
+                    let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                    self.objects.push(GcValue::Vector(vec_val));
+
+                    self.value_stack.push(Value::Vector(ptr));
+                }
                 builtin_functions::string::TRIM
                 | builtin_functions::string::TRIM_START
                 | builtin_functions::string::TRIM_END => {
@@ -3865,6 +3885,27 @@ mod test {
         assert_eq!(printer.strings[2], " world pipe-a");
         assert_eq!(printer.strings[3], "pipe-b");
         assert_eq!(printer.strings[4], "pipe-c");
+    }
+
+    #[test]
+    fn test_string_split_whitespace() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let s: string = \"1    423   hello     world    \";
+            let words: [string] = s.split_whitespace();
+            for w : words {
+                print(w);
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "1");
+        assert_eq!(printer.strings[1], "423");
+        assert_eq!(printer.strings[2], "hello");
+        assert_eq!(printer.strings[3], "world");
     }
 
     #[test]

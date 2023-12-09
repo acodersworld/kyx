@@ -32,11 +32,9 @@ let mut total = 0;
 let mut extra_cards = 0;
 for iline : 0..lines.len() {
 	let pipe = lines[iline].split(':')[1].split('|');
-	let mut winning = pipe[0].split(' ');
-	winning.remove(""); // be nice if I didn't have to do this...
+	let winning = pipe[0].split_whitespace();
 
-	let mut hand = pipe[1].split(' ');
-	hand.remove("");
+	let hand = pipe[1].split_whitespace();
 
 	let score_count = calc_points(winning, hand);
 
