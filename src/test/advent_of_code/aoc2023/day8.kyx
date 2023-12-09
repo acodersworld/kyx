@@ -1,0 +1,97 @@
+let lines = readinput();
+
+let dir = lines[0];
+
+struct Node {
+	left: string,
+	right: string
+}
+
+let mut nodes = hash_map<string, Node>{};
+let mut walkers = vec<string>{};
+
+for i : 2..lines.len() {
+	let ln = lines[i];
+
+	let eq = ln.split('=');
+	let name = eq[0].trim();
+
+	let lr = eq[1].split(',');
+
+	let left = lr[0][2..];
+	let right = lr[1][1..4];
+
+	if name[2] == 'A' {
+		walkers.push(name);
+	}
+
+	nodes[name] = Node {
+		left = left,
+		right = right,
+	};
+}
+
+fn find(start: string, part2: bool) -> int {
+	let mut idx = 0;
+	let mut n = start;
+	let mut steps = 0;
+	while true {
+		let d = dir[idx];
+	
+		if d == 'L' {
+			n = nodes[n].left;
+		}
+		else {
+			n = nodes[n].right;
+		}
+			
+		steps = steps + 1;
+		if part2 {
+			if n[2] == 'Z' {
+				break;
+			}
+		}
+		else {
+			if n == "ZZZ" {
+				break;
+			}
+		}
+		idx = (idx+1) % dir.len();
+	}
+	return steps;
+}
+
+fn gcd(a: int, b: int) -> int {
+	let mut x = a;
+	let mut y = b;
+	let mut rem = 0;
+
+	while y > 0 {
+		rem = x % y;
+		x = y;
+		y = rem;
+	}
+	return x;
+}
+
+fn lcm(nums: [int]) -> int {
+	let mut ans = 1;
+
+	for n : nums {
+		ans = (ans * n) / gcd(ans, n);
+	}
+	return ans;
+}
+
+fn part2() -> int {
+	let mut cycles = vec<int>{};
+
+	for w : walkers {
+		cycles.push(find(w, true));
+	}
+
+	return lcm(cycles);
+}
+
+print(find("AAA", false));
+print(part2());
