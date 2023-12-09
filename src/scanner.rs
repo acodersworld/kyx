@@ -43,6 +43,12 @@ pub enum Token<'a> {
     Star,
     Percent,
 
+    PlusEquals,
+    MinusEquals,
+    SlashEquals,
+    StarEquals,
+    PercentEquals,
+
     LogicalAnd,
     LogicalOr,
 
@@ -123,6 +129,12 @@ impl Token<'_> {
             Self::Slash => "/",
             Self::Star => "*",
             Self::Percent => "%",
+
+            Self::PlusEquals => "+=",
+            Self::MinusEquals => "-=",
+            Self::SlashEquals => "/=",
+            Self::StarEquals => "*=",
+            Self::PercentEquals => "%=",
 
             Self::LogicalAnd => "&&",
             Self::LogicalOr => "||",
@@ -239,6 +251,10 @@ impl<'a> Scanner<'a> {
     }
 
     fn match_char(&mut self, c: char) -> bool {
+        if self.at_eof() {
+            return false;
+        }
+
         if self.peek() == c {
             self.advance();
             return true;
@@ -454,8 +470,16 @@ impl<'a> Scanner<'a> {
                     self.advance();
                     self.skip_to_newline();
                 } else {
+                    let token = {
+                        if self.match_char('=') {
+                            Token::SlashEquals
+                        } else {
+                            Token::Slash
+                        }
+                    };
+
                     return Ok(TokenWithLocation {
-                        token: Token::Slash,
+                        token,
                         location: TokenLocation {
                             src_line_start: self.src_line.as_ptr() as usize
                                 - self.src.as_ptr() as usize,
@@ -483,17 +507,36 @@ impl<'a> Scanner<'a> {
         }
 
         let t = match c {
-            '+' => Token::Plus,
+            '+' => {
+                if self.match_char('=') {
+                    Token::PlusEquals
+                } else {
+                    Token::Plus
+                }
+            }
             '-' => {
-                if self.match_char('>') {
+                if self.match_char('=') {
+                    Token::MinusEquals
+                } else if self.match_char('>') {
                     Token::ThinArrow
                 } else {
                     Token::Minus
                 }
             }
-            '*' => Token::Star,
-            '%' => Token::Percent,
-
+            '*' => {
+                if self.match_char('=') {
+                    Token::StarEquals
+                } else {
+                    Token::Star
+                }
+            }
+            '%' => {
+                if self.match_char('=') {
+                    Token::PercentEquals
+                } else {
+                    Token::Percent
+                }
+            }
             '&' => {
                 if self.match_char('&') {
                     Token::LogicalAnd
@@ -626,6 +669,17 @@ mod tests {
             assert_eq!(scanner.scan_token().unwrap().token, Token::Slash);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Star);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Percent);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::Eof);
+        }
+
+        {
+            let src = "+=-=/=*=%=".to_owned();
+            let mut scanner = Scanner::new(&src);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::PlusEquals);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::MinusEquals);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::SlashEquals);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::StarEquals);
+            assert_eq!(scanner.scan_token().unwrap().token, Token::PercentEquals);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Eof);
         }
 

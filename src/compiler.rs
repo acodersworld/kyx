@@ -2909,7 +2909,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn identifier(&mut self, chunk: &mut Chunk, name: &str) -> Result<(), String> {
         enum Identifier {
-            Global,
+            Global(i64),
             Local(u8),
         }
 
@@ -2917,12 +2917,57 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             if let Some((local, idx)) = self.find_local(name) {
                 (local, Identifier::Local(idx.try_into().unwrap()), "Local")
             } else {
-                (self.find_global(name)?, Identifier::Global, "Global")
+                let name_idx = self
+                    .data_section
+                    .create_constant_str(name)
+                    .try_into()
+                    .unwrap();
+                (self.find_global(name)?, Identifier::Global(name_idx), "Global")
             }
         };
 
-        if self.scanner.match_token(Token::Equal)? {
+        let is_equal = match self.scanner.peek_token()?.token {
+            Token::Equal |
+            Token::PlusEquals |
+            Token::MinusEquals |
+            Token::StarEquals |
+            Token::SlashEquals |
+            Token::PercentEquals => true,
+            _ => false
+        };
+
+        if is_equal {
+            let equal_token = self.scanner.scan_token()?;
+
+            let special_op = 
+                match equal_token.token {
+                    Token::Equal => None,
+                    Token::PlusEquals => Some(opcode::ADD),
+                    Token::MinusEquals => Some(opcode::SUB),
+                    Token::StarEquals => Some(opcode::MUL),
+                    Token::SlashEquals => Some(opcode::DIV),
+                    Token::PercentEquals => Some(opcode::MOD),
+                    _ => unreachable!()
+                };
+
+            if special_op.is_some() {
+                match symbol {
+                    Identifier::Global(name_idx) => {
+                        chunk.write_byte(opcode::PUSH_GLOBAL);
+                        self.write_var_len_int(chunk, name_idx);
+                    }
+                    Identifier::Local(idx) => {
+                        chunk.write_byte(opcode::PUSH_LOCAL);
+                        chunk.write_byte(idx);
+                    }
+                }
+            }
+
             self.expression(chunk)?;
+
+            if let Some(op) = special_op {
+                chunk.write_byte(op);
+            }
 
             if self.type_stack.is_empty() {
                 return Err("Expected right hand side value, got None".to_owned());
@@ -2955,14 +3000,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
 
             match symbol {
-                Identifier::Global => {
+                Identifier::Global(name_idx) => {
                     chunk.write_byte(opcode::SET_GLOBAL);
-                    let v = self
-                        .data_section
-                        .create_constant_str(name)
-                        .try_into()
-                        .unwrap();
-                    self.write_var_len_int(chunk, v);
+                    self.write_var_len_int(chunk, name_idx);
                 }
                 Identifier::Local(idx) => {
                     chunk.write_byte(opcode::SET_LOCAL);
@@ -2976,14 +3016,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.call(chunk, name)?;
         } else {
             match symbol {
-                Identifier::Global => {
+                Identifier::Global(name_idx) => {
                     chunk.write_byte(opcode::PUSH_GLOBAL);
-                    let v = self
-                        .data_section
-                        .create_constant_str(name)
-                        .try_into()
-                        .unwrap();
-                    self.write_var_len_int(chunk, v);
+                    self.write_var_len_int(chunk, name_idx);
                 }
                 Identifier::Local(idx) => {
                     chunk.write_byte(opcode::PUSH_LOCAL);

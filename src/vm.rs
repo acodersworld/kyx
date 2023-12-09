@@ -1827,6 +1827,91 @@ mod test {
             assert_eq!(printer.strings.len(), 1);
             assert_eq!(printer.strings[0], "10");
         }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let mut i = 0;
+                i += 1;
+                print(i);
+                i += 2;
+                print(i);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "1");
+            assert_eq!(printer.strings[1], "3");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let mut i = 0;
+                i -= 1;
+                print(i);
+                i -= 2;
+                print(i);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "-1");
+            assert_eq!(printer.strings[1], "-3");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let mut i = 10;
+                i *= 2;
+                print(i);
+                i *= 5;
+                print(i);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "20");
+            assert_eq!(printer.strings[1], "100");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let mut i = 100;
+                i /= 10;
+                print(i);
+                i /= 5;
+                print(i);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "10");
+            assert_eq!(printer.strings[1], "2");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let mut i = 100;
+                i %= 51;
+                print(i);
+                i %= 30;
+                print(i);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 2);
+            assert_eq!(printer.strings[0], "49");
+            assert_eq!(printer.strings[1], "19");
+        }
     }
 
     #[test]
