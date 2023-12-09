@@ -1,0 +1,50 @@
+let lines = readinput();
+
+fn calc_distance(held: int, game_time: int) -> int {
+	let travel_time = game_time - held;
+	let dist = travel_time * held;
+	return dist;
+}
+
+// part 1
+{
+	let times = lines[0].split(':')[1].split_whitespace();
+	let distances = lines[1].split(':')[1].split_whitespace();
+
+	let mut mul = 1;
+	for t : 0..times.len() {
+		let record = distances[t].to_integer();
+		let duration = times[t].to_integer();
+
+		let mut count = 0;
+		for h : 1..(duration - 1) {
+			if calc_distance(h, duration) > record {
+				count = count + 1;
+			}
+		}
+
+		mul = mul * count;
+	}
+	print(mul);
+}
+
+// part 2
+{
+	let time = lines[0].split(':')[1].remove_char(' ').to_integer();
+	let record = lines[1].split(':')[1].remove_char(' ').to_integer();
+
+	let mut lo = 1;
+	let mut hi = time / 2;
+	while (hi - lo) > 1 {
+		let mid = lo + (hi - lo) / 2;
+		let d = calc_distance(mid, time);
+		if d < record {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+
+	print(time - hi*2 + 1);
+}
+
