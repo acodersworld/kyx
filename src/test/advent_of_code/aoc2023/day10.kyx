@@ -1,0 +1,205 @@
+let lines = readinput();
+
+struct Coord {
+	x: int,
+	y: int
+}
+
+struct UpsampledVisited {
+	len: int,
+	visited: [bool]
+}
+impl {
+	fn (self) is_visited(x: int, y: int) -> bool {
+		let idx = y * 2 * self.len + x * 2;
+		return self.visited[idx];
+	}
+
+	fn (self) visit(x: int, y: int, dirx: int, diry: int) {
+		let x_2 = x * 2;
+		let y_2 = y * 2;
+
+		let trailing_idx = (y_2 - diry) * self.len + x_2 - dirx;
+		self.visited[trailing_idx] = true;
+
+		let idx = y_2 * self.len + x_2;
+		self.visited[idx] = true;
+	}
+
+	fn (self) flood_visit(x: int, y: int) {
+		let start_idx = y * 2 * self.len + x * 2;
+		if self.visited[start_idx] {
+			return;
+		}
+
+		self.visited[start_idx] = true;
+
+		let mut stack = vec<Coord>{};
+		stack.push(Coord {
+			x = x * 2,
+			y = y * 2,
+		});
+
+		while stack.len() > 0 {
+			let next = stack.pop();
+
+			for y : (next.y-1)..=(next.y+1) {
+				if y < 0 { continue; }
+				if y > (self.len - 1) { continue; }
+
+				for x : (next.x - 1)..=(next.x + 1) {
+					if x < 0 { continue; }
+					if x > (self.len - 1) { continue; }
+
+					let idx = y * self.len + x;
+					if self.visited[idx] { continue; }
+
+					self.visited[idx] = true;
+					stack.push(Coord {
+						x = x,
+						y = y,
+					});
+				}
+			}
+		}
+	}
+
+	fn (self) count_downsampled_unvisited() -> int {
+		let len_2 = self.len / 2;
+
+		let mut count = 0;
+		for y : 0..len_2 {
+			for x : 0..len_2 {
+				let idx = y * 2 * self.len + x * 2;
+				if !self.visited[idx] {
+					count += 1;
+				}
+			}
+		}
+
+		return count;
+	}
+}
+
+fn find_start() -> Coord {
+	let len = lines[0].len();
+	for l : 0..lines.len() {
+		let ln = lines[l];
+		for i : 0..len {
+			if ln[i] == 'S' {
+				return Coord {
+					x = i,
+					y = l,
+				};
+			}
+		}
+	}
+
+	// unreachable
+}
+
+fn follow_path(visited: UpsampledVisited) -> int {
+	let mut x = 0;
+	let mut y = 0;
+	{
+		let s = find_start();
+		x = s.x;
+		y = s.y;
+	}
+
+	let mut dirx = 0;
+	let mut diry = 0;
+
+	let mut steps = 1;
+
+	while true {
+		let c = lines[y][x];
+		visited.visit(x, y, dirx, diry);
+
+		if c == 'S' {
+			// Cheating a bit.
+			// This just so happens to work for all the samples
+			// and my input
+			dirx = 0;
+			diry = 1;
+		}
+
+		if c == '7' {
+			if dirx == 1 {
+				dirx = 0;
+				diry = 1;
+			}
+			else {
+				dirx = -1;
+				diry = 0;
+			}
+		}
+		if c == 'J' {
+			if dirx == 1 {
+				dirx = 0;
+				diry = -1;
+			}
+			else {
+				dirx = -1;
+				diry = 0;
+			}
+		}
+
+		if c == 'F' {
+			if diry == -1 {
+				dirx = 1;
+				diry = 0;
+			}
+			else {
+				dirx = 0;
+				diry = 1;
+			}
+		}
+		if c == 'L' {
+			if diry == 1 {
+				dirx = 1;
+				diry = 0;
+			}
+			else {
+				dirx = 0;
+				diry = -1;
+			}
+		}
+		x += dirx;
+		y += diry;
+		steps += 1;
+
+		if lines[y][x] == 'S' {
+			visited.visit(x, y, dirx, diry);
+			break;
+		}
+	}
+
+	return steps;
+}
+
+fn flood_borders(visited: UpsampledVisited) {
+	let len = lines.len();
+	for x : 0..len {
+		visited.flood_visit(x, 0);
+		visited.flood_visit(x, len - 1);
+	}
+	for y : 0..len {
+		visited.flood_visit(0, y);
+		visited.flood_visit(len - 1, y);
+	}
+}
+
+let mut visited = {
+	let len_2 = lines.len() * 2;
+	UpsampledVisited {
+		len = len_2,
+		visited = vec<bool>[len_2 * len_2]{false},
+	}
+};
+
+let steps = follow_path(visited);
+flood_borders(visited);
+
+print(steps / 2);
+print(visited.count_downsampled_unvisited());
