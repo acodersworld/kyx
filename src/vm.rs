@@ -214,7 +214,7 @@ macro_rules! bin_op {
             let result = match (left, right) {
                 (Value::Integer(l), Value::Integer(r)) => Value::Integer(l $op r),
                 (Value::Float(l), Value::Float(r)) => Value::Float(*l $op *r),
-                _ => panic!("")
+                (l, r) => panic!("Cannot add values {:?} / {:?}", l, r)
             };
 
             *st.last_mut().unwrap() = result;
@@ -1266,6 +1266,15 @@ impl<'printer> VM<'printer> {
                     self.value_stack
                         .push(Value::Integer(i.abs()));
                 }
+                builtin_functions::integer::TO_STRING => {
+                    let mut data_section = VMDataSection {
+                        objects: &mut self.objects,
+                        constant_strs: &mut self.constant_strs,
+                    };
+                    let idx = data_section.create_constant_str(&i.to_string());
+                    self.value_stack
+                        .push(Value::Str(self.constant_strs[idx as usize]));
+                }
                 _ => panic!("Unexpected integer builtin id {}", builtin_id),
             }
             Value::Char(c) => match builtin_id {
@@ -1550,9 +1559,27 @@ impl<'printer> VM<'printer> {
                     self.value_stack
                         .push(Value::Str(self.constant_strs[idx as usize]));
                 }
+                builtin_functions::string::APPEND => {
+                    let s = &unsafe { s.as_ref() }.val;
+
+                    let app = match self.value_stack.pop().unwrap() {
+                        Value::Str(s) => &unsafe { s.as_ref() }.val,
+                        _ => panic!("Expected char"),
+                    };
+
+                    let mut data_section = VMDataSection {
+                        objects: &mut self.objects,
+                        constant_strs: &mut self.constant_strs,
+                    };
+                    let mut new = s.to_owned();
+                    new += app;
+                    let idx = data_section.create_constant_str(&new);
+                    self.value_stack
+                        .push(Value::Str(self.constant_strs[idx as usize]));
+                }
                 _ => panic!("Unexpected string builtin id {}", builtin_id),
             },
-            Value::HashMap(h) => match builtin_id {
+            Value::HashMap(mut h) => match builtin_id {
                 builtin_functions::hashmap::CONTAINS_KEY => {
                     let key = self.value_stack.pop().unwrap();
                     self.value_stack
@@ -1570,6 +1597,9 @@ impl<'printer> VM<'printer> {
                     self.objects.push(GcValue::Vector(vec_val));
 
                     self.value_stack.push(Value::Vector(ptr));
+                }
+                builtin_functions::hashmap::CLEAR => {
+                    unsafe { h.as_mut() }.clear();
                 }
                 _ => panic!("Unexpected hash_map builtin id {}", builtin_id),
             },

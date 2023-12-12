@@ -1942,11 +1942,37 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             ));
                         }
 
-                        println!("{:?}", self.type_stack);
                         self.type_stack.pop(); // pop string
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::string::REPLACE_CHAR);
                         chunk.write_byte(2);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Str,
+                            read_only: false,
+                        });
+                    }
+                    "append" => {
+                        self.consume(Token::LeftParen)?;
+                        let app_loc = self.scanner.peek_token()?.location;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let app = self.type_stack.pop().unwrap();
+                        if app.value_type != ValueType::Str {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "append expects a string, got {}",
+                                    app.value_type
+                                ),
+                                &app_loc,
+                            ));
+                        }
+
+                        self.type_stack.pop(); // pop string
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::string::APPEND);
+                        chunk.write_byte(1);
 
                         self.type_stack.push(Variable {
                             value_type: ValueType::Str,
@@ -2006,6 +2032,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                             value_type: ValueType::Vector(Rc::new(h.0.clone())),
                             read_only: true,
                         });
+                    }
+                    "clear" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::hashmap::CLEAR);
+                        chunk.write_byte(0);
                     }
                     _ => {
                         return Err(self.make_error_msg(
@@ -2090,6 +2125,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                         self.type_stack.push(Variable {
                             value_type: ValueType::Integer,
+                            read_only: true,
+                        });
+                    }
+                    "to_string" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::integer::TO_STRING);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Str,
                             read_only: true,
                         });
                     }

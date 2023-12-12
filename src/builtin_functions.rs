@@ -29,11 +29,14 @@ pub mod string {
     pub const CONTAINS: u8 = 12;
     pub const REMOVE_CHAR: u8 = 13;
     pub const REPLACE_CHAR: u8 = 14;
+
+    pub const APPEND: u8 = 15;
 }
 
 pub mod hashmap {
     pub const CONTAINS_KEY: u8 = 0;
     pub const KEYS: u8 = 1;
+    pub const CLEAR: u8 = 2;
 }
 
 pub mod ch {
@@ -45,4 +48,5 @@ pub mod ch {
 
 pub mod integer {
     pub const ABS: u8 = 0;
+    pub const TO_STRING: u8 = 1;
 }

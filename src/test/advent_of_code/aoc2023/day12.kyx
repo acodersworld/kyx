@@ -1,0 +1,145 @@
+let lines = readinput();
+
+struct Springs {
+	springs: string,
+	groups: [int]
+}
+
+fn expand(src: Springs) -> Springs {
+	let mut s = src.springs;
+	let mut g = vec<int>{};
+
+	for i : 0..5 {
+		for a : src.groups {
+			g.push(a);
+		}
+	}
+
+	for i : 0..4 {
+		s = s.append("?");
+		s = s.append(src.springs);
+	}
+
+	return Springs {
+		springs= s,
+		groups= g,
+	};
+}
+
+let mut springs_list = vec<Springs>{};
+
+for ln : lines {
+	let springs_groups = ln.split(' ');
+	let springs = springs_groups[0];
+	let groups_str = springs_groups[1].split(',');
+
+	let mut groups = vec<int>{};
+	for g : groups_str {
+		groups.push(g.to_integer());	
+	}
+
+	springs_list.push(Springs {
+		springs = springs,
+		groups = groups,
+	});
+}
+
+fn has_hash(springs: string, start_idx: int) -> bool {
+	for i : start_idx..springs.len() {
+		if springs[i] == '#' {
+			return true;
+		}
+	}
+	return false;
+}
+
+fn solve(springs: string, start_spring: int, groups: [int], start_group: int, memo: [int: int]) -> int {
+	let springs_len = springs.len();
+	let key = (springs_len - start_spring) * 1000 + start_group;
+
+	if memo.contains_key(key) {
+		return memo[key];
+	}
+
+	let mut start = start_spring;
+
+	while start < springs_len {
+		if springs[start] != '.' {
+			break;
+		}
+		start += 1;
+	}
+
+	let mut min_space = groups.len() - 1 - start_group;
+	for i : start_group..groups.len() {
+		min_space += groups[i];	
+	}
+
+	let end = springs_len - min_space + 1;
+	let mut count = 0;
+	for i : start..end {
+		let last = i + groups[start_group];
+		if last < springs_len {
+			if springs[last] == '#' {
+				// cannot fit here
+
+				if springs[i] == '#' {
+					// can't move on from here
+					memo[key] = count;
+					return count;
+				}
+				continue;
+			}
+		}
+
+		let mut ok = true;
+		let mut j = i;
+		while j < last {
+			if springs[j] == '.' {
+				ok = false;
+				break;
+			}
+			j += 1;
+		}
+
+		if ok {
+			if (groups.len() - start_group) == 1 {
+				let mut has_more = false;
+				let last_1 = last + 1;
+				if last_1 < springs_len {
+					has_more = has_hash(springs, last_1);
+				}
+
+				if !has_more {
+					count += 1;
+				}
+			}
+			else {
+				count += solve(springs, last + 1, groups, start_group + 1, memo);
+			}
+		}
+
+		if springs[i] == '#' {
+			// can't move on from here
+			memo[key] = count;
+			return count;
+		}
+	}
+
+	memo[key] = count;
+	return count;
+}
+
+let mut sum = 0;
+for s : springs_list {
+	sum += solve(s.springs, 0, s.groups, 0, hash_map<int, int>{});
+}
+print(sum);
+
+sum = 0;
+for s : springs_list {
+	let e = expand(s);
+	sum += solve(e.springs, 0, e.groups, 0, hash_map<int, int>{});
+}
+print(sum);
+
