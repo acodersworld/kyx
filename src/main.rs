@@ -16,6 +16,8 @@ use rust_function_ctx::{RustFunctionCtx, RustValue};
 use rustyline::DefaultEditor;
 use std::env;
 use std::io::Read;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 pub struct DefaultPrinter {}
 
@@ -52,10 +54,25 @@ fn readlines(ctx: &mut dyn RustFunctionCtx) {
     ctx.set_result(RustValue::StringVector(lines));
 }
 
+fn hash_int(ctx: &mut dyn RustFunctionCtx) {
+    let input = ctx.get_parameter_integer(0).unwrap();
+    let seed = ctx.get_parameter_integer(1).unwrap();
+
+    let mut s = DefaultHasher::new();
+    seed.hash(&mut s);
+    input.hash(&mut s);
+
+    ctx.set_result(RustValue::Integer(s.finish() as i64));
+}
+
 fn register_builtin_functions(machine: &mut vm::VM) {
     machine
         .create_function("fn readlines(string) -> [string]", &readlines)
         .expect("Failed to register readlines");
+
+    machine
+        .create_function("fn hash_int(int, int) -> int", &hash_int)
+        .expect("Failed to register hash");
 }
 
 fn repl() {
