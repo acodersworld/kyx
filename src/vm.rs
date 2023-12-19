@@ -1,7 +1,7 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::vec::Vec;
-use std::cmp::Ordering;
 
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -14,7 +14,8 @@ use crate::float;
 use crate::opcode;
 use crate::rust_function_ctx::{RustFunctionCtx, RustValue};
 use crate::value::{
-    FunctionValue, GcValue, RustFunctionValue, VectorValue, StringValue, StructValue, UnionValue, Value,
+    FunctionValue, GcValue, RustFunctionValue, StringValue, StructValue, UnionValue, Value,
+    VectorValue,
 };
 use crate::var_len_int;
 
@@ -416,7 +417,7 @@ impl<'printer> VM<'printer> {
                     if sz <= start_stack_size {
                         return;
                     }
-                },
+                }
                 _ => {
                     panic!("Unknown instruction: {} @ {}", op, frame_stack.top.pc - 1)
                 }
@@ -492,7 +493,7 @@ impl<'printer> VM<'printer> {
     fn not(&mut self) {
         let v = match self.value_stack.last_mut().unwrap() {
             Value::Bool(b) => b,
-            _ => panic!("Expected boolean value for '!'")
+            _ => panic!("Expected boolean value for '!'"),
         };
 
         *v = !(*v);
@@ -628,8 +629,8 @@ impl<'printer> VM<'printer> {
                         }
 
                         i as usize
-                    },
-                    _ => panic!("Expected integer for vector init size")
+                    }
+                    _ => panic!("Expected integer for vector init size"),
                 };
 
                 let vector = vec![init_value; init_size];
@@ -639,7 +640,7 @@ impl<'printer> VM<'printer> {
 
                 self.value_stack.push(Value::Vector(ptr));
             }
-            x => panic!("Unknown vector init type {}", x)
+            x => panic!("Unknown vector init type {}", x),
         }
     }
 
@@ -700,10 +701,9 @@ impl<'printer> VM<'printer> {
                 }
 
                 if string.is_ascii {
-                    let bytes = string.val.as_bytes(); 
+                    let bytes = string.val.as_bytes();
                     self.value_stack.push(Value::Char(bytes[index] as char));
-                }
-                else {
+                } else {
                     self.value_stack
                         .push(Value::Char(string.val.chars().nth(index).unwrap()));
                 }
@@ -871,7 +871,7 @@ impl<'printer> VM<'printer> {
 
         let locals = &frame.locals;
         assert!(!locals.is_empty());
-//        eprintln!("{:?}", locals);
+        //        eprintln!("{:?}", locals);
         self.value_stack.push(locals[idx]);
     }
 
@@ -1185,28 +1185,37 @@ impl<'printer> VM<'printer> {
         frame_stack.top.locals[0] = interface.members[0]; // switch 'self' into first local slot
     }
 
-    fn sort_vector(&mut self, frame_stack: &mut FrameStack, vector: &mut VectorValue, pred: Option<NonNull<FunctionValue>>) {
+    fn sort_vector(
+        &mut self,
+        frame_stack: &mut FrameStack,
+        vector: &mut VectorValue,
+        pred: Option<NonNull<FunctionValue>>,
+    ) {
         if vector.is_empty() {
             return;
         }
 
         match vector[0] {
-            Value::Integer(_) | Value::Float(_) | Value::Str(_) | Value::Bool(_) | Value::Char(_) => {
-                vector.sort_by(|a, b| {
-                    match (a, b) {
-                        (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
-                        (Value::Float(x), Value::Float(y)) => x.cmp(y),
-                        (Value::Str(x), Value::Str(y)) => unsafe { x.as_ref() }.val.cmp(&unsafe { y.as_ref() }.val),
-                        (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
-                        (Value::Char(x), Value::Char(y)) => x.cmp(y),
-                        _ => panic!("Unexpected values in vector during sort! {:?} / {:?}", a, b)
+            Value::Integer(_)
+            | Value::Float(_)
+            | Value::Str(_)
+            | Value::Bool(_)
+            | Value::Char(_) => {
+                vector.sort_by(|a, b| match (a, b) {
+                    (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
+                    (Value::Float(x), Value::Float(y)) => x.cmp(y),
+                    (Value::Str(x), Value::Str(y)) => {
+                        unsafe { x.as_ref() }.val.cmp(&unsafe { y.as_ref() }.val)
                     }
+                    (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
+                    (Value::Char(x), Value::Char(y)) => x.cmp(y),
+                    _ => panic!("Unexpected values in vector during sort! {:?} / {:?}", a, b),
                 });
             }
             _ => {
                 let pred = match pred {
                     Some(f) => f,
-                    None => panic!("Predicate not a function!")
+                    None => panic!("Predicate not a function!"),
                 };
 
                 vector.sort_by(|a, b| {
@@ -1221,7 +1230,7 @@ impl<'printer> VM<'printer> {
                     assert_eq!(start_stack_size + 1, self.value_stack.len());
                     let is_less = match self.value_stack.pop().unwrap() {
                         Value::Bool(b) => b,
-                        _ => panic!("Return value of predicate must be a boolean") 
+                        _ => panic!("Return value of predicate must be a boolean"),
                     };
 
                     if is_less {
@@ -1239,15 +1248,11 @@ impl<'printer> VM<'printer> {
             return idx;
         }
 
-        let real_index =
-            s
-            .chars()
-            .enumerate()
-            .nth(idx);
+        let real_index = s.chars().enumerate().nth(idx);
 
         match real_index {
             Some(i) => i.0,
-            None => s.len()
+            None => s.len(),
         }
     }
 
@@ -1263,32 +1268,26 @@ impl<'printer> VM<'printer> {
         match obj {
             Value::Integer(i) => match builtin_id {
                 builtin_functions::integer::ABS => {
-                    self.value_stack
-                        .push(Value::Integer(i.abs()));
+                    self.value_stack.push(Value::Integer(i.abs()));
                 }
                 _ => panic!("Unexpected integer builtin id {}", builtin_id),
-            }
+            },
             Value::Char(c) => match builtin_id {
                 builtin_functions::ch::TO_LOWERCASE => {
-                    self.value_stack
-                        .push(Value::Char(c.to_ascii_lowercase()));
+                    self.value_stack.push(Value::Char(c.to_ascii_lowercase()));
                 }
                 builtin_functions::ch::TO_UPPERCASE => {
-                    self.value_stack
-                        .push(Value::Char(c.to_ascii_uppercase()));
+                    self.value_stack.push(Value::Char(c.to_ascii_uppercase()));
                 }
                 builtin_functions::ch::TO_INTEGER => {
-                    self.value_stack.push(Value::Integer(
-                        c.to_digit(10).unwrap_or(0) as i64
-                    ));
+                    self.value_stack
+                        .push(Value::Integer(c.to_digit(10).unwrap_or(0) as i64));
                 }
                 builtin_functions::ch::IS_DIGIT => {
-                    self.value_stack.push(Value::Bool(
-                        c.is_ascii_digit()
-                    ));
+                    self.value_stack.push(Value::Bool(c.is_ascii_digit()));
                 }
                 _ => panic!("Unexpected char builtin id {}", builtin_id),
-            }
+            },
             Value::Vector(mut v) => match builtin_id {
                 builtin_functions::vector::LEN => {
                     self.value_stack
@@ -1305,19 +1304,17 @@ impl<'printer> VM<'printer> {
 
                     self.value_stack.push(vector.pop().unwrap());
                 }
-                builtin_functions::vector::SORT => {
-                    match arg_count {
-                        0 => self.sort_vector(frame_stack, unsafe { v.as_mut() }, None),
-                        1 => {
-                            let pred = match self.value_stack.pop().unwrap() {
-                                Value::Function(f) => f,
-                                _ => panic!("Sort received unexpect argument")
-                            };
-                            self.sort_vector(frame_stack, unsafe { v.as_mut() }, Some(pred));
-                        }
-                        _ => panic!("Sort received unexpected argument count")
+                builtin_functions::vector::SORT => match arg_count {
+                    0 => self.sort_vector(frame_stack, unsafe { v.as_mut() }, None),
+                    1 => {
+                        let pred = match self.value_stack.pop().unwrap() {
+                            Value::Function(f) => f,
+                            _ => panic!("Sort received unexpect argument"),
+                        };
+                        self.sort_vector(frame_stack, unsafe { v.as_mut() }, Some(pred));
                     }
-                }
+                    _ => panic!("Sort received unexpected argument count"),
+                },
                 builtin_functions::vector::CLEAR => {
                     unsafe { v.as_mut() }.clear();
                 }
@@ -1331,8 +1328,8 @@ impl<'printer> VM<'printer> {
                 builtin_functions::vector::REMOVE => {
                     let val = self.value_stack.pop().unwrap();
                     match val {
-                        Value::Char(_) | Value::Integer(_) | Value::Float(_) | Value::Str(_) => {},
-                        _ => unimplemented!()
+                        Value::Char(_) | Value::Integer(_) | Value::Float(_) | Value::Str(_) => {}
+                        _ => unimplemented!(),
                     }
 
                     unsafe { v.as_mut() }.retain(|x| *x != val);
@@ -1340,11 +1337,12 @@ impl<'printer> VM<'printer> {
                 builtin_functions::vector::CONTAINS => {
                     let val = self.value_stack.pop().unwrap();
                     match val {
-                        Value::Char(_) | Value::Integer(_) | Value::Float(_) | Value::Str(_) => {},
-                        _ => unimplemented!()
+                        Value::Char(_) | Value::Integer(_) | Value::Float(_) | Value::Str(_) => {}
+                        _ => unimplemented!(),
                     }
 
-                    self.value_stack.push(Value::Bool(unsafe { v.as_mut() }.contains(&val)));
+                    self.value_stack
+                        .push(Value::Bool(unsafe { v.as_mut() }.contains(&val)));
                 }
                 _ => panic!("Unexpected vector builtin id {}", builtin_id),
             },
@@ -1377,20 +1375,23 @@ impl<'printer> VM<'printer> {
 
                     let substr = match builtin_id {
                         builtin_functions::string::SUBSTR => {
-                            let iend = Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
-                            let istart = Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
+                            let iend =
+                                Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
+                            let istart =
+                                Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
                             &s[istart..iend]
                         }
                         builtin_functions::string::SUBSTR_FROM_START => {
-                            let iend = Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
+                            let iend =
+                                Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
                             &s[..iend]
                         }
                         builtin_functions::string::SUBSTR_TO_END => {
-                            let istart = Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
+                            let istart =
+                                Self::string_index(s, is_ascii, pop_index(&mut self.value_stack));
                             if istart == s.len() {
                                 ""
-                            }
-                            else {
+                            } else {
                                 &s[istart..]
                             }
                         }
@@ -1544,7 +1545,7 @@ impl<'printer> VM<'printer> {
                         constant_strs: &mut self.constant_strs,
                     };
 
-                    let mut buf = [0;4];
+                    let mut buf = [0; 4];
                     let new = s.replace(|c| c == from, to.encode_utf8(&mut buf));
                     let idx = data_section.create_constant_str(&new);
                     self.value_stack

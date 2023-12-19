@@ -383,10 +383,14 @@ impl<'a> Scanner<'a> {
             self.advance();
         }
 
-        if !self.at_eof() && 
-                self.peek() == '.' &&
-                self.peek_next() != Some('.') &&
-                self.peek_next().map_or(false, |c| c.is_ascii_digit() /* check for integer method call */) {
+        if !self.at_eof()
+            && self.peek() == '.'
+            && self.peek_next() != Some('.')
+            && self.peek_next().map_or(
+                false,
+                |c| c.is_ascii_digit(), /* check for integer method call */
+            )
+        {
             self.advance();
             if self.at_eof() || !self.peek().is_ascii_digit() {
                 return Err("Expected digit after '.'".to_owned());
@@ -786,7 +790,10 @@ mod tests {
             assert_eq!(scanner.scan_token().unwrap().token, Token::Minus);
             assert_eq!(scanner.scan_token().unwrap().token, Token::Integer(123));
             assert_eq!(scanner.scan_token().unwrap().token, Token::Dot);
-            assert_eq!(scanner.scan_token().unwrap().token, Token::Identifier("method"));
+            assert_eq!(
+                scanner.scan_token().unwrap().token,
+                Token::Identifier("method")
+            );
             assert_eq!(scanner.scan_token().unwrap().token, Token::LeftParen);
             assert_eq!(scanner.scan_token().unwrap().token, Token::RightParen);
 

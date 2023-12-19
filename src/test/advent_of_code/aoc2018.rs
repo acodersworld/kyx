@@ -303,7 +303,10 @@ mod day7 {
 
         assert_eq!(vm.interpret(src), Ok(()));
         assert_eq!(printer.strings.len(), 27);
-        assert_eq!(printer.strings[0..26].concat(), "ABDCJLFMNVQWHIRKTEUXOZSYPG");
+        assert_eq!(
+            printer.strings[0..26].concat(),
+            "ABDCJLFMNVQWHIRKTEUXOZSYPG"
+        );
         assert_eq!(printer.strings[26], "896");
     }
 }
@@ -351,5 +354,3 @@ mod day9 {
         assert_eq!(printer.strings[0], "370210");
     }
 }
-
-

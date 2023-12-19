@@ -123,11 +123,10 @@ struct Method {
     method_idx: usize,
 }
 
-
 #[derive(Debug, PartialEq, Clone)]
 struct StructMember {
     read_only: bool,
-    value_type: ValueType
+    value_type: ValueType,
 }
 
 #[derive(Debug, PartialEq)]
@@ -382,7 +381,7 @@ pub struct Compiler {
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum LoopBreakType {
     Break,
-    Continue
+    Continue,
 }
 
 pub struct SrcCompiler<'a, T> {
@@ -517,14 +516,14 @@ struct IntegerRangeIteration {
     step_idx: u8,
     end_idx: u8,
     is_inclusive: bool,
-    is_cond_less: bool
+    is_cond_less: bool,
 }
 
 struct ContainerRangeIteration {
     var_idx: u8,
     end_idx: u8,
     container_idx: u8,
-    iterator_idx: u8
+    iterator_idx: u8,
 }
 
 impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerRangeIteration {
@@ -552,7 +551,6 @@ impl<'a, T: DataSection> ForLoopIteration<'a, T> for ContainerRangeIteration {
         cm.for_container_iteration_iterate(chunk, &self)
     }
 }
-
 
 impl<'a, T: DataSection> SrcCompiler<'a, T> {
     fn clear_stack(&mut self, chunk: &mut Chunk, pop_count: usize) {
@@ -702,10 +700,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while !self.scanner.match_token(Token::RightBrace)? {
             if !seen_comma {
                 let comma_location = self.scanner.peek_token()?.location;
-                return Err(self.make_error_msg(
-                    &format!("Expected comma"),
-                    &comma_location,
-                ));
+                return Err(self.make_error_msg(&format!("Expected comma"), &comma_location));
             }
 
             let (member_name, member_name_location) = self.match_identifier()?;
@@ -793,10 +788,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while !self.scanner.match_token(Token::RightBrace)? {
             if !seen_comma {
                 let comma_location = self.scanner.peek_token()?.location;
-                return Err(self.make_error_msg(
-                    &format!("Expected comma"),
-                    &comma_location,
-                ));
+                return Err(self.make_error_msg(&format!("Expected comma"), &comma_location));
             }
 
             let (member_name, member_name_location) = self.match_identifier()?;
@@ -806,7 +798,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let member_type = self.parse_type()?;
 
             if members_map
-                .insert(member_name.to_string(), StructMember { read_only: !is_member_mutable, value_type: member_type })
+                .insert(
+                    member_name.to_string(),
+                    StructMember {
+                        read_only: !is_member_mutable,
+                        value_type: member_type,
+                    },
+                )
                 .is_some()
             {
                 return Err(self.make_error_msg(
@@ -912,7 +910,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 method_metadata_map.insert(
                     function_name,
-                    (is_self_read_only, scanner_method_head, parameter_names_types, return_type),
+                    (
+                        is_self_read_only,
+                        scanner_method_head,
+                        parameter_names_types,
+                        return_type,
+                    ),
                 );
             }
         }
@@ -946,7 +949,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let saved_scanner = self.scanner.clone();
 
         if has_methods {
-            for (method_name, (is_self_read_only, scanner, parameters, return_type)) in method_metadata_map {
+            for (method_name, (is_self_read_only, scanner, parameters, return_type)) in
+                method_metadata_map
+            {
                 let mut locals = vec![];
 
                 locals.push(LocalVariable {
@@ -1084,15 +1089,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut members: Vec<(String, Vec<UnionMemberType>)> = vec![];
 
-
         let mut seen_comma = true; // seed for first one
         while !self.scanner.match_token(Token::RightBrace)? {
             if !seen_comma {
                 let comma_location = self.scanner.peek_token()?.location;
-                return Err(self.make_error_msg(
-                    &format!("Expected comma"),
-                    &comma_location,
-                ));
+                return Err(self.make_error_msg(&format!("Expected comma"), &comma_location));
             }
 
             let (member_name, member_name_location) = self.match_identifier()?;
@@ -1382,24 +1383,31 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         };
 
-        if !method_self_read_only && is_self_ready_only{
+        if !method_self_read_only && is_self_ready_only {
             return Err(self.make_error_msg(
-                &format!("Cannot call a mut self method {} with non-mut self", method_name),
+                &format!(
+                    "Cannot call a mut self method {} with non-mut self",
+                    method_name
+                ),
                 method_name_location,
-            ))
+            ));
         }
 
-        let argument_count_minus_self = self.parse_commas_separate_list(Token::RightParen, |cm, _| {
-            cm.expression(chunk)?;
-            Ok(())
-        })?;
+        let argument_count_minus_self =
+            self.parse_commas_separate_list(Token::RightParen, |cm, _| {
+                cm.expression(chunk)?;
+                Ok(())
+            })?;
 
         if argument_count_minus_self != function_type.parameters.len() {
             return Err(self.make_error_msg(
-                &format!("Incorrect argument count for method. Expected {}, got {}",
-                         function_type.parameters.len(), argument_count_minus_self),
+                &format!(
+                    "Incorrect argument count for method. Expected {}, got {}",
+                    function_type.parameters.len(),
+                    argument_count_minus_self
+                ),
                 method_name_location,
-            ))
+            ));
         }
 
         let stack_len = self.type_stack.len();
@@ -1410,15 +1418,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         chunk.write_byte(opcode::CALL);
         chunk.write_byte(argument_count.try_into().unwrap());
 
-        let args: Vec<_> = self.type_stack.drain(stack_len - argument_count_minus_self..stack_len).collect();
+        let args: Vec<_> = self
+            .type_stack
+            .drain(stack_len - argument_count_minus_self..stack_len)
+            .collect();
         for (i, a) in args.iter().enumerate() {
             let arg_type = &function_type.parameters[i];
             if a.value_type != *arg_type {
                 return Err(self.make_error_msg(
-                    &format!("Argument {} type is incorrect. Expected {}, got {}",
-                             i + 1, arg_type, a.value_type),
+                    &format!(
+                        "Argument {} type is incorrect. Expected {}, got {}",
+                        i + 1,
+                        arg_type,
+                        a.value_type
+                    ),
                     method_name_location,
-                ))
+                ));
             }
         }
 
@@ -1488,7 +1503,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ValueType::Struct(s) => {
                 let (member_name, member_name_location) = self.match_identifier()?;
                 if self.scanner.match_token(Token::LeftParen)? {
-                    self.struct_method(s, variable.read_only, &member_name, &member_name_location, chunk)?;
+                    self.struct_method(
+                        s,
+                        variable.read_only,
+                        &member_name,
+                        &member_name_location,
+                        chunk,
+                    )?;
                     return Ok(());
                 }
 
@@ -1503,7 +1524,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 };
 
                 let member = &s.members[member_idx].1;
-                (member_idx, member_name, member.read_only, member.value_type.clone())
+                (
+                    member_idx,
+                    member_name,
+                    member.read_only,
+                    member.value_type.clone(),
+                )
             }
             ValueType::Tuple(t) => {
                 let (member_idx, member_idx_location) = self.match_integer()?;
@@ -1558,7 +1584,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     }
                     "push" => {
                         if variable.read_only {
-                            return Err(self.make_error_msg("Cannot push to immutable vector", &location));
+                            return Err(
+                                self.make_error_msg("Cannot push to immutable vector", &location)
+                            );
                         }
 
                         self.consume(Token::LeftParen)?;
@@ -1585,7 +1613,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     }
                     "pop" => {
                         if variable.read_only {
-                            return Err(self.make_error_msg("Cannot push to immutable vector", &location));
+                            return Err(
+                                self.make_error_msg("Cannot push to immutable vector", &location)
+                            );
                         }
 
                         self.consume(Token::LeftParen)?;
@@ -1603,33 +1633,56 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     }
                     "sort" => {
                         if variable.read_only {
-                            return Err(self.make_error_msg("Cannot sort an immutable vector", &location));
+                            return Err(
+                                self.make_error_msg("Cannot sort an immutable vector", &location)
+                            );
                         }
 
                         self.consume(Token::LeftParen)?;
 
                         let arg_count = match elem_type.as_ref() {
-                            ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Bool | ValueType::Char => 0,
+                            ValueType::Integer
+                            | ValueType::Float
+                            | ValueType::Str
+                            | ValueType::Bool
+                            | ValueType::Char => 0,
                             _ => {
                                 let location = self.scanner.peek_token()?.location;
                                 self.expression(chunk)?;
 
-                                if let ValueType::Function(f) = &self.type_stack.last().unwrap().value_type {
+                                if let ValueType::Function(f) =
+                                    &self.type_stack.last().unwrap().value_type
+                                {
                                     if f.return_type != ValueType::Bool {
-                                        return Err(self.make_error_msg("Sort predicate must return a bool", &location));
+                                        return Err(self.make_error_msg(
+                                            "Sort predicate must return a bool",
+                                            &location,
+                                        ));
                                     }
 
                                     if f.parameters.len() != 2 {
-                                        return Err(self.make_error_msg("Sort predicate must accept 2 parameters", &location));
+                                        return Err(self.make_error_msg(
+                                            "Sort predicate must accept 2 parameters",
+                                            &location,
+                                        ));
                                     }
 
-                                    if f.parameters[0] != *elem_type.as_ref() || f.parameters[1] != *elem_type.as_ref() {
+                                    if f.parameters[0] != *elem_type.as_ref()
+                                        || f.parameters[1] != *elem_type.as_ref()
+                                    {
                                         return Err(self.make_error_msg(
-                                                &format!("Sort parameters must be type {}, got {} / {}", elem_type, f.parameters[0], f.parameters[1]), &location));
+                                            &format!(
+                                                "Sort parameters must be type {}, got {} / {}",
+                                                elem_type, f.parameters[0], f.parameters[1]
+                                            ),
+                                            &location,
+                                        ));
                                     }
-                                }
-                                else {
-                                    return Err(self.make_error_msg("Sort takes a function as it's first parameter", &location));
+                                } else {
+                                    return Err(self.make_error_msg(
+                                        "Sort takes a function as it's first parameter",
+                                        &location,
+                                    ));
                                 }
 
                                 self.type_stack.pop();
@@ -1643,12 +1696,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::vector::SORT);
                         chunk.write_byte(arg_count);
-
                     }
                     "clear" => {
                         self.consume(Token::LeftParen)?;
                         self.consume(Token::RightParen)?;
-                        
+
                         self.type_stack.pop();
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::vector::CLEAR);
@@ -1657,7 +1709,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     "clone" => {
                         self.consume(Token::LeftParen)?;
                         self.consume(Token::RightParen)?;
-                        
+
                         // no need to pop, expecting same vector type
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::vector::CLONE);
@@ -1680,7 +1732,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                                 &arg_loc,
                             ));
                         }
-                        
+
                         self.type_stack.pop();
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::vector::REMOVE);
@@ -1688,12 +1740,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     }
                     "contains" => {
                         match elem_type.as_ref() {
-                            ValueType::Integer | ValueType::Float | ValueType::Str | ValueType::Char => {},
+                            ValueType::Integer
+                            | ValueType::Float
+                            | ValueType::Str
+                            | ValueType::Char => {}
                             _ => {
                                 let location = self.scanner.peek_token()?.location;
                                 return Err(self.make_error_msg(
-                                        "contains can only be used with integer, float, string or char", &location));
-                           }
+                                    "contains can only be used with integer, float, string or char",
+                                    &location,
+                                ));
+                            }
                         }
 
                         self.consume(Token::LeftParen)?;
@@ -1712,7 +1769,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                                 &arg_loc,
                             ));
                         }
-                        
+
                         self.type_stack.pop();
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::vector::CONTAINS);
@@ -1834,10 +1891,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         let substr_type = self.type_stack.pop().unwrap();
                         if substr_type.value_type != ValueType::Str {
                             return Err(self.make_error_msg(
-                                &format!(
-                                    "substr type string, but got {}",
-                                    substr_type.value_type
-                                ),
+                                &format!("substr type string, but got {}", substr_type.value_type),
                                 &substr_loc,
                             ));
                         }
@@ -1866,10 +1920,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         let substr_type = self.type_stack.pop().unwrap();
                         if substr_type.value_type != ValueType::Str {
                             return Err(self.make_error_msg(
-                                &format!(
-                                    "substr type string, but got {}",
-                                    substr_type.value_type
-                                ),
+                                &format!("substr type string, but got {}", substr_type.value_type),
                                 &substr_loc,
                             ));
                         }
@@ -1894,10 +1945,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         let arg_type = self.type_stack.pop().unwrap();
                         if arg_type.value_type != ValueType::Char {
                             return Err(self.make_error_msg(
-                                &format!(
-                                    "remove_char expects a char, got {}",
-                                    arg_type.value_type
-                                ),
+                                &format!("remove_char expects a char, got {}", arg_type.value_type),
                                 &arg_loc,
                             ));
                         }
@@ -1923,10 +1971,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         let to = self.type_stack.pop().unwrap();
                         if to.value_type != ValueType::Char {
                             return Err(self.make_error_msg(
-                                &format!(
-                                    "replace_char expects a char, got {}",
-                                    to.value_type
-                                ),
+                                &format!("replace_char expects a char, got {}", to.value_type),
                                 &to_loc,
                             ));
                         }
@@ -1934,10 +1979,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         let from = self.type_stack.pop().unwrap();
                         if from.value_type != ValueType::Char {
                             return Err(self.make_error_msg(
-                                &format!(
-                                    "replace_char expects a char, got {}",
-                                    from.value_type
-                                ),
+                                &format!("replace_char expects a char, got {}", from.value_type),
                                 &from_loc,
                             ));
                         }
@@ -2027,9 +2069,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         self.type_stack.pop();
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         match member_name.as_str() {
-                            "to_lowercase" => { chunk.write_byte(builtin_functions::ch::TO_LOWERCASE); }
-                            "to_uppercase" => { chunk.write_byte(builtin_functions::ch::TO_UPPERCASE); }
-                            _ => unimplemented!()
+                            "to_lowercase" => {
+                                chunk.write_byte(builtin_functions::ch::TO_LOWERCASE);
+                            }
+                            "to_uppercase" => {
+                                chunk.write_byte(builtin_functions::ch::TO_UPPERCASE);
+                            }
+                            _ => unimplemented!(),
                         }
 
                         chunk.write_byte(0);
@@ -2109,16 +2155,17 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             if variable.read_only {
                 return Err(self.make_error_msg(
                     &format!("Self is read only, cannot set field {}", member_name),
-                    &location));
+                    &location,
+                ));
             }
 
             if member_read_only {
                 return Err(self.make_error_msg(
                     &format!("Cannot set read only field {}", member_name),
-                    &location));
+                    &location,
+                ));
             }
 
-            
             self.expression(chunk)?;
 
             let expr_type = &self.type_stack.last().unwrap().value_type;
@@ -2208,23 +2255,28 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 value_type: ValueType::Vector(Rc::new(elem_type)),
                 read_only: false,
             });
-        }
-        else if self.scanner.match_token(Token::LeftBracket)? {
+        } else if self.scanner.match_token(Token::LeftBracket)? {
             let size_location = self.scanner.peek_token()?.location;
             match elem_type {
-                ValueType::Integer | ValueType::Float | ValueType::Bool | ValueType::Str => {},
+                ValueType::Integer | ValueType::Float | ValueType::Bool | ValueType::Str => {}
                 _ => return Err(self.make_error_msg(
-                                    &format!("Vector repeat intialiser can only be used with primitive types, got {}", elem_type),
-                                    &size_location
-                ))
+                    &format!(
+                        "Vector repeat intialiser can only be used with primitive types, got {}",
+                        elem_type
+                    ),
+                    &size_location,
+                )),
             }
 
             self.expression(chunk)?;
             let size_type = self.type_stack.pop().unwrap().value_type;
             if size_type != ValueType::Integer {
                 return Err(self.make_error_msg(
-                    &format!("Vector size intialiser must be an integer, got {}", size_type),
-                    &size_location
+                    &format!(
+                        "Vector size intialiser must be an integer, got {}",
+                        size_type
+                    ),
+                    &size_location,
                 ));
             }
             self.consume(Token::RightBracket)?;
@@ -2236,8 +2288,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let init_val_type = self.type_stack.pop().unwrap().value_type;
             if init_val_type != elem_type {
                 return Err(self.make_error_msg(
-                    &format!("Vector argument type mismatch. Expected {}, got {}",
-                    elem_type, init_val_type), &init_val_location));
+                    &format!(
+                        "Vector argument type mismatch. Expected {}, got {}",
+                        elem_type, init_val_type
+                    ),
+                    &init_val_location,
+                ));
             }
 
             self.consume(Token::RightBrace)?;
@@ -2249,11 +2305,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 value_type: ValueType::Vector(Rc::new(elem_type)),
                 read_only: false,
             });
-        }
-        else {
+        } else {
             let location = self.scanner.peek_token()?.location;
-            return Err(self.make_error_msg(
-                &format!("Expected '{{' or '['"), &location));
+            return Err(self.make_error_msg(&format!("Expected '{{' or '['"), &location));
         }
 
         Ok(())
@@ -2798,7 +2852,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.expression(chunk)?;
 
         if self.type_stack.is_empty() {
-            return Err(self.make_error_msg("Expected value on right hand side of '=', got None", &rvalue_loc));
+            return Err(self.make_error_msg(
+                "Expected value on right hand side of '=', got None",
+                &rvalue_loc,
+            ));
         }
 
         let expr_type = self.type_stack.pop().unwrap().value_type;
@@ -2818,12 +2875,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     };
 
                     if !interface_satisfied {
-                        return Err(self.make_error_msg(&format!("Expected type {}, got {}", var_type, expr_type), &rvalue_loc));
+                        return Err(self.make_error_msg(
+                            &format!("Expected type {}, got {}", var_type, expr_type),
+                            &rvalue_loc,
+                        ));
                     }
                 }
                 var_type
-            }
-            else {
+            } else {
                 expr_type
             }
         };
@@ -2922,33 +2981,36 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     .create_constant_str(name)
                     .try_into()
                     .unwrap();
-                (self.find_global(name)?, Identifier::Global(name_idx), "Global")
+                (
+                    self.find_global(name)?,
+                    Identifier::Global(name_idx),
+                    "Global",
+                )
             }
         };
 
         let is_equal = match self.scanner.peek_token()?.token {
-            Token::Equal |
-            Token::PlusEquals |
-            Token::MinusEquals |
-            Token::StarEquals |
-            Token::SlashEquals |
-            Token::PercentEquals => true,
-            _ => false
+            Token::Equal
+            | Token::PlusEquals
+            | Token::MinusEquals
+            | Token::StarEquals
+            | Token::SlashEquals
+            | Token::PercentEquals => true,
+            _ => false,
         };
 
         if is_equal {
             let equal_token = self.scanner.scan_token()?;
 
-            let special_op = 
-                match equal_token.token {
-                    Token::Equal => None,
-                    Token::PlusEquals => Some(opcode::ADD),
-                    Token::MinusEquals => Some(opcode::SUB),
-                    Token::StarEquals => Some(opcode::MUL),
-                    Token::SlashEquals => Some(opcode::DIV),
-                    Token::PercentEquals => Some(opcode::MOD),
-                    _ => unreachable!()
-                };
+            let special_op = match equal_token.token {
+                Token::Equal => None,
+                Token::PlusEquals => Some(opcode::ADD),
+                Token::MinusEquals => Some(opcode::SUB),
+                Token::StarEquals => Some(opcode::MUL),
+                Token::SlashEquals => Some(opcode::DIV),
+                Token::PercentEquals => Some(opcode::MOD),
+                _ => unreachable!(),
+            };
 
             if special_op.is_some() {
                 match symbol {
@@ -3055,36 +3117,43 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         let mut template_parameters = vec![];
 
-        let union_type = if self.scanner.match_token(Token::Less)? {
-            self.parse_commas_separate_list(Token::Greater, |cm, _| {
-                template_parameters.push(cm.parse_type()?);
-                Ok(())
-            })?;
+        let union_type =
+            if self.scanner.match_token(Token::Less)? {
+                self.parse_commas_separate_list(Token::Greater, |cm, _| {
+                    template_parameters.push(cm.parse_type()?);
+                    Ok(())
+                })?;
 
-            match self.user_types.get(&union_name) {
-                Some(user_type) => {
-                    let templated_union_type = match user_type {
-                        UserType::TemplatedUnion(u) => u,
-                        _ => return Err(format!("Not a templated union")),
-                    };
+                match self.user_types.get(&union_name) {
+                    Some(user_type) => {
+                        let templated_union_type = match user_type {
+                            UserType::TemplatedUnion(u) => u,
+                            _ => return Err(format!("Not a templated union")),
+                        };
 
-                    templated_union_type.instance_union(&template_parameters)?
+                        templated_union_type.instance_union(&template_parameters)?
+                    }
+                    None => {
+                        return Err(self
+                            .make_error_msg(&format!("No union named {}", union_name), &union_loc))
+                    }
                 }
-                None => return Err(self.make_error_msg(&format!("No union named {}", union_name), &union_loc)),
-            }
-        } else {
-            match self.user_types.get(&union_name) {
-                Some(user_type) => {
-                    let union_type = match user_type {
-                        UserType::Union(u) => u,
-                        _ => return Err(format!("Not a union")),
-                    };
+            } else {
+                match self.user_types.get(&union_name) {
+                    Some(user_type) => {
+                        let union_type = match user_type {
+                            UserType::Union(u) => u,
+                            _ => return Err(format!("Not a union")),
+                        };
 
-                    union_type.clone()
+                        union_type.clone()
+                    }
+                    None => {
+                        return Err(self
+                            .make_error_msg(&format!("No union named {}", union_name), &union_loc))
+                    }
                 }
-                None => return Err(self.make_error_msg(&format!("No union named {}", union_name), &union_loc)),
-            }
-        };
+            };
 
         self.consume(Token::Dot)?;
 
@@ -3097,10 +3166,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         {
             Some(x) => (x.0, &x.1 .1),
             None => {
-                return Err(self.make_error_msg(&format!(
-                    "{} not a member of union {}",
-                    member_name, union_name
-                ), &member_loc))
+                return Err(self.make_error_msg(
+                    &format!("{} not a member of union {}", member_name, union_name),
+                    &member_loc,
+                ))
             }
         };
 
@@ -3114,8 +3183,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if variable_names.len() != member.len() {
             let loc = self.scanner.peek_token()?.location;
-            return Err(self.make_error_msg(&format!("Expected {} variables, get {}", member.len(), variable_names.len()), &loc));
-
+            return Err(self.make_error_msg(
+                &format!(
+                    "Expected {} variables, get {}",
+                    member.len(),
+                    variable_names.len()
+                ),
+                &loc,
+            ));
         }
 
         self.consume(Token::Equal)?;
@@ -3252,7 +3327,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         Ok(())
     }
 
-    fn patch_break(&mut self, chunk: &mut Chunk, start_idx: usize, jmp_idx: usize, break_type: Option<LoopBreakType>) -> bool {
+    fn patch_break(
+        &mut self,
+        chunk: &mut Chunk,
+        start_idx: usize,
+        jmp_idx: usize,
+        break_type: Option<LoopBreakType>,
+    ) -> bool {
         let sz = self.unpatched_break_offsets.len();
         self.unpatched_break_offsets.retain(|&(idx, btype)| {
             if break_type != None && Some(btype) != break_type {
@@ -3366,8 +3447,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })
     }
 
-    fn for_integer_iteration(&mut self, index_variable_name: &str, chunk: &mut Chunk) -> Result<IntegerRangeIteration, String> 
-    {
+    fn for_integer_iteration(
+        &mut self,
+        index_variable_name: &str,
+        chunk: &mut Chunk,
+    ) -> Result<IntegerRangeIteration, String> {
         let var_idx;
         {
             let frame = self.stack_frames.last_mut().unwrap();
@@ -3391,8 +3475,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 Token::DotDot => false,
                 Token::DotDotEqual => true,
                 _ => {
-                    return Err(self
-                        .make_error_msg("Expected range delimiter '..' or '..='", &t.location))
+                    return Err(
+                        self.make_error_msg("Expected range delimiter '..' or '..='", &t.location)
+                    )
                 }
             }
         };
@@ -3430,8 +3515,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 if self.type_stack.last().unwrap().value_type != ValueType::Integer {
                     return Err(self.make_error_msg("Expected integer value", &step_loc));
                 }
-            }
-            else {
+            } else {
                 if is_cond_less {
                     self.integer(chunk, 1);
                 } else {
@@ -3459,11 +3543,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             step_idx,
             end_idx,
             is_inclusive,
-            is_cond_less
+            is_cond_less,
         })
     }
 
-    fn for_integer_iteration_begin(&mut self, chunk: &mut Chunk, ii: &IntegerRangeIteration) -> usize {
+    fn for_integer_iteration_begin(
+        &mut self,
+        chunk: &mut Chunk,
+        ii: &IntegerRangeIteration,
+    ) -> usize {
         let loop_begin_idx = chunk.write_byte(opcode::PUSH_LOCAL);
         chunk.write_byte(ii.var_idx);
         chunk.write_byte(opcode::PUSH_LOCAL);
@@ -3475,8 +3563,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             } else {
                 chunk.write_byte(opcode::LESS);
             }
-        }
-        else {
+        } else {
             if ii.is_inclusive {
                 chunk.write_byte(opcode::GREATER_EQUAL);
             } else {
@@ -3497,14 +3584,19 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         chunk.write_byte(ii.var_idx);
     }
 
-    fn for_container_iteration(&mut self, iterator_variable_name: &str, chunk: &mut Chunk) -> Result<ContainerRangeIteration, String> 
-    {
+    fn for_container_iteration(
+        &mut self,
+        iterator_variable_name: &str,
+        chunk: &mut Chunk,
+    ) -> Result<ContainerRangeIteration, String> {
         let container_type = self.type_stack.last().unwrap().value_type.clone();
 
         let (elem_type, builtin_len_id) = match &container_type {
-            ValueType::Vector(elem_type) => (elem_type.as_ref().clone(), builtin_functions::vector::LEN),
+            ValueType::Vector(elem_type) => {
+                (elem_type.as_ref().clone(), builtin_functions::vector::LEN)
+            }
             ValueType::Str => (ValueType::Char, builtin_functions::string::LEN),
-            _ => return Err("Expected integer value".into())
+            _ => return Err("Expected integer value".into()),
         };
 
         let container_idx;
@@ -3595,7 +3687,11 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         })
     }
 
-    fn for_container_iteration_begin(&mut self, chunk: &mut Chunk, ii: &ContainerRangeIteration) -> usize {
+    fn for_container_iteration_begin(
+        &mut self,
+        chunk: &mut Chunk,
+        ii: &ContainerRangeIteration,
+    ) -> usize {
         let loop_begin_idx = chunk.write_byte(opcode::PUSH_LOCAL);
         chunk.write_byte(ii.var_idx);
         chunk.write_byte(opcode::PUSH_LOCAL);
@@ -3638,8 +3734,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let iterator: Box<dyn ForLoopIteration<T>> = {
                 if cm.type_stack.last().unwrap().value_type != ValueType::Integer {
                     Box::new(cm.for_container_iteration(&identifier_name, ch)?)
-                }
-                else {
+                } else {
                     Box::new(cm.for_integer_iteration(&identifier_name, ch)?)
                 }
             };
@@ -3664,11 +3759,22 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                 cm.for_block(ch)?;
 
-                let has_continue = cm.patch_break(ch, loop_begin_idx, ch.code.len(), Some(LoopBreakType::Continue));
+                let has_continue = cm.patch_break(
+                    ch,
+                    loop_begin_idx,
+                    ch.code.len(),
+                    Some(LoopBreakType::Continue),
+                );
 
                 iterator.end_loop(cm, ch);
 
-                if cm.patch_break(ch, loop_begin_idx, ch.code.len(), Some(LoopBreakType::Break)) || has_continue {
+                if cm.patch_break(
+                    ch,
+                    loop_begin_idx,
+                    ch.code.len(),
+                    Some(LoopBreakType::Break),
+                ) || has_continue
+                {
                     ch.write_byte(opcode::LOCAL_SET_SIZE);
                     ch.write_byte(locals_count.try_into().unwrap());
                 }
@@ -3700,7 +3806,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         chunk.write_byte(opcode::BREAK);
         let idx = chunk.write_short(0);
-        self.unpatched_break_offsets.push((idx, LoopBreakType::Break));
+        self.unpatched_break_offsets
+            .push((idx, LoopBreakType::Break));
 
         Ok(())
     }
@@ -3714,7 +3821,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         chunk.write_byte(opcode::JMP);
         let idx = chunk.write_short(0);
-        self.unpatched_break_offsets.push((idx, LoopBreakType::Continue));
+        self.unpatched_break_offsets
+            .push((idx, LoopBreakType::Continue));
 
         Ok(())
     }
@@ -3815,7 +3923,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let expr_type = self.type_stack.pop().unwrap().value_type;
             if expr_type != ValueType::Bool {
                 return Err(self.make_error_msg(
-                        &format!("Expected boolean type for logical or, got {}", expr_type), &location));
+                    &format!("Expected boolean type for logical or, got {}", expr_type),
+                    &location,
+                ));
             }
 
             let location = self.scanner.peek_token()?.location;
@@ -3823,7 +3933,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let expr_type = &self.type_stack.last().unwrap().value_type;
             if *expr_type != ValueType::Bool {
                 return Err(self.make_error_msg(
-                        &format!("Expected boolean type for logical or, got {}", expr_type), &location));
+                    &format!("Expected boolean type for logical or, got {}", expr_type),
+                    &location,
+                ));
             }
 
             chunk.write_byte(opcode::LOGICAL_OR);
@@ -3841,7 +3953,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let expr_type = self.type_stack.pop().unwrap().value_type;
             if expr_type != ValueType::Bool {
                 return Err(self.make_error_msg(
-                        &format!("Expected boolean type for logical or, got {}", expr_type), &location));
+                    &format!("Expected boolean type for logical or, got {}", expr_type),
+                    &location,
+                ));
             }
 
             let location = self.scanner.peek_token()?.location;
@@ -3849,7 +3963,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let expr_type = &self.type_stack.last().unwrap().value_type;
             if *expr_type != ValueType::Bool {
                 return Err(self.make_error_msg(
-                        &format!("Expected boolean type for logical or, got {}", expr_type), &location));
+                    &format!("Expected boolean type for logical or, got {}", expr_type),
+                    &location,
+                ));
             }
 
             chunk.write_byte(opcode::LOGICAL_AND);
@@ -3955,8 +4071,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
         if do_not {
             match &self.type_stack.last().unwrap().value_type {
-                ValueType::Bool => {},
-                x => return Err(self.make_error_msg(&format!("Must be a boolean value, got {}", x), &loc))
+                ValueType::Bool => {}
+                x => {
+                    return Err(
+                        self.make_error_msg(&format!("Must be a boolean value, got {}", x), &loc)
+                    )
+                }
             }
 
             chunk.write_byte(opcode::NOT);
@@ -3974,9 +4094,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.expression(chunk)?;
         let index_type = self.type_stack.pop().unwrap();
         if index_type.value_type != ValueType::Integer {
-            return Err(self.make_error_msg(&format!(
-                "Can only index using Integer. Got {}",
-                index_type.value_type), &index_loc));
+            return Err(self.make_error_msg(
+                &format!(
+                    "Can only index using Integer. Got {}",
+                    index_type.value_type
+                ),
+                &index_loc,
+            ));
         }
 
         self.consume(Token::RightBracket)?;
@@ -3986,9 +4110,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.expression(chunk)?;
             let new_value_type = self.type_stack.pop().unwrap().value_type;
             if new_value_type != *elem_type {
-                return Err(self.make_error_msg(&format!(
-                    "Type mismatch for setting vector. Expected {}, got {}",
-                    *elem_type, new_value_type), &expr_loc));
+                return Err(self.make_error_msg(
+                    &format!(
+                        "Type mismatch for setting vector. Expected {}, got {}",
+                        *elem_type, new_value_type
+                    ),
+                    &expr_loc,
+                ));
             }
 
             chunk.write_byte(opcode::SET_INDEX);
@@ -4132,12 +4260,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         ValueType::Str => self.index_str(chunk, indexable.read_only)?,
                         t => return Err(format!("Cannot index type {}", t)),
                     }
-                },
+                }
                 Token::Dot => {
                     self.scanner.scan_token()?;
                     self.field(chunk)?;
                 }
-                _ => break
+                _ => break,
             }
         }
 
@@ -4240,11 +4368,18 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let right_type = &self.type_stack[len - 1].value_type;
 
         if left_type != right_type {
-            return Err(self.make_error_msg(&format!("Type mismatch. Left {}, Right {}", left_type, right_type), &loc));
+            return Err(self.make_error_msg(
+                &format!("Type mismatch. Left {}, Right {}", left_type, right_type),
+                &loc,
+            ));
         } else {
             match left_type {
                 ValueType::Integer | ValueType::Float => chunk.write_byte(op),
-                x => return Err(self.make_error_msg(&format!("Expected integer or float, got {}", x), &loc))
+                x => {
+                    return Err(
+                        self.make_error_msg(&format!("Expected integer or float, got {}", x), &loc)
+                    )
+                }
             };
         }
 
@@ -4439,7 +4574,9 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     chunk.write_byte(idx.try_into().unwrap());
                     self.type_stack.push(local);
                 } else {
-                    return Err(self.make_error_msg("Cannot use 'self' outside of method", &t.location));
+                    return Err(
+                        self.make_error_msg("Cannot use 'self' outside of method", &t.location)
+                    );
                 }
             }
             Token::LeftParen => {
@@ -4473,28 +4610,31 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     for c in s.chars() {
                         if c == '\\' {
                             seen_slash = true;
-                        }
-                        else if seen_slash {
+                        } else if seen_slash {
                             match c {
                                 'n' => escaped.push('\n'),
                                 't' => escaped.push('\t'),
-                                _ => return Err(self.make_error_msg(
-                                        &format!("Unknown escape character {}", c), &t.location))
+                                _ => {
+                                    return Err(self.make_error_msg(
+                                        &format!("Unknown escape character {}", c),
+                                        &t.location,
+                                    ))
+                                }
                             }
                             seen_slash = false;
-                        }
-                        else {
-                            escaped.push(c); 
+                        } else {
+                            escaped.push(c);
                         }
                     }
 
                     if seen_slash {
-                        return Err(self.make_error_msg("Unterminated escape character", &t.location))
+                        return Err(
+                            self.make_error_msg("Unterminated escape character", &t.location)
+                        );
                     }
 
                     self.string(chunk, &escaped);
-                }
-                else {
+                } else {
                     self.string(chunk, s);
                 }
             }
@@ -4729,12 +4869,7 @@ mod test {
                 let v: [int] = vec<int>[5]{11};
             ";
 
-            assert_eq!(
-                compiler
-                    .compile(&mut table, src)
-                    .err(),
-                None
-            );
+            assert_eq!(compiler.compile(&mut table, src).err(), None);
         }
     }
 
@@ -5406,16 +5541,14 @@ mod test {
             true
         });
 
-        assert!(
-            compiler
-                .compile(
-                    &mut table,
-                    "
+        assert!(compiler
+            .compile(
+                &mut table,
+                "
                     s.i = 10;
                 ",
-                )
-                .is_err()
-        );
+            )
+            .is_err());
     }
 
     #[test]
@@ -5441,16 +5574,14 @@ mod test {
             true
         });
 
-        assert!(
-            compiler
-                .compile(
-                    &mut table,
-                    "
+        assert!(compiler
+            .compile(
+                &mut table,
+                "
                     s.i = 10;
                 ",
-                )
-                .is_err()
-        );
+            )
+            .is_err());
     }
 
     #[test]
@@ -5490,7 +5621,8 @@ mod test {
                     "
                     s.n.i = 10;
                 ",
-            ).unwrap();
+                )
+                .unwrap();
             true
         });
     }
@@ -5525,15 +5657,14 @@ mod test {
             true
         });
 
-        assert!(
-            compiler
-                .compile(
-                    &mut table,
-                    "
+        assert!(compiler
+            .compile(
+                &mut table,
+                "
                     s.n.i = 10;
                 ",
-            ).is_err()
-        );
+            )
+            .is_err());
     }
     #[test]
     fn test_struct_set_mutable_nested_field_self_read_only() {
@@ -5565,15 +5696,14 @@ mod test {
             true
         });
 
-        assert!(
-            compiler
-                .compile(
-                    &mut table,
-                    "
+        assert!(compiler
+            .compile(
+                &mut table,
+                "
                     s.n.i = 10;
                 ",
-            ).is_err()
-        );
+            )
+            .is_err());
     }
 
     #[test]

@@ -14,10 +14,10 @@ mod vm;
 
 use rust_function_ctx::{RustFunctionCtx, RustValue};
 use rustyline::DefaultEditor;
-use std::env;
-use std::io::Read;
 use std::collections::hash_map::DefaultHasher;
+use std::env;
 use std::hash::{Hash, Hasher};
+use std::io::Read;
 
 pub struct DefaultPrinter {}
 
