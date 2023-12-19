@@ -545,14 +545,14 @@ impl<'a> Scanner<'a> {
                 if self.match_char('&') {
                     Token::LogicalAnd
                 } else {
-                    return Err(format!("Unexpected token '&'"));
+                    return Err("Unexpected token '&'".into());
                 }
             }
             '|' => {
                 if self.match_char('|') {
                     Token::LogicalOr
                 } else {
-                    return Err(format!("Unexpected token '|'"));
+                    return Err("Unexpected token '|'".into());
                 }
             }
             '{' => Token::LeftBrace,

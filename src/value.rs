@@ -1,7 +1,6 @@
 use ordered_float::OrderedFloat;
 use std::collections::HashMap;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 use std::vec::Vec;
 
@@ -74,7 +73,7 @@ pub enum GcValue {
     Union(Box<UnionValue>),
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Value {
     Float(OrderedFloat<f64>),
     Integer(i64),
@@ -89,20 +88,3 @@ pub enum Value {
     Union(NonNull<UnionValue>),
 }
 
-impl Hash for Value {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Value::Float(f) => f.hash(state),
-            Value::Integer(i) => i.hash(state),
-            Value::Str(s) => s.hash(state),
-            Value::Bool(b) => b.hash(state),
-            Value::Char(c) => c.hash(state),
-            Value::Vector(v) => v.hash(state),
-            Value::HashMap(h) => h.hash(state),
-            Value::Function(f) => f.hash(state),
-            Value::Struct(f) => f.hash(state),
-            Value::RustFunction(f) => f.hash(state),
-            Value::Union(f) => f.hash(state),
-        }
-    }
-}

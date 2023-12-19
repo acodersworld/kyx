@@ -234,7 +234,7 @@ impl UnionTemplatedType {
         Ok(self.create_new_instance(template_parameters))
     }
 
-    fn create_new_instance(&self, template_parameters: &Vec<ValueType>) -> Rc<UnionType> {
+    fn create_new_instance(&self, template_parameters: &[ValueType]) -> Rc<UnionType> {
         let new_members = self
             .members
             .iter()
@@ -256,7 +256,7 @@ impl UnionTemplatedType {
         });
         self.instanced_unions
             .borrow_mut()
-            .push((template_parameters.clone(), new_instance.clone()));
+            .push((template_parameters.to_vec(), new_instance.clone()));
 
         new_instance
     }
@@ -301,7 +301,7 @@ impl ValueType {
             return true;
         }
 
-        return src.can_coerce_to(self);
+        src.can_coerce_to(self)
     }
 
     fn can_coerce_to(&self, dest: &ValueType) -> bool {
@@ -458,10 +458,7 @@ impl Compiler {
         let mut compiler = self.new_src_compiler(data_section, src);
 
         let mut chunk = Chunk::new();
-        //compiler.compile(&mut chunk)?;
-        if let Err(e) = compiler.compile(&mut chunk) {
-            return Err(e);
-        }
+        compiler.compile(&mut chunk)?;
 
         Ok((chunk, compiler.function_chunks, compiler.method_chunks))
     }
@@ -528,11 +525,11 @@ struct ContainerRangeIteration {
 
 impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerRangeIteration {
     fn begin_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) -> usize {
-        cm.for_integer_iteration_begin(chunk, &self)
+        cm.for_integer_iteration_begin(chunk, self)
     }
 
     fn end_loop(&self, cm: &mut SrcCompiler<'_, T>, chunk: &mut Chunk) {
-        cm.for_integer_iteration_end(chunk, &self)
+        cm.for_integer_iteration_end(chunk, self)
     }
 
     fn iterate(&self, _cm: &mut SrcCompiler<'a, T>, _chunk: &mut Chunk) {}
@@ -540,15 +537,15 @@ impl<'a, T: DataSection> ForLoopIteration<'a, T> for IntegerRangeIteration {
 
 impl<'a, T: DataSection> ForLoopIteration<'a, T> for ContainerRangeIteration {
     fn begin_loop(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) -> usize {
-        cm.for_container_iteration_begin(chunk, &self)
+        cm.for_container_iteration_begin(chunk, self)
     }
 
     fn end_loop(&self, cm: &mut SrcCompiler<'_, T>, chunk: &mut Chunk) {
-        cm.for_container_iteration_end(chunk, &self)
+        cm.for_container_iteration_end(chunk, self)
     }
 
     fn iterate(&self, cm: &mut SrcCompiler<'a, T>, chunk: &mut Chunk) {
-        cm.for_container_iteration_iterate(chunk, &self)
+        cm.for_container_iteration_iterate(chunk, self)
     }
 }
 
@@ -644,9 +641,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn location_info_str(&self, location: &TokenLocation) -> String {
         let line = format!("{}: ", location.line);
-        let spaces: String = std::iter::repeat(' ')
-            .take(line.len() + location.column)
-            .collect();
+        let spaces: String = " ".repeat(line.len() + location.column);
 
         spaces.to_string()
             + "Here\n"
@@ -655,12 +650,12 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             + &spaces
             + "V\n"
             + &line
-            + location.get_text_line(&self.src)
+            + location.get_text_line(self.src)
     }
 
     fn make_error_msg(&self, msg: &str, location: &TokenLocation) -> String {
         let location: String = self.location_info_str(location);
-        return format!("{}\n{}", msg, location);
+        format!("{}\n{}", msg, location)
     }
 
     fn skip_to_matching_brace(&mut self) -> Result<(), String> {
@@ -681,7 +676,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         }
 
-        return Err(format!("Reached EOF, unmatched right brace"));
+        Err("Reached EOF, unmatched right brace".into())
     }
 
     fn enum_definition(&mut self) -> Result<ValueType, String> {
@@ -700,7 +695,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while !self.scanner.match_token(Token::RightBrace)? {
             if !seen_comma {
                 let comma_location = self.scanner.peek_token()?.location;
-                return Err(self.make_error_msg(&format!("Expected comma"), &comma_location));
+                return Err(self.make_error_msg("Expected comma", &comma_location));
             }
 
             let (member_name, member_name_location) = self.match_identifier()?;
@@ -788,7 +783,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while !self.scanner.match_token(Token::RightBrace)? {
             if !seen_comma {
                 let comma_location = self.scanner.peek_token()?.location;
-                return Err(self.make_error_msg(&format!("Expected comma"), &comma_location));
+                return Err(self.make_error_msg("Expected comma", &comma_location));
             }
 
             let (member_name, member_name_location) = self.match_identifier()?;
@@ -939,7 +934,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let struct_type = Rc::new(StructType { members, methods });
 
         self.user_types.insert(
-            struct_name.to_string(),
+            struct_name,
             UserType::Struct(struct_type.clone()),
         );
 
@@ -1014,7 +1009,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     .iter()
                     .find(|x| x.name == method_name)
                     .map(|x| x.method_idx)
-                    .expect(&format!("Method {} not found!", method_name));
+                    .unwrap_or_else(|| panic!("Method {} not found!", method_name));
                 self.method_chunks.insert(method_idx, chunk);
             }
         }
@@ -1025,7 +1020,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
     fn union_member_type(
         &mut self,
-        template_parameter_types: &Vec<String>,
+        template_parameter_types: &[String],
     ) -> Result<UnionMemberType, String> {
         if let Ok((type_name, _)) = self.match_identifier() {
             if let Some(idx) = template_parameter_types
@@ -1055,7 +1050,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         }
 
-        return Ok(UnionMemberType::Fixed(self.parse_type()?));
+        Ok(UnionMemberType::Fixed(self.parse_type()?))
     }
 
     fn union_definition(&mut self) -> Result<(), String> {
@@ -1093,7 +1088,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while !self.scanner.match_token(Token::RightBrace)? {
             if !seen_comma {
                 let comma_location = self.scanner.peek_token()?.location;
-                return Err(self.make_error_msg(&format!("Expected comma"), &comma_location));
+                return Err(self.make_error_msg("Expected comma", &comma_location));
             }
 
             let (member_name, member_name_location) = self.match_identifier()?;
@@ -1101,15 +1096,14 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let mut member_types = vec![];
             if self.scanner.match_token(Token::LeftParen)? {
                 self.parse_commas_separate_list(Token::RightParen, |cm, _| {
-                    member_types.push(cm.union_member_type(&mut template_parameter_types)?);
+                    member_types.push(cm.union_member_type(&template_parameter_types)?);
                     Ok(())
                 })?;
             }
 
             if members
                 .iter()
-                .find(|(name, _)| *name == member_name)
-                .is_some()
+                .any(|(name, _)| *name == member_name)
             {
                 return Err(self.make_error_msg(
                     &format!(
@@ -1128,7 +1122,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let template_parameter_count = template_parameter_types.len();
         if template_parameter_count > 0 {
             self.user_types.insert(
-                union_name.to_string(),
+                union_name,
                 UserType::TemplatedUnion(Rc::new(UnionTemplatedType {
                     template_parameter_count,
                     members,
@@ -1152,7 +1146,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
 
             self.user_types.insert(
-                union_name.to_string(),
+                union_name,
                 UserType::Union(Rc::new(UnionType {
                     members: fixed_members,
                 })),
@@ -1224,7 +1218,6 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let interface_type = InterfaceType {
             methods: method_map
                 .into_iter()
-                .map(|(name, function_type)| (name.clone(), function_type))
                 .collect(),
         };
 
@@ -1323,7 +1316,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             if let UserType::Union(s) = user_type {
                 self.scanner.scan_token()?; // eat struct name
-                return Ok(Some(s.clone()));
+                return Ok(Some(s));
             }
         }
 
@@ -2169,7 +2162,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.expression(chunk)?;
 
             let expr_type = &self.type_stack.last().unwrap().value_type;
-            if !member_type.can_assign(&expr_type) {
+            if !member_type.can_assign(expr_type) {
                 return Err(format!("Expected type {}, got {}", member_type, expr_type));
             }
 
@@ -2307,7 +2300,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             });
         } else {
             let location = self.scanner.peek_token()?.location;
-            return Err(self.make_error_msg(&format!("Expected '{{' or '['"), &location));
+            return Err(self.make_error_msg("Expected '{{' or '['", &location));
         }
 
         Ok(())
@@ -2402,7 +2395,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             for member_type in &member.1 {
                 if !seen_comma {
                     let loc = self.scanner.peek_token()?.location;
-                    return Err(self.make_error_msg(&format!("Expected ','"), &loc));
+                    return Err(self.make_error_msg("Expected ','", &loc));
                 }
 
                 self.expression(chunk)?;
@@ -2560,7 +2553,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             self.consume(Token::Comma)?;
         }
 
-        return Ok(self.instance_tuple(&type_list));
+        Ok(self.instance_tuple(&type_list))
     }
 
     fn parse_template_type_arg_list(&mut self) -> Result<Vec<ValueType>, String> {
@@ -2587,7 +2580,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         while !self.scanner.match_token(terminal_token)? {
             if !seen_comma {
                 let loc = self.scanner.peek_token()?.location;
-                return Err(self.make_error_msg(&format!("Expected ','"), &loc));
+                return Err(self.make_error_msg("Expected ','", &loc));
             }
 
             f(self, idx)?;
@@ -2634,16 +2627,16 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 if let Some(ut) = self.user_types.get(i) {
                     let ut = ut.clone();
                     match ut {
-                        UserType::Enum(e) => return Ok(ValueType::Enum(e.clone())),
-                        UserType::Struct(s) => return Ok(ValueType::Struct(s.clone())),
+                        UserType::Enum(e) => return Ok(ValueType::Enum(e)),
+                        UserType::Struct(s) => return Ok(ValueType::Struct(s)),
                         UserType::TemplatedUnion(u) => {
                             self.consume(Token::Less)?;
                             let list = self.parse_template_type_arg_list()?;
                             return Ok(ValueType::Union(u.instance_union(&list)?));
                         }
-                        UserType::Union(u) => return Ok(ValueType::Union(u.clone())),
-                        UserType::Tuple(t) => return Ok(ValueType::Tuple(t.clone())),
-                        UserType::Interface(i) => return Ok(ValueType::Interface(i.clone())),
+                        UserType::Union(u) => return Ok(ValueType::Union(u)),
+                        UserType::Tuple(t) => return Ok(ValueType::Tuple(t)),
+                        UserType::Interface(i) => return Ok(ValueType::Interface(i)),
                     }
                 }
 
@@ -2674,7 +2667,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         chunk.write_byte(opcode::RETURN);
-        return Ok(());
+        Ok(())
     }
 
     fn function(&mut self, function_name: &str) -> Result<Chunk, String> {
@@ -2989,15 +2982,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         };
 
-        let is_equal = match self.scanner.peek_token()?.token {
+        let is_equal = matches!(self.scanner.peek_token()?.token,
             Token::Equal
             | Token::PlusEquals
             | Token::MinusEquals
             | Token::StarEquals
             | Token::SlashEquals
-            | Token::PercentEquals => true,
-            _ => false,
-        };
+            | Token::PercentEquals);
 
         if is_equal {
             let equal_token = self.scanner.scan_token()?;
@@ -3128,7 +3119,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     Some(user_type) => {
                         let templated_union_type = match user_type {
                             UserType::TemplatedUnion(u) => u,
-                            _ => return Err(format!("Not a templated union")),
+                            _ => return Err("Not a templated union".into()),
                         };
 
                         templated_union_type.instance_union(&template_parameters)?
@@ -3143,7 +3134,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     Some(user_type) => {
                         let union_type = match user_type {
                             UserType::Union(u) => u,
-                            _ => return Err(format!("Not a union")),
+                            _ => return Err("Not a union".into()),
                         };
 
                         union_type.clone()
@@ -3199,7 +3190,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         self.expression(chunk)?;
 
         if self.type_stack.last().unwrap().value_type != ValueType::Union(union_type.clone()) {
-            return Err(self.make_error_msg(&format!("Union type does not match"), &expr_loc));
+            return Err(self.make_error_msg("Union type does not match", &expr_loc));
         }
 
         Ok((determinant, variable_names, union_type))
@@ -3336,7 +3327,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     ) -> bool {
         let sz = self.unpatched_break_offsets.len();
         self.unpatched_break_offsets.retain(|&(idx, btype)| {
-            if break_type != None && Some(btype) != break_type {
+            if break_type.is_some() && Some(btype) != break_type {
                 true
             } else if idx > start_idx {
                 chunk.write_short_at(idx, (jmp_idx - idx).try_into().unwrap());
@@ -3515,12 +3506,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 if self.type_stack.last().unwrap().value_type != ValueType::Integer {
                     return Err(self.make_error_msg("Expected integer value", &step_loc));
                 }
+            } else if is_cond_less {
+                self.integer(chunk, 1);
             } else {
-                if is_cond_less {
-                    self.integer(chunk, 1);
-                } else {
-                    self.integer(chunk, -1);
-                }
+                self.integer(chunk, -1);
             }
 
             let frame = self.stack_frames.last_mut().unwrap();
@@ -3563,12 +3552,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             } else {
                 chunk.write_byte(opcode::LESS);
             }
+        } else if ii.is_inclusive {
+            chunk.write_byte(opcode::GREATER_EQUAL);
         } else {
-            if ii.is_inclusive {
-                chunk.write_byte(opcode::GREATER_EQUAL);
-            } else {
-                chunk.write_byte(opcode::GREATER);
-            }
+            chunk.write_byte(opcode::GREATER);
         }
 
         loop_begin_idx
@@ -4463,7 +4450,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
     }
 
     fn boolean(&mut self, chunk: &mut Chunk, b: bool) {
-        let value = if b { 1 } else { 0 };
+        let value = u8::from(b);
 
         chunk.write_byte(opcode::CONSTANT_BOOL);
         chunk.write_byte(value);

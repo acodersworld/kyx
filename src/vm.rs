@@ -70,7 +70,7 @@ impl FrameStack {
     fn push(&mut self, function: NonNull<FunctionValue>) {
         self.stack.push(Frame {
             function: self.top.function,
-            locals: std::mem::replace(&mut self.top.locals, Vec::new()),
+            locals: std::mem::take(&mut self.top.locals),
             pc: self.top.pc,
         });
 
@@ -79,7 +79,7 @@ impl FrameStack {
     }
 
     fn pop(&mut self) {
-        assert!(self.stack.len() > 0);
+        assert!(!self.stack.is_empty());
         self.top = self.stack.pop().unwrap();
     }
 }
@@ -93,10 +93,7 @@ struct RustFunctionCtxImpl<'printer> {
 
 impl RustFunctionCtx for RustFunctionCtxImpl<'_> {
     fn get_parameter(&self, idx: usize) -> Option<RustValue> {
-        match self.parameters.get(idx) {
-            Some(x) => Some(x.clone()),
-            None => None,
-        }
+        self.parameters.get(idx).cloned()
     }
 
     fn get_parameter_float(&self, idx: usize) -> Option<f64> {
@@ -195,8 +192,8 @@ fn is_truthy(value: &Value) -> bool {
         Value::Str(s) => unsafe { !s.as_ref().val.is_empty() },
         Value::Bool(b) => *b,
         Value::Char(_) => true,
-        Value::Vector(v) => unsafe { v.as_ref().len() > 0 },
-        Value::HashMap(h) => unsafe { h.as_ref().len() > 0 },
+        Value::Vector(v) => unsafe { !v.as_ref().is_empty() },
+        Value::HashMap(h) => unsafe { !h.as_ref().is_empty() },
         Value::Function(_) => true,
         Value::Struct(_) => true,
         Value::RustFunction(_) => true,
@@ -478,7 +475,7 @@ impl<'printer> VM<'printer> {
             self.method_functions.insert(fidx, function_value);
         }
 
-        if true || self.disassemble {
+        /*if true || self.disassemble*/ {
             println!("-- Main --");
             let mut ds = disassembler::Disassembler::new(&chunk.code);
             ds.disassemble_all();
@@ -589,8 +586,8 @@ impl<'printer> VM<'printer> {
         let len = frame.next_code().unwrap() as usize;
 
         let mut buf: [u8; 4] = [0; 4];
-        for i in 0..len {
-            buf[i] = frame.next_code().unwrap();
+        for v in buf.iter_mut().take(len) {
+            *v = frame.next_code().unwrap();
         }
 
         let c = std::str::from_utf8(&buf)
@@ -662,7 +659,7 @@ impl<'printer> VM<'printer> {
                 };
 
                 if index < 0 {
-                    index = len + index;
+                    index += len;
 
                     if index < 0 {
                         // TODO: Proper kyx panic
@@ -686,7 +683,7 @@ impl<'printer> VM<'printer> {
                 let string = unsafe { s.as_ref() };
                 if index < 0 {
                     let len: i64 = string.len.try_into().unwrap();
-                    index = len + index;
+                    index += len;
 
                     if index < 0 {
                         // TODO: Proper kyx panic
@@ -736,7 +733,7 @@ impl<'printer> VM<'printer> {
     }
 
     fn get_field(&mut self, frame: &mut Frame) {
-        assert!(self.value_stack.len() > 0);
+        assert!(!self.value_stack.is_empty());
         let index = frame.next_code().unwrap() as usize;
 
         match self.value_stack.pop().unwrap() {
@@ -904,15 +901,15 @@ impl<'printer> VM<'printer> {
         locals.push(value);
     }
 
-    fn format_vec(vector: &Vec<Value>) -> String {
+    fn format_vec(vector: &[Value]) -> String {
         let mut s = "vec{".to_owned();
 
         let values = vector
             .iter()
-            .map(|v| Self::format_value(v))
+            .map(Self::format_value)
             .collect::<Vec<String>>();
 
-        s += &(values.join(&",") + "}");
+        s += &(values.join(",") + "}");
         s
     }
 
@@ -925,7 +922,7 @@ impl<'printer> VM<'printer> {
             .map(|(k, v)| format!("{}: {}", Self::format_value(k), Self::format_value(v)))
             .collect::<Vec<String>>();
 
-        s += &(values.join(&",") + "}");
+        s += &(values.join(",") + "}");
         s
     }
 
@@ -940,7 +937,7 @@ impl<'printer> VM<'printer> {
             Value::HashMap(h) => Self::format_hash_map(unsafe { h.as_ref() }),
             Value::Function(f) => format!("function<0x{:x}>", f.as_ptr() as usize),
             Value::Struct(s) => format!("struct<0x{:x}>", s.as_ptr() as usize),
-            Value::RustFunction(_) => format!("rust_function"),
+            Value::RustFunction(_) => "rust_function".into(),
             Value::Union(u) => format!("union<0x{:x}> {:?}", u.as_ptr() as usize, unsafe {
                 u.as_ref()
             }),

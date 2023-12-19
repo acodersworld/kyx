@@ -164,7 +164,7 @@ impl<'a> Disassembler<'a> {
         let value = self.code[self.offset];
         self.offset += 1;
 
-        println!("CONSTANT BOOL: {}", if value != 0 { true } else { false });
+        println!("CONSTANT BOOL: {}", value != 0);
     }
 
     fn constant_char_instruction(&mut self) {
@@ -173,8 +173,8 @@ impl<'a> Disassembler<'a> {
 
         assert!(len <= 4);
         let mut buf: [u8; 4] = [0; 4];
-        for i in 0..len {
-            buf[i] = self.code[self.offset];
+        for v in buf.iter_mut().take(len) {
+            *v = self.code[self.offset];
             self.offset += 1;
         }
 
