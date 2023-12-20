@@ -648,6 +648,12 @@ impl<'printer> VM<'printer> {
         match self.value_stack.pop().unwrap() {
             Value::HashMap(h) => {
                 let hash_map = unsafe { h.as_ref() };
+                if !hash_map.contains_key(&index) {
+                    match index {
+                        Value::Str(s) => panic!("Hash map does not contain key {:?}", unsafe { s.as_ref() }),
+                        _ => panic!("Hash map does not contain key {:?}", index),
+                    }
+                }
                 self.value_stack.push(hash_map[&index]);
             }
             Value::Vector(v) => {

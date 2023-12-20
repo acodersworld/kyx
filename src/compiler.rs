@@ -3583,7 +3583,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 (elem_type.as_ref().clone(), builtin_functions::vector::LEN)
             }
             ValueType::Str => (ValueType::Char, builtin_functions::string::LEN),
-            _ => return Err("Expected integer value".into()),
+            _ => return Err("Expected vector or string value".into()),
         };
 
         let container_idx;
