@@ -1,0 +1,83 @@
+let lines = readinput();
+
+struct Coord {
+	x: int,
+	y: int
+}
+
+let mut empty_rows = vec<int>{};
+let mut empty_cols = vec<int>{};
+
+for i : 0..lines.len() {
+	let mut empty = true;
+	for c : lines[i] {
+		if c != '.' {
+			empty = false;
+			break;
+		}
+	}
+
+	if empty {
+		empty_rows.push(i);
+	}
+}
+
+for i : 0..lines[0].len() {
+	let mut empty = true;
+	for ln : lines {
+		if ln[i] != '.' {
+			empty = false;
+			break;
+		}
+	}
+
+	if empty {
+		empty_cols.push(i);
+	}
+}
+
+fn transform(r: int, empty_idx: [int], expand_value: int) -> int {
+	let mut a = r;
+
+	for e : empty_idx {
+		if e < r {
+			a += expand_value;	
+		}
+	}
+	return a;
+}
+
+fn abs(v: int) -> int {
+	if v < 0 { return -v; }
+	return v;
+}
+
+fn shortest_path(a: Coord, b: Coord) -> int {
+	return abs(a.x - b.x) + abs(a.y - b.y);
+}
+
+fn calc(expand_value: int) -> int {
+	let mut galaxies = vec<Coord>{};
+
+	for row : 0..lines.len() {
+		for col : 0..lines[0].len() {
+			if lines[row][col] == '#' {
+				galaxies.push(Coord {
+					x = transform(col, empty_cols, expand_value),
+					y = transform(row, empty_rows, expand_value),
+				});
+			}
+		}
+	}
+
+	let mut sum = 0;
+	for a : 0..(galaxies.len()-1) {
+		for b : (a+1)..galaxies.len() {
+			sum += shortest_path(galaxies[a], galaxies[b]);
+		}
+	}
+	return sum;
+}
+
+print(calc(1));
+print(calc(999999));
