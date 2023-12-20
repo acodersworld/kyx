@@ -1,0 +1,339 @@
+let lines = readinput();
+
+union RuleResult {
+	Next(string),
+	Fail,
+	Accept(bool),
+}
+
+struct ConditionParameters {
+	name: char,
+	is_less: bool,
+	value: int,
+	result: RuleResult,
+}
+
+union RuleParameters {
+	Next(string),
+	Condition(ConditionParameters),
+	Accept(bool)
+}
+
+interface Rule {
+	fn test(part: [char: int]) -> RuleResult
+	fn get_parameters() -> RuleParameters
+}
+
+struct Condition {
+	name: char,
+	is_less: bool,
+	value: int,
+	result: RuleResult
+}
+impl {
+	fn (self) test(part: [char: int]) -> RuleResult {
+		let v = part[self.name];
+		if self.is_less {
+			if v < self.value {
+				return self.result;
+			}
+		}
+		else {
+			if v > self.value {
+				return self.result;
+			}
+		}
+
+		return RuleResult.Fail;
+	}
+
+	fn (self) get_parameters() -> RuleParameters {
+		return RuleParameters.Condition(ConditionParameters {
+			name = self.name,
+			is_less = self.is_less,
+			value = self.value,
+			result = self.result,
+		});
+	}
+}
+
+
+struct Goto {
+	next: string
+}
+impl {
+	fn (self) test(part: [char: int]) -> RuleResult {
+		return RuleResult.Next(self.next);
+	}
+
+	fn (self) get_parameters() -> RuleParameters {
+		return RuleParameters.Next(self.next);
+	}
+}
+
+struct Accept {}
+impl {
+	fn (self) test(part: [char: int]) -> RuleResult {
+		return RuleResult.Accept(true);
+	}
+
+	fn (self) get_parameters() -> RuleParameters {
+		return RuleParameters.Accept(true);
+	}
+}
+
+struct Reject {}
+impl {
+	fn (self) test(part: [char: int]) -> RuleResult {
+		return RuleResult.Accept(false);
+	}
+
+	fn (self) get_parameters() -> RuleParameters {
+		return RuleParameters.Accept(false);
+	}
+}
+
+struct Workflow {
+	name: string,
+	rules: [Rule]
+}
+
+fn parse_rule(s: string) -> Rule {
+	if s == "A" {
+		let rr: Rule = Accept {};
+		return rr;
+	}
+	if s == "R" {
+		let rr: Rule = Reject {};
+		return rr;
+	}
+	if !s.contains(":") {
+		let rr: Rule = Goto { next = s, };
+		return rr;
+	}
+
+	let ss = {
+		if s.contains("<") {
+			s.split('<')
+		}
+		else {
+			s.split('>')
+		}
+	};
+
+	let vn = ss[1].split(':');
+	let name = s[0];	
+
+	let mut result = RuleResult.Next(vn[1]);
+	if vn[1] == "A" {
+		result = RuleResult.Accept(true);
+	}
+	if vn[1] == "R" {
+		result = RuleResult.Accept(false);
+	}
+
+	let r: Rule = Condition {
+		is_less = s.contains("<"),
+		value = vn[0].to_integer(),
+		name = name,
+		result = result,
+	};
+	return r;
+}
+
+fn parse_workflow(s: string) -> Workflow {
+	let wf = s.split('{');
+
+	let name = wf[0];
+	let rules = wf[1][..wf[1].len()-1].split(',');
+
+	let mut r = vec<Rule>{};
+	for c : rules {
+		let rr = parse_rule(c);
+		r.push(rr);
+	}
+
+	return Workflow {
+		name = name,
+		rules = r,
+	};
+}
+
+fn parse_part(s: string) -> [char: int] {
+	let bits = s[1..s.len()-1].split(',');
+	
+	let mut h = hash_map<char, int>{};
+	for b : bits {
+		let ss = b.split('=');
+		h[ss[0][0]] = ss[1].to_integer();
+	}
+
+	return h;
+}
+
+let mut workflows = hash_map<string, Workflow>{};
+let mut parts = vec<[char: int]>{};
+
+fn process_part(part: [char: int]) -> bool {
+	let mut current = "in";
+
+	while true {
+		let wf = workflows[current];
+
+		for rule : wf.rules {
+			let r = rule.test(part);
+
+			if let RuleResult.Accept(a) = r {
+				return a;
+			}
+			if let RuleResult.Next(n) = r {
+				current = n;
+				break;
+			}
+		}
+	}
+
+	print("SHOULD NOT GET HERE\n");
+	return false;
+}
+
+{
+	let mut i = 0;
+	while lines[i] != "" {
+		let wf = parse_workflow(lines[i]);
+		workflows[wf.name] = wf;
+		i += 1;
+	}
+
+	i += 1;
+	while i < lines.len() {
+		parts.push(parse_part(lines[i]));
+		i += 1;
+	}
+}
+
+// p1
+{
+	let mut sum = 0;
+	for p : parts {
+		if process_part(p) {
+			for b : p.keys() {
+				sum += p[b];
+			}
+		}
+	}
+	print(sum);
+}
+
+// p2
+struct Range {
+	lower: mut int,
+	upper: mut int
+}
+impl {
+	fn (self) range() -> int {
+		return self.upper - self.lower + 1;
+	}
+}
+
+fn min(a: int, b: int) -> int {
+	if a < b { return a; }
+	return b;
+}
+
+fn max(a: int, b: int) -> int {
+	if a > b { return a; }
+	return b;
+}
+
+fn traverse(node: string, input_candidates: [char: Range]) -> int {
+	let wf = workflows[node];
+
+	let mut candidates = hash_map<char, Range>{};
+	for k : input_candidates.keys() {
+		candidates[k] = Range {
+			lower = input_candidates[k].lower,
+			upper = input_candidates[k].upper,
+		};
+	}
+
+	let mut total_combo = 0;
+	for rule : wf.rules {
+		let r = rule.get_parameters();
+
+		if let RuleParameters.Accept(a) = r {
+			if a {
+				let mut combo = 1;
+				for k : candidates.keys() {
+					combo *= candidates[k].range();
+				}
+				total_combo += combo;
+				return total_combo;
+			}
+			else {
+				return total_combo;
+			}
+		}
+		if let RuleParameters.Next(n) = r {
+			total_combo += traverse(n, candidates);
+			return total_combo;
+		}
+		if let RuleParameters.Condition(c) = r {
+			let mut new_candidates = hash_map<char, Range>{};
+			for k : candidates.keys() {
+				new_candidates[k] = Range {
+					lower = candidates[k].lower,
+					upper = candidates[k].upper,
+				};
+			}
+
+			if c.is_less {
+				new_candidates[c.name].upper = c.value - 1;
+				candidates[c.name].lower = c.value;
+			}
+			else {
+				new_candidates[c.name].lower = c.value + 1;
+				candidates[c.name].upper = c.value;
+			}
+
+			if let RuleResult.Next(n) = c.result {
+				total_combo += traverse(n, new_candidates);
+			}
+			if let RuleResult.Accept(a) = c.result {
+				if a {
+					let mut combo = 1;
+					for k : new_candidates.keys() {
+						combo *= new_candidates[k].range();
+					}
+					total_combo += combo;
+				}
+			}
+		}
+	}
+
+	print("SHOULD NOT GET HERE\n");
+	return total_combo;
+}
+
+
+{
+	let mut ranges = hash_map<char, Range>{};
+	ranges['x'] = Range {
+		lower = 1,
+		upper = 4000,
+	};
+	ranges['m'] = Range {
+		lower = 1,
+		upper = 4000,
+	};
+	ranges['a'] = Range {
+		lower = 1,
+		upper = 4000,
+	};
+	ranges['s'] = Range {
+		lower = 1,
+		upper = 4000,
+	};
+	print(traverse("in", ranges));
+}
+
