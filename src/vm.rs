@@ -383,6 +383,7 @@ impl<'printer> VM<'printer> {
                 opcode::MUL => self.mul(),
                 opcode::DIV => self.div(),
                 opcode::MOD => self.modulus(),
+                opcode::NEG => self.negate(),
                 opcode::LOGICAL_AND => self.logical_and(),
                 opcode::LOGICAL_OR => self.logical_or(),
                 opcode::EQ => self.equals(),
@@ -546,6 +547,15 @@ impl<'printer> VM<'printer> {
 
     fn greater_equal(&mut self) {
         bin_op_comparison!(self, >=);
+    }
+
+    fn negate(&mut self) {
+        let val = self.value_stack.last_mut().unwrap();
+        match val {
+            Value::Integer(i) => *i = -*i,
+            Value::Float(f) => *f = -*f,
+            x => panic!("Negation expects a number, got {:?}", x)
+        }
     }
 
     fn push_integer(&mut self, frame: &mut Frame) {
@@ -1916,6 +1926,20 @@ mod test {
             assert_eq!(printer.strings[0], "49");
             assert_eq!(printer.strings[1], "19");
         }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let i = 100;
+                let n = -i;
+                print(n);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "-100");
+        }
     }
 
     #[test]
@@ -1958,6 +1982,20 @@ mod test {
             assert_eq!(vm.interpret("print 8.4 / 4.2;"), Ok(()));
             assert_eq!(printer.strings.len(), 1);
             assert_eq!(printer.strings[0], "2");
+        }
+
+        {
+            let mut printer = TestPrinter::new();
+            let mut vm = VM::new(&mut printer);
+            let src = "
+                let i = 3.142;
+                let n = -i;
+                print(n);
+            ";
+
+            assert_eq!(vm.interpret(src), Ok(()));
+            assert_eq!(printer.strings.len(), 1);
+            assert_eq!(printer.strings[0], "-3.142");
         }
     }
 

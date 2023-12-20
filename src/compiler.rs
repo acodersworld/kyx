@@ -4579,6 +4579,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                     Token::Float(f) => {
                         self.float(chunk, -f);
                     }
+                    Token::Identifier(i) => {
+                        let loc = self.scanner.peek_token()?.location;
+                        self.identifier(chunk, i)?;
+                        let expr_type = &self.type_stack.last().unwrap().value_type;
+                        if *expr_type != ValueType::Integer && *expr_type != ValueType::Float {
+                            return Err(self.make_error_msg(&format!("Expected number, got {:?}", expr_type), &loc));
+                        }
+                        chunk.write_byte(opcode::NEG);
+                    }
                     _ => {
                         return Err(self.make_error_msg("Expected number after '-'", &next.location))
                     }

@@ -26,6 +26,7 @@ const OPCODES: &[&str] = &[
     "MUL",
     "DIV",
     "MOD",
+    "NEG",
     //
     "LOGICAL_AND",
     "LOGICAL_OR",
