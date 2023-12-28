@@ -123,7 +123,7 @@ fn run_file(filename: &str) {
         std::process::exit(1);
     }
 
-    println!("{}", contents);
+//    println!("{}", contents);
     let mut printer = DefaultPrinter {};
     let mut machine = vm::VM::new(&mut printer);
     register_builtin_functions(&mut machine);

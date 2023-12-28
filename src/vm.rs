@@ -476,7 +476,7 @@ impl<'printer> VM<'printer> {
             self.method_functions.insert(fidx, function_value);
         }
 
-        /*if true || self.disassemble*/ {
+        if self.disassemble {
             println!("-- Main --");
             let mut ds = disassembler::Disassembler::new(&chunk.code);
             ds.disassemble_all();
@@ -2222,6 +2222,40 @@ mod test {
         assert_eq!(vm.interpret(src), Ok(()));
         assert_eq!(printer.strings.len(), 1);
         assert_eq!(printer.strings[0], "0");
+    }
+
+    #[test]
+    fn if_else_chain() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+        for i : 0..10 {
+            if i < 3 {
+                print 1;
+            }
+            else if i < 6 {
+                print 2;
+            }
+            else if i < 8 {
+                print 3;
+            }
+            else {
+                print 4;
+            }
+        }";
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 10);
+        assert_eq!(printer.strings[0], "1");
+        assert_eq!(printer.strings[1], "1");
+        assert_eq!(printer.strings[2], "1");
+        assert_eq!(printer.strings[3], "2");
+        assert_eq!(printer.strings[4], "2");
+        assert_eq!(printer.strings[5], "2");
+        assert_eq!(printer.strings[6], "3");
+        assert_eq!(printer.strings[7], "3");
+        assert_eq!(printer.strings[8], "4");
+        assert_eq!(printer.strings[9], "4");
     }
 
     #[test]

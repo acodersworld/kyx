@@ -3322,8 +3322,13 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 (chunk.code.len() - if_jmp_idx).try_into().unwrap(),
             );
 
-            self.consume(Token::LeftBrace)?;
-            self.block_expression(chunk)?;
+            if self.scanner.match_token(Token::If)? {
+                self.if_expression(chunk)?;
+            }
+            else {
+                self.consume(Token::LeftBrace)?;
+                self.block_expression(chunk)?;
+            }
 
             let (else_type, else_is_read_only) = {
                 if self.type_stack.len() == stack_top {
