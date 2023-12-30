@@ -34,9 +34,12 @@ pub mod string {
 }
 
 pub mod hashmap {
-    pub const CONTAINS_KEY: u8 = 0;
-    pub const KEYS: u8 = 1;
-    pub const CLEAR: u8 = 2;
+    pub const LEN: u8 = 0;
+    pub const CONTAINS_KEY: u8 = 1;
+    pub const KEYS: u8 = 2;
+    pub const CLEAR: u8 = 3;
+    pub const VALUES: u8 = 4;
+    pub const REMOVE_ENTRY: u8 = 5;
 }
 
 pub mod ch {
@@ -44,6 +47,7 @@ pub mod ch {
     pub const TO_UPPERCASE: u8 = 1;
     pub const TO_INTEGER: u8 = 2;
     pub const IS_DIGIT: u8 = 3;
+    pub const ASCII_CODE: u8 = 4;
 }
 
 pub mod integer {

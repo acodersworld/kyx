@@ -2017,6 +2017,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             ValueType::HashMap(h) => {
                 let (member_name, member_name_location) = self.match_identifier()?;
                 match member_name.as_str() {
+                    "len" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::hashmap::LEN);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Integer,
+                            read_only: true,
+                        });
+                    }
                     "contains_key" => {
                         self.consume(Token::LeftParen)?;
                         self.expression(chunk)?;
@@ -2066,6 +2080,42 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         chunk.write_byte(opcode::CALL_BUILTIN);
                         chunk.write_byte(builtin_functions::hashmap::CLEAR);
                         chunk.write_byte(0);
+                    }
+                    "values" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::hashmap::VALUES);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Vector(Rc::new(h.1.clone())),
+                            read_only: true,
+                        });
+                    }
+                    "remove_entry" => {
+                        self.consume(Token::LeftParen)?;
+                        self.expression(chunk)?;
+                        self.consume(Token::RightParen)?;
+
+                        let index_type = self.type_stack.pop().unwrap();
+                        self.type_stack.pop();
+
+                        if index_type.value_type != h.0 {
+                            return Err(self.make_error_msg(
+                                &format!(
+                                    "HashMap index is type {}, but got {}",
+                                    index_type.value_type, h.0
+                                ),
+                                &member_name_location,
+                            ));
+                        }
+
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::hashmap::REMOVE_ENTRY);
+                        chunk.write_byte(1);
                     }
                     _ => {
                         return Err(self.make_error_msg(
@@ -2128,6 +2178,20 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
                         self.type_stack.push(Variable {
                             value_type: ValueType::Bool,
+                            read_only: true,
+                        });
+                    }
+                    "ascii_code" => {
+                        self.consume(Token::LeftParen)?;
+                        self.consume(Token::RightParen)?;
+
+                        self.type_stack.pop();
+                        chunk.write_byte(opcode::CALL_BUILTIN);
+                        chunk.write_byte(builtin_functions::ch::ASCII_CODE);
+                        chunk.write_byte(0);
+
+                        self.type_stack.push(Variable {
+                            value_type: ValueType::Integer,
                             read_only: true,
                         });
                     }

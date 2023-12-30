@@ -1328,6 +1328,11 @@ impl<'printer> VM<'printer> {
                 builtin_functions::ch::IS_DIGIT => {
                     self.value_stack.push(Value::Bool(c.is_ascii_digit()));
                 }
+                builtin_functions::ch::ASCII_CODE => {
+                    self.value_stack.push(Value::Integer(
+                        c as i64
+                    ));
+                }
                 _ => panic!("Unexpected char builtin id {}", builtin_id),
             },
             Value::Vector(mut v) => match builtin_id {
@@ -1614,6 +1619,14 @@ impl<'printer> VM<'printer> {
                 _ => panic!("Unexpected string builtin id {}", builtin_id),
             },
             Value::HashMap(mut h) => match builtin_id {
+                builtin_functions::hashmap::LEN => {
+                    self.value_stack
+                        .push(Value::Integer(unsafe { h.as_ref() }.len() as i64));
+                }
+                builtin_functions::hashmap::REMOVE_ENTRY => {
+                    let key = self.value_stack.pop().unwrap();
+                    unsafe { h.as_mut() }.remove_entry(&key); 
+                }
                 builtin_functions::hashmap::CONTAINS_KEY => {
                     let key = self.value_stack.pop().unwrap();
                     self.value_stack
@@ -1634,6 +1647,19 @@ impl<'printer> VM<'printer> {
                 }
                 builtin_functions::hashmap::CLEAR => {
                     unsafe { h.as_mut() }.clear();
+                }
+                builtin_functions::hashmap::VALUES => {
+                    let mut vector = vec![];
+
+                    for k in unsafe { h.as_ref() }.values() {
+                        vector.push(*k);
+                    }
+
+                    let mut vec_val = Box::new(vector);
+                    let ptr = unsafe { NonNull::new_unchecked(vec_val.as_mut() as *mut _) };
+                    self.objects.push(GcValue::Vector(vec_val));
+
+                    self.value_stack.push(Value::Vector(ptr));
                 }
                 _ => panic!("Unexpected hash_map builtin id {}", builtin_id),
             },
@@ -1728,13 +1754,17 @@ mod test {
             print(c.to_uppercase());
 
             let C: char = 'A';
-            print(c.to_lowercase());
+            print(C.to_lowercase());
+
+            let a: char = 'A';
+            print(a.ascii_code());
         ";
 
         assert_eq!(vm.interpret(src), Ok(()));
-        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings.len(), 3);
         assert_eq!(printer.strings[0], "A");
         assert_eq!(printer.strings[1], "a");
+        assert_eq!(printer.strings[2], "65");
     }
 
     #[test]
@@ -4348,5 +4378,109 @@ mod test {
         assert_eq!(printer.strings[2], "10");
         assert_eq!(printer.strings[3], "20");
         assert_eq!(printer.strings[4], "21");
+    }
+
+    #[test]
+    fn test_hashmap_len() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut h: [int: int] = hash_map<int, int>{};
+
+            print(h.len());
+            h[0] = 1;
+            print(h.len());
+            h[0] = 1;
+            print(h.len());
+
+            h[10] = 2;
+            h[20] = 2;
+            print(h.len());
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 4);
+        assert_eq!(printer.strings[0], "0");
+        assert_eq!(printer.strings[1], "1");
+        assert_eq!(printer.strings[2], "1");
+        assert_eq!(printer.strings[3], "3");
+    }
+
+    #[test]
+    fn test_hashmap_values() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut h = hash_map<int, char>{};
+
+            h[10] = 'A';
+            h[20] = 'B';
+            h[21] = 'C';
+
+            for i : h.values() {
+                print(i);
+            }
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 3);
+        // Values can be in any order
+        printer.strings.sort();
+        assert_eq!(printer.strings[0], "A");
+        assert_eq!(printer.strings[1], "B");
+        assert_eq!(printer.strings[2], "C");
+    }
+
+    #[test]
+    fn test_hashmap_remove_entry() {
+        let mut printer = TestPrinter::new();
+        let mut vm = VM::new(&mut printer);
+
+        let src = "
+            let mut h = hash_map<int, char>{};
+
+            h[10] = 'A';
+            h[20] = 'B';
+            h[21] = 'C';
+            print(h.len());
+
+            h.remove_entry(20);
+            print(h.len());
+            for i : h.keys() {
+                print(i);
+            }
+
+            h.remove_entry(21);
+            print(h.len());
+            for i : h.keys() {
+                print(i);
+            }
+
+            h.remove_entry(11);
+            print(h.len());
+
+            h.remove_entry(10);
+            print(h.len());
+        ";
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 8);
+
+        assert_eq!(printer.strings[0], "3");
+        assert_eq!(printer.strings[1], "2");
+
+        // Keys can be in any order
+        printer.strings[2..4].sort();
+        assert_eq!(printer.strings[2], "10");
+        assert_eq!(printer.strings[3], "21");
+
+        assert_eq!(printer.strings[4], "1");
+        assert_eq!(printer.strings[5], "10");
+
+        assert_eq!(printer.strings[6], "1");
+
+        assert_eq!(printer.strings[7], "0");
     }
 }
