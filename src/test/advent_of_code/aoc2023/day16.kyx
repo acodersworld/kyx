@@ -1,0 +1,252 @@
+let lines = readinput();
+
+fn next_x(x: int, dir: char) -> int {
+	if dir == 'L' { return x - 1; }
+	if dir == 'R' { return x + 1; }
+	return x;
+}
+
+fn next_y(y: int, dir: char) -> int {
+	if dir == 'U' { return y - 1; }
+	if dir == 'D' { return y + 1; }
+	return y;
+}
+
+fn move(input_x: int, input_y: int, input_dir: char, visited: mut [[[char]]]) {
+	let mut dir = input_dir;
+	let mut x = input_x;
+	let mut y = input_y;
+	while true {
+		if y < 0 { return; }	
+		if y >= lines.len() { return; }
+		if x < 0 { return; }
+		if x >= lines[0].len() { return; }
+
+		if visited[y][x].contains(dir) { return; }
+		visited[y][x].push(dir);
+
+		let c = lines[y][x];
+		if c == '\' {
+			if dir == 'U' {
+				dir = 'L';
+			}
+			else if dir == 'D' {
+				dir = 'R';
+			}
+			else if dir == 'L' {
+				dir = 'U';
+			}
+			else if dir == 'R' {
+				dir = 'D';
+			}
+		}
+		if c == '/' {
+			if dir == 'U' {
+				dir = 'R';
+			}
+			else if dir == 'D' {
+				dir = 'L';
+			}
+			else if dir == 'L' {
+				dir = 'D';
+			}
+			else if dir == 'R' {
+				dir = 'U';
+			}
+		}
+		if c == '|' {
+			if dir == 'L' || dir == 'R' {
+				move(x, y + 1, 'D', visited);
+				move(x, y - 1, 'U', visited);
+				return;
+			}
+		}
+		if c == '-' {
+			if dir == 'U' || dir == 'D' {
+				move(x - 1, y, 'L', visited);
+				move(x + 1, y, 'R', visited);
+				return;
+			}
+		}
+
+		x = next_x(x, dir);
+		y = next_y(y, dir);
+	}
+}
+
+struct Pt {
+	x: int,
+	y: int,
+	dir: char
+}
+
+fn move3(stack: mut [Pt], visited: mut [[[char]]]) {
+	let p = stack.pop();
+	let mut x = p.x;
+	let mut y = p.y;
+	let mut dir = p.dir;
+
+	while true {
+		if y < 0 { return; }	
+		if y >= lines.len() { return; }
+		if x < 0 { return; }
+		if x >= lines[0].len() { return; }
+
+		if visited[y][x].contains(dir) { return; }
+		visited[y][x].push(dir);
+
+		let c = lines[y][x];
+		if c == '\' {
+			if dir == 'U' {
+				dir = 'L';
+			}
+			else if dir == 'D' {
+				dir = 'R';
+			}
+			else if dir == 'L' {
+				dir = 'U';
+			}
+			else if dir == 'R' {
+				dir = 'D';
+			}
+		}
+		if c == '/' {
+			if dir == 'U' {
+				dir = 'R';
+			}
+			else if dir == 'D' {
+				dir = 'L';
+			}
+			else if dir == 'L' {
+				dir = 'D';
+			}
+			else if dir == 'R' {
+				dir = 'U';
+			}
+		}
+		if c == '|' {
+			if dir == 'L' || dir == 'R' {
+				stack.push(Pt {
+					dir = 'D',
+					x = x,
+					y = y + 1,
+				});
+				stack.push(Pt {
+					dir = 'U',
+					x = x,
+					y = y - 1,
+				});
+				return;
+			}
+		}
+		if c == '-' {
+			if dir == 'U' || dir == 'D' {
+				stack.push(Pt {
+					dir = 'L',
+					x = x - 1,
+					y = y,
+				});
+				stack.push(Pt {
+					dir = 'R',
+					x = x + 1,
+					y = y,
+				});
+				return;
+			}
+		}
+
+		x = next_x(x, dir);
+		y = next_y(y, dir);
+	}
+}
+
+fn move2(input_x: int, input_y: int, input_dir: char, visited: mut [[[char]]]) {
+	let mut stack: [Pt] = vec<Pt>{};
+
+	stack.push(Pt {
+		dir = input_dir,
+		x = input_x,
+		y = input_y,
+	});
+
+	while stack.len() > 0 {
+		move3(stack, visited);
+	}
+}
+
+fn make_visited() -> [[[char]]] {
+	let mut energy = vec<[[char]]>{};
+	for ln : lines {
+		let mut e = vec<[char]>{};
+		for i : 0..ln.len() {
+			e.push(vec<char>{});
+		}
+		energy.push(e);
+	}
+	return energy;
+}
+
+fn count_visited(energy: [[[char]]]) -> int {
+	let mut count = 0;
+	for e : energy {
+		for c : e {
+			if c.len() > 0 {
+				count += 1;
+			}
+		}
+	}
+	return count;
+}
+
+// part 1
+{
+	let mut visited = make_visited();
+	move2(0, 0, 'R', visited);
+	let count = count_visited(visited);
+	print(count);
+}
+
+// part 2
+{
+	let mut max = 0;
+	for x : 0..lines[0].len() {
+		{
+			let mut visited = make_visited();
+			move2(x, 0, 'D', visited);
+			let count = count_visited(visited);
+			if count > max {
+				max = count;
+			}
+		}
+		{
+			let mut visited = make_visited();
+			move2(x, lines.len()-1, 'U', visited);
+			let count = count_visited(visited);
+			if count > max {
+				max = count;
+			}
+		}
+	}
+
+	for y : 0..lines.len() {
+		{
+			let mut visited = make_visited();
+			move2(0, y, 'R', visited);
+			let count = count_visited(visited);
+			if count > max {
+				max = count;
+			}
+		}
+		{
+			let mut visited = make_visited();
+			move2(lines[0].len()-1, y, 'L', visited);
+			let count = count_visited(visited);
+			if count > max {
+				max = count;
+			}
+		}
+	}
+
+	print(max);
+}
+
