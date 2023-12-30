@@ -409,6 +409,37 @@ mod day14 {
 }
 
 #[cfg(test)]
+mod day15 {
+    use super::*;
+
+    fn input(ctx: &mut dyn RustFunctionCtx) {
+        let mut v = vec![];
+
+        for l in include_str!("aoc2023/day15-input.txt").lines() {
+            v.push(l.to_string());
+        }
+
+        ctx.set_result(RustValue::StringVector(v));
+    }
+
+    #[test]
+    fn part1_and_2() {
+        let mut printer = utils::TestPrinter::new();
+        let mut vm = vm::VM::new(&mut printer);
+
+        vm.create_function("fn readinput() -> [string]", &input)
+            .expect("Failed to create function");
+
+        let src = include_str!("aoc2023/day15.kyx");
+
+        assert_eq!(vm.interpret(src), Ok(()));
+        assert_eq!(printer.strings.len(), 2);
+        assert_eq!(printer.strings[0], "511215");
+        assert_eq!(printer.strings[1], "236057");
+    }
+}
+
+#[cfg(test)]
 mod day19 {
     use super::*;
 

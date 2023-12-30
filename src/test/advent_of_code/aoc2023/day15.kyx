@@ -1,0 +1,73 @@
+let lines = readinput();
+
+fn hash(s: string) -> int {
+	let mut h = 0;
+	for c : s {
+		h += c.ascii_code();
+		h *= 17;
+		h %= 256;
+	}
+	return h;
+}
+
+let mut sum = 0;
+for ln : lines[0].split(',') {
+	sum += hash(ln);	
+}
+print(sum);
+
+struct Lens {
+	name: string,
+	num: int,
+	power: mut int,
+	order: int
+}
+
+let mut next_order = 0;
+
+let mut map = hash_map<string, Lens>{};
+for ln : lines[0].split(',') {
+	if ln.contains("=") {
+		let box = ln.split('=');
+		if map.contains_key(box[0]) {
+			map[box[0]].power = box[1].to_integer();
+		}
+		else {
+			map[box[0]] = Lens {
+				name = box[0],
+				num = hash(box[0]),
+				power = box[1].to_integer(),
+				order = next_order,
+			};
+			next_order += 1;
+		}
+	}
+	else {
+		map.remove_entry(ln.split('-')[0]);
+	}
+}
+
+fn cmp(a: Lens, b: Lens) -> bool {
+	if a.num < b.num { return true; }
+	if b.num < a.num { return false; }
+
+	return a.order < b.order;
+}
+let mut boxes = map.values();
+boxes.sort(cmp);
+
+let mut current_box = 0;
+let mut current_lens = 1;
+let mut total_power = 0;
+for l : boxes {
+	if l.num != current_box {
+		current_box = l.num;
+		current_lens = 1;
+	}
+
+	total_power += (l.num + 1) * current_lens * l.power;
+	current_lens += 1;
+}
+
+print(total_power);
+
