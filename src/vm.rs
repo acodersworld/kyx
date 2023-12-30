@@ -2,6 +2,8 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::vec::Vec;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -279,9 +281,20 @@ macro_rules! bin_op_comparison {
     }
 }
 
+fn hash_int(ctx: &mut dyn RustFunctionCtx) {
+    let input = ctx.get_parameter_integer(0).unwrap();
+    let seed = ctx.get_parameter_integer(1).unwrap();
+
+    let mut s = DefaultHasher::new();
+    seed.hash(&mut s);
+    input.hash(&mut s);
+
+    ctx.set_result(RustValue::Integer(s.finish() as i64));
+}
+
 impl<'printer> VM<'printer> {
     pub fn new(printer: &'printer mut dyn Printer) -> VM<'printer> {
-        VM {
+        let mut vm = VM {
             value_stack: Vec::new(),
             objects: Vec::new(),
             constant_strs: Vec::new(),
@@ -291,7 +304,13 @@ impl<'printer> VM<'printer> {
             compiler: Compiler::new(),
             printer,
             disassemble: false,
-        }
+        };
+
+        vm
+            .create_function("fn hash_int(int, int) -> int", &hash_int)
+            .expect("Failed to register hash");
+
+        vm
     }
 
     pub fn create_function(

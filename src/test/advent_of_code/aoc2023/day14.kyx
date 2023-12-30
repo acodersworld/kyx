@@ -1,0 +1,201 @@
+let lines = readinput();
+
+struct State {
+	cycle: int,
+	state: [[int]]
+}
+impl {
+	fn (self) print_me() {
+		for r : self.state {
+			for c : r {
+				if c == 0 { print('.'); }
+				if c == 1 { print('O'); }
+				if c == 2 { print('#'); }
+			}
+			print("\n");
+		}
+	}
+
+	fn (self) north() {
+		let mut rows = vec<int>[lines[0].len()]{0};
+		let width = self.state[0].len();
+		for l : 0..self.state.len() {
+			let mut ln = self.state[l];
+			for i : 0..ln.len() {
+				let c = ln[i];
+				if c == 1 {
+					ln[i] = 0;
+					self.state[rows[i]][i] = 1;
+					rows[i] = rows[i] + 1;
+				}
+
+				if c == 2 {
+					rows[i] = l + 1;
+				}
+			}
+		}
+	}
+
+	fn (self) south() {
+		let mut rows = vec<int>[lines[0].len()]{lines.len()-1};
+		let width = self.state[0].len();
+		for l : (self.state.len()-1)..=>0 {
+			let mut ln = self.state[l];
+			for i : 0..ln.len() {
+				let c = ln[i];
+				if c == 1 {
+					ln[i] = 0;
+					self.state[rows[i]][i] = 1;
+					rows[i] = rows[i] - 1;
+				}
+
+				if c == 2 {
+					rows[i] = l - 1;
+				}
+			}
+		}
+	}
+
+	fn (self) west() {
+		let mut rows = vec<int>[lines.len()]{0};
+		let height = self.state.len();
+		for l : 0..self.state.len() {
+			let mut ln = self.state[l];
+			for i : 0..ln.len() {
+				let c = ln[i];
+				if c == 1 {
+					ln[i] = 0;
+					ln[rows[l]] = 1;
+					rows[l] = rows[l] + 1;
+				}
+
+				if c == 2 {
+					rows[l] = i + 1;
+				}
+			}
+		}
+	}
+
+	fn (self) east() {
+		let mut rows = vec<int>[lines.len()]{lines[0].len()-1};
+		let height = self.state.len();
+		for l : 0..self.state.len() {
+			let mut ln = self.state[l];
+			for i : (ln.len()-1)..=>0 {
+				let c = ln[i];
+				if c == 1 {
+					ln[i] = 0;
+					ln[rows[l]] = 1;
+					rows[l] = rows[l] - 1;
+				}
+
+				if c == 2 {
+					rows[l] = i - 1;
+				}
+			}
+		}
+	}
+
+	fn (self) cycle_one() {
+		self.north();
+		self.west();
+		self.south();
+		self.east();
+	}
+
+	fn (self) hash() -> int {
+		let mut h = 0;
+		for y : 0..self.state.len() {
+			let mut r = self.state[y];
+			for x : 0..r.len() {
+				if r[x] == 1 {
+					h = hash_int(x, h);
+					h = hash_int(y, h);
+				}
+			}
+
+		}
+		return h;
+	}
+
+	fn (self) load() -> int {
+		let mut total = 0;
+		for l : 0..self.state.len() {
+			for x : self.state[l] {
+				if x == 1 {
+					total += self.state.len() - l;
+				}
+			}
+		}
+		return total;
+	}
+}
+
+fn to_state() -> State {
+	let mut s = vec<[int]>{};
+	let width = lines[0].len();
+	for y : 0..lines.len() {
+		let mut l = vec<int>[width]{0};
+		let ln = lines[y];
+		for x : 0..ln.len() {
+			if ln[x] == 'O' {
+				l[x] = 1;
+			}
+			if ln[x] == '#' {
+				l[x] = 2;
+			}
+		}
+		s.push(l);
+	}
+
+	return State {
+		cycle = 0,
+		state = s,
+	};
+}
+
+fn clone_state(src: State) -> State {
+	let mut s = vec<[int]>{};
+
+	for r : src.state {
+		s.push(r.clone());
+	}
+
+	return State {
+		cycle = src.cycle + 1,
+		state = s,
+	};
+}
+
+// part 1
+{
+	let mut s = to_state();
+	s.north();
+	print(s.load());
+}
+
+// part 2
+{
+	let mut map = hash_map<int, State>{};
+
+	let mut s = to_state();
+	map[s.hash()] = s;
+
+	while true {
+		s = clone_state(s);
+		s.cycle_one();
+
+		if map.contains_key(s.hash()) {
+			break;
+		}
+		map[s.hash()] = s;
+	}
+
+	let dist = s.cycle - map[s.hash()].cycle;
+	let rem = (1000000000 - s.cycle) % dist;
+	for i : 0..rem {
+		s.cycle_one();
+	}
+	print(s.load());
+}
+
