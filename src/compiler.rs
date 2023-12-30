@@ -933,10 +933,8 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         let has_methods = !methods.is_empty();
         let struct_type = Rc::new(StructType { members, methods });
 
-        self.user_types.insert(
-            struct_name,
-            UserType::Struct(struct_type.clone()),
-        );
+        self.user_types
+            .insert(struct_name, UserType::Struct(struct_type.clone()));
 
         // A bit of a hack tbh. We need to first parse just the function signatures
         // and then only generate code for them. This is because member functions are allows to
@@ -1101,10 +1099,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                 })?;
             }
 
-            if members
-                .iter()
-                .any(|(name, _)| *name == member_name)
-            {
+            if members.iter().any(|(name, _)| *name == member_name) {
                 return Err(self.make_error_msg(
                     &format!(
                         "Union {} already has a member {} defined",
@@ -1216,9 +1211,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
         }
 
         let interface_type = InterfaceType {
-            methods: method_map
-                .into_iter()
-                .collect(),
+            methods: method_map.into_iter().collect(),
         };
 
         self.user_types
@@ -1996,10 +1989,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         let app = self.type_stack.pop().unwrap();
                         if app.value_type != ValueType::Str {
                             return Err(self.make_error_msg(
-                                &format!(
-                                    "append expects a string, got {}",
-                                    app.value_type
-                                ),
+                                &format!("append expects a string, got {}", app.value_type),
                                 &app_loc,
                             ));
                         }
@@ -2301,13 +2291,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             let size_location = self.scanner.peek_token()?.location;
             match elem_type {
                 ValueType::Integer | ValueType::Float | ValueType::Bool | ValueType::Str => {}
-                _ => return Err(self.make_error_msg(
-                    &format!(
+                _ => {
+                    return Err(self.make_error_msg(
+                        &format!(
                         "Vector repeat intialiser can only be used with primitive types, got {}",
                         elem_type
                     ),
-                    &size_location,
-                )),
+                        &size_location,
+                    ))
+                }
             }
 
             self.expression(chunk)?;
@@ -3031,13 +3023,15 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
             }
         };
 
-        let is_equal = matches!(self.scanner.peek_token()?.token,
+        let is_equal = matches!(
+            self.scanner.peek_token()?.token,
             Token::Equal
-            | Token::PlusEquals
-            | Token::MinusEquals
-            | Token::StarEquals
-            | Token::SlashEquals
-            | Token::PercentEquals);
+                | Token::PlusEquals
+                | Token::MinusEquals
+                | Token::StarEquals
+                | Token::SlashEquals
+                | Token::PercentEquals
+        );
 
         if is_equal {
             let equal_token = self.scanner.scan_token()?;
@@ -3324,8 +3318,7 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
 
             if self.scanner.match_token(Token::If)? {
                 self.if_expression(chunk)?;
-            }
-            else {
+            } else {
                 self.consume(Token::LeftBrace)?;
                 self.block_expression(chunk)?;
             }
@@ -4638,7 +4631,10 @@ impl<'a, T: DataSection> SrcCompiler<'a, T> {
                         self.identifier(chunk, i)?;
                         let expr_type = &self.type_stack.last().unwrap().value_type;
                         if *expr_type != ValueType::Integer && *expr_type != ValueType::Float {
-                            return Err(self.make_error_msg(&format!("Expected number, got {:?}", expr_type), &loc));
+                            return Err(self.make_error_msg(
+                                &format!("Expected number, got {:?}", expr_type),
+                                &loc,
+                            ));
                         }
                         chunk.write_byte(opcode::NEG);
                     }

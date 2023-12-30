@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 use std::vec::Vec;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -306,8 +306,7 @@ impl<'printer> VM<'printer> {
             disassemble: false,
         };
 
-        vm
-            .create_function("fn hash_int(int, int) -> int", &hash_int)
+        vm.create_function("fn hash_int(int, int) -> int", &hash_int)
             .expect("Failed to register hash");
 
         vm
@@ -573,7 +572,7 @@ impl<'printer> VM<'printer> {
         match val {
             Value::Integer(i) => *i = -*i,
             Value::Float(f) => *f = -*f,
-            x => panic!("Negation expects a number, got {:?}", x)
+            x => panic!("Negation expects a number, got {:?}", x),
         }
     }
 
@@ -679,7 +678,9 @@ impl<'printer> VM<'printer> {
                 let hash_map = unsafe { h.as_ref() };
                 if !hash_map.contains_key(&index) {
                     match index {
-                        Value::Str(s) => panic!("Hash map does not contain key {:?}", unsafe { s.as_ref() }),
+                        Value::Str(s) => {
+                            panic!("Hash map does not contain key {:?}", unsafe { s.as_ref() })
+                        }
                         _ => panic!("Hash map does not contain key {:?}", index),
                     }
                 }

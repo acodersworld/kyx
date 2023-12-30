@@ -87,4 +87,3 @@ pub enum Value {
     RustFunction(NonNull<RustFunctionValue>),
     Union(NonNull<UnionValue>),
 }
-
