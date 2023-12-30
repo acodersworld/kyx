@@ -38,10 +38,8 @@ impl {
 				return self.result;
 			}
 		}
-		else {
-			if v > self.value {
-				return self.result;
-			}
+		else if v > self.value {
+			return self.result;
 		}
 
 		return RuleResult.Fail;
