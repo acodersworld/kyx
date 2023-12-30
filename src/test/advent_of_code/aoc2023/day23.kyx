@@ -1,0 +1,219 @@
+let lines = readinput();
+
+struct Node {
+	x: int,
+	y: int,
+	px: int,
+	py: int,
+	steps: int
+}
+
+struct GNode {
+	x: int,
+	y: int,
+	px: int,
+	py: int,
+	steps: int,
+	visited: [int]
+}
+
+struct GNode2 {
+	x: int,
+	y: int,
+	px: int,
+	py: int,
+	steps: int,
+}
+
+let mut visited = hash_map<int, bool>{};
+let dirs = vec<(int, int,char,)>{
+	tuple (-1, 0,'<',), tuple (1, 0,'>',),
+	tuple (0, -1,'^',), tuple (0, 1,'v',),
+};
+
+let dstx = lines[0].len() - 2;
+let dsty = lines.len() - 1;
+
+fn dfs(sx: int, sy: int) -> int {
+	let mut stack = vec<Node>{};
+
+	stack.push(Node {
+		x = sx,
+		y = sy,
+		px = -1,
+		py = -1,
+		steps = 0,
+	});
+
+	let mut max_step = 0;
+	while stack.len() > 0 {
+		let n = stack.pop();
+
+		if n.x == dstx && n.y == dsty {
+			if n.steps > max_step {
+				max_step = n.steps;
+			}
+		}
+		else {
+			for d : dirs {
+				let x = n.x + d.0;
+				let y = n.y + d.1;
+
+				if x < 0 { continue; }
+				if x >= lines[0].len() { continue; }
+				if y < 0 { continue; }
+				if y >= lines.len() { continue; }
+				if x == n.px && y == n.py { continue; }
+
+				let c = lines[y][x];
+				if c == '#' { continue; }
+
+				if c == '.' || c == d.2 {
+					stack.push(Node {
+						x = x,
+						y = y,
+						px = n.x,
+						py = n.y,
+						steps = n.steps + 1,
+					});
+				}
+			}
+		}
+	}
+	return max_step;
+}
+
+// p1
+print(dfs(1, 0));
+
+
+struct Dist {
+	x: int,
+	y: int,
+	dist: int
+}
+
+let mut dist_map = hash_map<int, [Dist]>{};
+let mut inters = hash_map<int, bool>{};
+inters[1 * 1000] = true;
+inters[(lines[0].len()-2) * 1000 + lines.len() - 1] = true;
+dist_map[1 * 1000] = vec<Dist>{};
+dist_map[(lines[0].len()-2) * 1000 + lines.len() - 1] = vec<Dist>{};
+
+let mut nintersects = 0;
+for iy : 0..lines.len() {
+	for ix : 0..lines[0].len() {
+		if lines[iy][ix] == '.' {
+			let mut nneigh = 0;
+			for d : dirs {
+				let x = ix + d.0;
+				let y = iy + d.1;
+
+				if x < 0 { continue; }
+				if x >= lines[0].len() { continue; }
+				if y < 0 { continue; }
+				if y >= lines.len() { continue; }
+
+				let c = lines[y][x];
+				if c == '#' { continue; }
+
+				nneigh += 1;
+			}
+			
+			if nneigh > 2 {
+				inters[ix*1000 + iy] = true;
+				nintersects += 1;
+				dist_map[ix*1000 + iy] = vec<Dist>{};
+			}
+		}
+	}
+}
+
+fn calc_edges(sx: int, sy: int) -> int {
+	let mut stack = vec<Node>{};
+
+	stack.push(Node {
+		x = sx,
+		y = sy,
+		px = -1,
+		py = -1,
+		steps = 1,
+	});
+
+	let mut max_step = 0;
+	while stack.len() > 0 {
+		let n = stack.pop();
+
+		if n.x == dstx && n.y == dsty {
+			if n.steps > max_step {
+				max_step = n.steps;
+			}
+		}
+		else {
+			for d : dirs {
+				let x = n.x + d.0;
+				let y = n.y + d.1;
+
+				if x < 0 { continue; }
+				if x >= lines[0].len() { continue; }
+				if y < 0 { continue; }
+				if y >= lines.len() { continue; }
+				if x == n.px && y == n.py { continue; }
+
+				let c = lines[y][x];
+
+				if c != '#' {
+					if inters.contains_key(x*1000 + y) {
+						dist_map[sx * 1000 + sy].push(Dist {
+							x = x, 
+							y = y,
+							dist = n.steps,
+						});
+						continue;
+					}
+
+					stack.push(Node {
+						x = x,
+						y = y,
+						px = n.x,
+						py = n.y,
+						steps = n.steps + 1,
+					});
+				}
+			}
+		}
+	}
+	return max_step;
+}
+
+for xy : inters.keys() {
+	let x = xy / 1000;
+	let y = xy - x * 1000;
+
+	calc_edges(x, y);
+}
+
+fn dfs_dist(sx: int, sy: int, visited: [int: bool]) -> int {
+	let mut max_steps = -10000;
+	if sx == dstx && sy == dsty {
+		return 0;
+	}
+	visited[sx * 1000 + sy] = true;
+	for e : dist_map[sx * 1000 + sy] {
+		let x = e.x;
+		let y = e.y;
+
+		if visited.contains_key(x * 1000 + y) {
+			if visited[x * 1000 + y] {
+				continue;
+			}
+		}
+
+		let s = e.dist + dfs_dist(e.x, e.y, visited);
+		if s > max_steps { max_steps = s; }
+	}
+	visited[sx * 1000 + sy] = false;
+	return max_steps;
+}
+print(dfs_dist(1, 0, hash_map<int, bool>{}));
+
