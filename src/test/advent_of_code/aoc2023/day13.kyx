@@ -1,0 +1,200 @@
+let lines = readinput();
+
+fn min(a: int, b: int) -> int {
+	if a < b { return a; }
+	return b;
+}
+
+fn abs(a: int) -> int {
+	if a < 0 { return 0-a; }
+	return a;
+}
+
+fn is_equal_v(grid: [string], a: int, b: int) -> bool {
+	for l : grid {
+		if l[a] != l[b] {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+fn count_diff_v(grid: [string], a: int, b: int) -> int {
+	let mut diff = 0;
+	for l : grid {
+		if l[a] != l[b] {
+			diff += 1;
+		}
+	}
+
+	return diff;
+}
+
+fn count_diff_h(left: string, right: string) -> int {
+	let mut diff = 0;
+
+	for i : 0..left.len() {
+		if left[i] != right[i] {
+			diff += 1;
+		}
+	}
+	return diff;
+}
+
+fn find_mirror_v(grid: [string], start_x: int, p2: bool) -> int {
+	let mut top_x = start_x;
+	let mut bottom_x = start_x + 1;
+	let last = grid[0].len();
+
+	let mut bad = false;
+	let mut len = 0;
+	while top_x >= 0 && bottom_x < last {
+		if !is_equal_v(grid, top_x, bottom_x) {
+			if !p2 {
+				return -1;	
+			}
+
+			if count_diff_v(grid, top_x, bottom_x) > 1 {
+				return -1;
+			}
+			if bad {
+				return -1;
+			}
+			bad = true;
+		}
+		top_x -= 1;
+		bottom_x += 1;
+		len += 1;
+	}
+
+	if p2 && !bad {
+		return -1;
+	}		
+	return len;
+}
+
+fn find_mirror_h(grid: [string], start_y: int, p2: bool) -> int {
+	let mut left_y = start_y;
+	let mut right_y = start_y + 1;
+	let last = grid.len();
+
+	let mut bad = false;
+	let mut len = 0;
+	while left_y >= 0 && right_y < last {
+		if grid[left_y] != grid[right_y] {
+			if !p2 {
+				return -1;	
+			}
+
+			if count_diff_h(grid[left_y], grid[right_y]) > 1 {
+				return -1;	
+			}
+
+			if bad {
+				return -1;
+			}
+			bad = true;
+		}
+		left_y -= 1;
+		right_y += 1;
+		len += 1;
+	}
+
+	if p2 && !bad {
+		return -1;
+	}		
+	return len;
+}
+
+struct Result {
+	loc: int,
+	vert: bool,
+}
+
+fn find(grid: [string], p2: bool) -> Result {
+	let mut len = 0;
+	let mut loc = 0;
+	let mut vert = false;
+
+	for i : 0..(grid[0].len()-1) {
+		let l = find_mirror_v(grid, i, p2);
+		if l > 0 && l > len{
+			len = l;
+			loc = i + 1;
+			vert = true;
+		}
+	}
+
+	for i : 0..(grid.len()-1) {
+		let l = find_mirror_h(grid, i, p2);
+		if l > 0 && l > len {
+			len = l;
+			loc = i + 1;
+			vert = false;
+		}
+	}
+
+	if len == 0 {
+		print("NOT VALID!!!!\n");
+		return Result {
+			loc = 0,
+			vert = false,
+		};
+	}
+
+	return Result {
+		loc = loc,
+		vert = vert,
+	};
+}
+
+struct Out {
+	vert: mut int,
+	hori: mut int
+}
+
+fn calc(out: mut Out, grid: [string], p2: bool) {
+	let r = find(grid, p2);
+
+	if r.vert {
+		out.vert = out.vert + r.loc;
+	}
+	else {
+		out.hori = out.hori + r.loc * 100;
+	}
+}
+
+let g = {
+	let mut g = vec<[string]>{};
+	let mut current = vec<string>{};
+
+	for ln : lines {
+		if ln == "" {
+			g.push(current);
+			current = vec<string>{};
+		}
+		else {
+			current.push(ln);
+		}
+	}
+	g.push(current);
+	g
+};
+
+fn solve(p2: bool)
+{
+	let mut r = Out {
+		hori = 0,
+		vert = 0,
+	};
+
+	for x : g {
+		calc(r, x, p2);	
+	}
+	print(r.vert + r.hori);
+}
+
+solve(false);
+solve(true);
+
